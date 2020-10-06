@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InlineJS Test Page</title>
+</head>
+<body>
+    <h1>InlineJS</h1>
+    <div data-id="first" x-data="{email: 'user.yahoo@yahoo.com', name: 'John Doe', state: true, getName(){ return this.name }}">
+        <h2>First Component</h2>
+        <div>
+            <span>Name: </span>
+            <strong x-text="name"></strong>
+        </div>
+        <div>
+            <span>Name (by getName): </span>
+            <strong x-text="getName"></strong>
+        </div>
+        <div>
+            <span>Name (by $component): </span>
+            <strong x-text="$component('first').name"></strong>
+        </div>
+        <div>
+            <span>Email: </span>
+            <strong x-text="email"></strong>
+        </div>
+        <div>
+            <input type="text" x-model="name">
+        </div>
+        <div>
+            <label>
+                <input type="checkbox" x-model="state"> State
+            </label>
+        </div>
+        <div>
+            <span>State: </span>
+            <strong x-text="state"></strong>
+        </div>
+        <p x-uninit="$console.log('State was changed to false')" x-if="state">State is true</p>
+        <p x-uninit="$console.log('State was changed to true')" x-if="!state">State is false</p>
+    </div>
+    <div x-data="{list: ['First', 'Second', 'Third', 'Last']}">
+        <h2>Array Loop</h2>
+        <div x-each="list">
+            <span>Index: </span><strong x-text="$each?.index"></strong> | 
+            <span>Value: </span><strong x-text="$each?.value"></strong> | 
+            <span>Count: </span><strong x-text="$each?.count"></strong>
+        </div>
+    </div>
+    <div x-data="{list: {name: 'Anon Legion', email: 'anon.legion@crypt.co', age: 27, sex: 'MALE'}}">
+        <h2>Map Loop</h2>
+        <div x-each="list">
+            <span>Index: </span><strong x-text="$each?.index"></strong> | 
+            <span>Value: </span><strong x-text="$each?.value"></strong> | 
+            <span>Count: </span><strong x-text="$each?.count"></strong>
+        </div>
+    </div>
+    <div x-data>
+        <h2>State</h2>
+        <input type="email" x-state="{lazy: true}" x-bind="function(){isTyping = $state.isTyping;isDirty = $state.isDirty;isValid = $state.isValid;}">
+        <div>
+            <span>Typing: </span><strong x-text="isTyping"></strong>
+        </div>
+        <div>
+            <span>Dirty: </span><strong x-text="isDirty"></strong>
+        </div>
+        <div>
+            <span>Valid: </span><strong x-text="isValid"></strong>
+        </div>
+    </div>
+    <div data-id="state" x-data>
+        <h2>Group State</h2>
+        <form x-ref="form" x-state x-bind="function(){isTyping = $state.isTyping;gIsTyping = $gstate.isTyping(this.$self);isDirty = $state.isDirty;isValid = $state.isValid;}">
+            <div>
+                Name: <input type="text" value="Anon User" required>
+            </div>
+            <div>
+                Email: <input type="email" value="anon.user@teep.com" required>
+            </div>
+        </form>
+        <div>
+            <span>Typing: </span><strong x-text="isTyping"></strong>
+        </div>
+        <div>
+            <span>Global Typing: </span><strong x-text="gIsTyping"></strong>
+        </div>
+        <div>
+            <span>Dirty: </span><strong x-text="isDirty"></strong>
+        </div>
+        <div>
+            <span>Valid: </span><strong x-text="isValid"></strong>
+        </div>
+    </div>
+    <div x-data>
+        <h2>Borrowed Component</h2>
+        <div>
+            <span>Name (from 'first' component): </span>
+            <strong x-text="$component('first').name"></strong>
+        </div>
+        <div>
+            <span>Name (from 'first' component by getName): </span>
+            <strong x-text="$component('first').getName()"></strong>
+        </div>
+        <div>
+            <span>Global Typing (borrowed): </span>
+            <strong x-text="$gstate.isTyping($component('state').form)"></strong>
+        </div>
+    </div>
+    <script src="/dist/inlinejs.js"></script>
+    <script src="/dist/inlinejs-extended.js"></script>
+    <script>
+        InlineJS.Bootstrap.Attach();
+    </script>
+</body>
+</html>
