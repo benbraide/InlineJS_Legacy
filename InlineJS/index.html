@@ -7,7 +7,7 @@
 </head>
 <body>
     <h1>InlineJS</h1>
-    <div data-id="first" x-data="{email: 'user.yahoo@yahoo.com', name: 'John Doe', state: true, getName(){ return this.name }}">
+    <div x-component="first" x-data="{email: 'user.yahoo@yahoo.com', name: 'John Doe', state: true, getName(){ return this.name }}">
         <h2>First Component</h2>
         <div>
             <span>Name: </span>
@@ -69,7 +69,7 @@
             <span>Valid: </span><strong x-text="isValid"></strong>
         </div>
     </div>
-    <div data-id="state" x-data>
+    <div x-component="state" x-data>
         <h2>Group State</h2>
         <form x-ref="form" x-state x-bind="function(){isTyping = $state.isTyping;gIsTyping = $$state.isTyping(this.$self);isDirty = $state.isDirty;isValid = $state.isValid;}">
             <div>
@@ -92,7 +92,7 @@
             <span>Valid: </span><strong x-text="isValid"></strong>
         </div>
     </div>
-    <div data-id="attr" x-data x-ref="root" x-attr-change="name">
+    <div x-component="attr" x-data x-ref="root" x-attr-change="name">
         <h2>Attribute Change</h2>
         <input type="text" placeholder="Attribute Name" x-input="uname">
         <input type="text" placeholder="Attribute Value" x-input="uvalue">

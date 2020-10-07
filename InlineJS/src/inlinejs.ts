@@ -63,11 +63,13 @@ namespace InlineJS{
     export class RootElement{};
     
     export class Region{
+        private static components_ = new Map<string, string>();
         private static globals_ = new Map<string, GlobalCallbackType>();
 
         public static externalCallbacks: ExternalCallbacks;
         public static directiveRegex = /^(data-)?x-(.+)$/;
         
+        private componentKey_ = '';
         private doneInit_ = false;
         private elementScopes_ = new Map<string, ElementScope>();
         private lastElementId_: number = null;
@@ -240,6 +242,10 @@ namespace InlineJS{
             }
             
             if (element === this.rootElement_){//Remove from map
+                if (this.componentKey_ in Region.components_){
+                    delete Region.components_[this.componentKey_];
+                }
+
                 delete RegionMap.entries[this.id_];
             }
         }
@@ -248,6 +254,10 @@ namespace InlineJS{
             let scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
             if (!scope){
                 return;
+            }
+
+            if (!(event in scope.outsideEventCallbacks)){
+                scope.outsideEventCallbacks[event] = new Array<(event: Event) => void>();
             }
 
             (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).push(callback);
@@ -263,6 +273,21 @@ namespace InlineJS{
                         });
                     }
                 }, true);
+            }
+        }
+
+        public RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void){
+            let scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
+            if (!scope || !(event in scope.outsideEventCallbacks)){
+                return;
+            }
+
+            let list = (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>);
+            for (let i = 0; i < list.length; ++i){
+                if (list[i] === callback){
+                    list.splice(i, 1);
+                    break;
+                }
             }
         }
 
@@ -354,17 +379,25 @@ namespace InlineJS{
             return Region.Get(key.split('.')[0]);
         }
 
-        public static Find(elementId: string, getNativeProxy: false): Region;
-        public static Find(elementId: string, getNativeProxy: true): any;
-        public static Find(elementId: string, getNativeProxy: boolean): any{
-            let element = (document.getElementById(elementId) || document.querySelector(`[data-id="${elementId}"]`));
-            if (!element){
-                return null;//Target element not found
+        public static AddComponent(region: Region, element: HTMLElement, key: string){
+            if (!key || region.rootElement_ !== element || region.componentKey_ || key in  Region.components_){
+                return false;
             }
 
-            let key = element.getAttribute(Region.GetElementKeyName());
-            let region = (key ? Region.Get(key.split('.')[0]) : null);
+            region.componentKey_ = key;
+            Region.components_[key] = region.GetId();
+            
+            return true;
+        }
 
+        public static Find(key: string, getNativeProxy: false): Region;
+        public static Find(key: string, getNativeProxy: true): any;
+        public static Find(key: string, getNativeProxy: boolean): any{
+            if (!(key in Region.components_)){
+                return null;
+            }
+            
+            let region = Region.Get(Region.components_[key]);
             return (region ? (getNativeProxy ? region.rootProxy_.GetNativeProxy() : region) : null);
         }
 
@@ -1230,6 +1263,10 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Component(region: Region, element: HTMLElement, directive: Directive){
+            return (Region.AddComponent(region, element, directive.value) ? DirectiveHandlerReturn.Handled : DirectiveHandlerReturn.Nil);
+        }
+
         public static Init(region: Region, element: HTMLElement, directive: Directive){
             CoreDirectiveHandlers.Evaluate(region, element, directive.value);
             return DirectiveHandlerReturn.Handled;
@@ -1689,6 +1726,7 @@ namespace InlineJS{
         public static AddAll(){
             DirectiveHandlerManager.AddHandler('cloak', CoreDirectiveHandlers.Noop);
             DirectiveHandlerManager.AddHandler('data', CoreDirectiveHandlers.Data);
+            DirectiveHandlerManager.AddHandler('component', CoreDirectiveHandlers.Component);
 
             DirectiveHandlerManager.AddHandler('init', CoreDirectiveHandlers.Init);
             DirectiveHandlerManager.AddHandler('bind', CoreDirectiveHandlers.Bind);
@@ -1786,10 +1824,12 @@ namespace InlineJS{
             );
 
             let options = {
-                'on': false,
-                'outside': false,
-                'prevented': false,
-                'stopped': false
+                on: false,
+                outside: false,
+                prevented: false,
+                stopped: false,
+                once: false,
+                window: false,
             };
 
             let index = 0, length = directive.parts.length;
@@ -1815,8 +1855,16 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let regionId = region.GetId();
-            let onEvent = (e: Event, stoppable: boolean) => {
+            let regionId = region.GetId(), stoppable: boolean;
+            let onEvent = (e: Event) => {
+                let myRegion = Region.Get(regionId);
+                if (options.once && options.outside){
+                    myRegion.AddOutsideEventCallback(element, event, onEvent);
+                }
+                else if (options.once){
+                    (options.window ? window : element).removeEventListener(event, onEvent);
+                }
+                
                 if (options.prevented){
                     e.preventDefault();
                 }
@@ -1825,7 +1873,6 @@ namespace InlineJS{
                     e.stopPropagation();
                 }
                 
-                let myRegion = Region.Get(regionId);
                 if (myRegion){
                     myRegion.GetState().PushEventContext(e);
                 }
@@ -1842,10 +1889,12 @@ namespace InlineJS{
             
             let event = region.ExpandEvent(directive.raw, element);
             if (options.outside){
-                region.AddOutsideEventCallback(element, event, e => onEvent(e, false));
+                stoppable = false;
+                region.AddOutsideEventCallback(element, event, onEvent);
             }
             else{
-                element.addEventListener(event, e => onEvent(e, true));
+                stoppable = true;
+                (options.window ? window : element).addEventListener(event, onEvent);
             }
             
             return DirectiveHandlerReturn.Handled;

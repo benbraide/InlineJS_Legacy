@@ -46,9 +46,11 @@ declare namespace InlineJS {
         private id_;
         private rootElement_;
         private rootProxy_;
+        private static components_;
         private static globals_;
         static externalCallbacks: ExternalCallbacks;
         static directiveRegex: RegExp;
+        private componentKey_;
         private doneInit_;
         private elementScopes_;
         private lastElementId_;
@@ -75,6 +77,7 @@ declare namespace InlineJS {
         AddElement(element: HTMLElement, check?: boolean): ElementScope;
         RemoveElement(element: HTMLElement | string): void;
         AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
+        RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         AddNextTickCallback(callback: () => void): void;
         ExecuteNextTick(): void;
         AddLocal(element: HTMLElement | string, key: string, value: any): void;
@@ -84,8 +87,9 @@ declare namespace InlineJS {
         ExpandEvent(event: string, element: HTMLElement | string | true): string;
         static Get(id: string): Region;
         static Infer(element: HTMLElement | string): Region;
-        static Find(elementId: string, getNativeProxy: false): Region;
-        static Find(elementId: string, getNativeProxy: true): any;
+        static AddComponent(region: Region, element: HTMLElement, key: string): boolean;
+        static Find(key: string, getNativeProxy: false): Region;
+        static Find(key: string, getNativeProxy: true): any;
         static AddGlobal(key: string, callback: GlobalCallbackType): void;
         static GetGlobal(key: string): GlobalCallbackType;
         static SetDirectivePrefix(value: string): void;
@@ -244,6 +248,7 @@ declare namespace InlineJS {
     class CoreDirectiveHandlers {
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Component(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Init(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Bind(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Uninit(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
