@@ -1,25 +1,4 @@
 namespace InlineJS{
-    const InputDirtyEvent = 'inlinejs.input.dirty';
-    const InputCleanEvent = 'inlinejs.input.clean';
-
-    const InputResetDirtyEvent = 'inlinejs.input.reset.dirty';
-    const InputResetInvalidEvent = 'inlinejs.input.reset.invalid';
-
-    const InputTypingEvent = 'inlinejs.input.typing';
-    const InputStoppedTypingEvent = 'inlinejs.input.stopped.typing';
-    
-    const InputValidEvent = 'inlinejs.input.valid';
-    const InputInvalidEvent = 'inlinejs.input.invalid';
-    
-    const ObservedIncrementEvent = 'inlinejs.observed.increment';
-    const ObservedDecrementEvent = 'inlinejs.observed.decrement';
-    
-    const ObservedVisibleEvent = 'inlinejs.observed.visible';
-    const ObservedHiddenEvent = 'inlinejs.observed.hidden';
-
-    const ObservedUnsupportedEvent = 'inlinejs.observed.unsupported';
-    const LazyLoadedEvent = 'inlinejs.lazy.loaded';
-
     export interface StateDirectiveInfo{
         isDirty: boolean;
         isTyping: boolean;
@@ -34,6 +13,10 @@ namespace InlineJS{
     
     export class ExtendedDirectiveHandlers{
         private static stateId_ = 0;
+        private static attrChangeId_ = 0;
+        private static xhrId_ = 0;
+        private static intObserverId_ = 0;
+        private static intersectionId_ = 0;
         
         public static State(region: Region, element: HTMLElement, directive: Directive){
             let isText: boolean = false, isUnknown: boolean = false, regionId = region.GetId();
@@ -65,18 +48,18 @@ namespace InlineJS{
 
             let addLocalKey = (map: Map<string, Value>, key: string) => {
                 map[key] = new Value(() => {
-                    region.GetChanges().AddGetAccess(`${path}.${key}`);
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.${key}`);
                     return info[key];
                 });
             };
 
+            let parentState = region.GetLocal(region.GetElementAncestor(element, 0), '$state', false);
+            let hasParentState = (parentState && !(parentState instanceof NoResult));
+            
             let setLocalValue = (key: string, value: boolean, initial: boolean) => {
-                let myRegion = Region.Get(regionId);
-                let parentState = myRegion.GetLocal(myRegion.GetElementAncestor(element, 0), '$state', false);
-                
                 info[key] = value;
-                if (!parentState || !('parent' in parentState)){
-                    myRegion.GetChanges().Add({
+                if (!hasParentState || !('parent' in parentState)){
+                    Region.Get(regionId).GetChanges().Add({
                         type: 'set',
                         path: `${path}.${key}`,
                         prop: key
@@ -88,17 +71,9 @@ namespace InlineJS{
             };
 
             let locals = new Map<string, Value>();
-            Object.keys(info).forEach(key => addLocalKey(locals, key));
-
-            locals['reset'] = () => {
-                if (info.isDirty){
-                    setLocalValue('isDirty', false, false);
-                }
-
-                if ((element as HTMLInputElement).checkValidity() != info.isValid){
-                    setLocalValue('isValid', !info.isValid, false);
-                }
-            };
+            if (!hasParentState || !('parent' in parentState)){
+                Object.keys(info).forEach(key => addLocalKey(locals, key));
+            }
 
             let getDirective = (): Directive => {
                 return {
@@ -110,6 +85,7 @@ namespace InlineJS{
                 };
             };
             
+            elementScope.locals['$state'] = locals;
             if (isUnknown){
                 let childCount = element.children.length;
                 if (childCount == 0){
@@ -161,6 +137,16 @@ namespace InlineJS{
                     ExtendedDirectiveHandlers.State(region, (child as HTMLElement), getDirective());
                     Processor.Post(region, (child as HTMLElement));
                 }), 0);
+
+                locals['reset'] = () => {
+                    [...element.children].forEach((child) => {
+                        let myRegion = Region.Get(regionId);
+                        let childState = myRegion.GetLocal(myRegion.GetElementAncestor((child as HTMLElement), 0), '$state', false);
+                        if (childState && !(childState instanceof NoResult) && 'reset' in childState){
+                            childState.reset();
+                        }
+                    });
+                };
             }
             else{//Input element
                 let counter = 0;
@@ -212,35 +198,327 @@ namespace InlineJS{
                     setLocalValue('isTyping', false, true);
                     setLocalValue('isDirty', false, true);
                 });
+
+                locals['reset'] = () => {
+                    if (info.isDirty){
+                        setLocalValue('isDirty', false, false);
+                    }
+    
+                    if ((element as HTMLInputElement).checkValidity() != info.isValid){
+                        setLocalValue('isValid', !info.isValid, false);
+                    }
+                };
             }
             
-            region.AddLocal(element, '$state', locals);
             return DirectiveHandlerReturn.Handled;
+        }
+
+        public static AttrChange(region: Region, element: HTMLElement, directive: Directive){
+            let elementScope = region.AddElement(element, true);
+            let path = `${elementScope.key}.$attrChange<${++ExtendedDirectiveHandlers.attrChangeId_}>`;
+            
+            let regionId = region.GetId(), info = {
+                name: 'N/A',
+                value: 'N/A'
+            };
+
+            elementScope.attributeChangeCallbacks.push((name) => {
+                let myRegion = Region.Get(regionId), value = element.getAttribute(name);
+                info = {
+                    name: name,
+                    value: value
+                };
+                
+                CoreDirectiveHandlers.Assign(myRegion, element, directive.value, `'${name}'`, () => name);
+                myRegion.GetChanges().Add({
+                    type: 'set',
+                    path: path,
+                    prop: ''
+                });
+            });
+
+            elementScope.locals['$attr'] = new Value(() => {
+                region.GetChanges().AddGetAccess(path);
+                return info;
+            });
+
+            CoreDirectiveHandlers.Assign(region, element, directive.value, `'N/A'`, () => info);
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static XHRLoad(region: Region, element: HTMLElement, directive: Directive){
+            let regionId = region.GetId(), previousUrl = '', append = false, once = false, loaded = false;
+            let load = (url: string) => {
+                ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? previousUrl : url), append, () => {
+                    loaded = true;
+                    Region.Get(regionId).GetChanges().Add({
+                        type: 'set',
+                        path: `${path}.loaded`,
+                        prop: 'loaded'
+                    });
+                    
+                    if (once){
+                        append = !append;
+                        once = false;
+                    }
+                });
+            };
+            
+            region.GetState().TrapGetAccess(() => {
+                let url = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+                if (url !== previousUrl && typeof url === 'string'){
+                    previousUrl = url;
+                    load(url);
+                }
+            }, true);
+
+            let elementScope = region.AddElement(element, true);
+            let path = `${elementScope.key}.$xhr<${++ExtendedDirectiveHandlers.xhrId_}>`;
+            
+            elementScope.locals['$xhr'] = {
+                loaded: new Value(() => {
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.loaded`);
+                    return loaded;
+                }),
+                url: new Value(() => {
+                    return previousUrl;
+                }),
+                isAppend: new Value(() => {
+                    return append;
+                }),
+                isOnce: new Value(() => {
+                    return once;
+                }),
+                append: (state: boolean, isOnce = false) => {
+                    append = state;
+                    once = isOnce;
+                },
+                reload: () => load('::reload::'),
+                unload: () => load('::unload::')
+            };
+
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Intersection(region: Region, element: HTMLElement, directive: Directive){
+            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (Region.IsObject(options)){
+                if ('root' in options && typeof options['root'] === 'string'){
+                    options['root'] = document.querySelector(options['root']);
+                }
+                
+                if (!('rootMargin' in options)){
+                    options['rootMargin'] = '0px';
+                }
+
+                if (!('threshold' in options)){
+                    options['rootMargin'] = 0;
+                }
+            }
+            else{//Use defaults
+                options = {
+                    root: null,
+                    rootMargin: '0px',
+                    threshold: 0
+                };
+            }
+
+            let regionId = region.GetId(), previousRatio = 0, visible = false, supported = true, stopped = false;
+            ExtendedDirectiveHandlers.ObserveIntersection(region, element, options, (entry) => {
+                if (stopped){
+                    return false;
+                }
+                
+                if (entry instanceof IntersectionObserverEntry){
+                    if (entry.isIntersecting != visible){//Visibility changed
+                        visible = entry.isIntersecting;
+                        Region.Get(regionId).GetChanges().Add({
+                            type: 'set',
+                            path: `${path}.visible`,
+                            prop: 'visible'
+                        });
+                    }
+                    
+                    if (entry.intersectionRatio != previousRatio){
+                        previousRatio = entry.intersectionRatio;
+                        Region.Get(regionId).GetChanges().Add({
+                            type: 'set',
+                            path: `${path}.ratio`,
+                            prop: 'ratio'
+                        });
+                    }
+                }
+                else{//Not supported
+                    supported = false;
+                }
+                
+                return true;
+            });
+
+            let elementScope = region.AddElement(element, true);
+            let path = `${elementScope.key}.$intersection<${++ExtendedDirectiveHandlers.intersectionId_}>`;
+            
+            elementScope.locals['$intersection'] = {
+                ratio: new Value(() => {
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.ratio`);
+                    return previousRatio;
+                }),
+                visible: new Value(() => {
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.visible`);
+                    return visible;
+                }),
+                supported: new Value(() => {
+                    return supported;
+                }),
+                stop: () => {
+                    stopped = true;
+                }
+            };
+
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean){
+            if (!('IntersectionObserver' in window)){
+                return callback(false);
+            }
+
+            let regionId = region.GetId(), elementScope = region.AddElement(element, true);
+            let path = `${elementScope.key}.$intObserver<${++ExtendedDirectiveHandlers.intObserverId_}>`;
+            
+            let observer = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
+                entries.forEach((entry: IntersectionObserverEntry) => {
+                    if (callback(entry)){
+                        return;
+                    }
+
+                    let scope = Region.Get(regionId).GetElementScope(element);
+                    if (scope && path in scope.intersectionObservers){
+                        (scope.intersectionObservers[path] as IntersectionObserver).unobserve(element);
+                        delete scope.intersectionObservers[path];
+                    }
+                });
+            }, options);
+
+            elementScope.intersectionObservers[path] = observer;
+            observer.observe(element);
+        }
+
+        public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void){
+            if (!(url = url.trim())){
+                return;
+            }
+
+            let removeAll = (force: boolean = false) => {
+                if (force || !append){
+                    [...element.children].forEach(child => element.removeChild(child));
+                }
+            };
+
+            let fetch = (url: string, callback: (response: any) => void) => {
+                window.fetch(url).then((response) => {
+                    try{
+                        return response.json();
+                    }
+                    catch (err){}
+
+                    return response.text();
+                }).then((data) => {
+                    callback(data);
+                    if (onLoad){
+                        onLoad();
+                    }
+                });
+            };
+
+            let fetchList = (url: string, callback: (item: object) => void) => {
+                fetch(url, (data) => {
+                    removeAll();
+                    if (Array.isArray(data)){
+                        (data as Array<object>).forEach(callback);
+                    }
+                    else if (typeof data === 'string'){
+                        element.innerHTML = data;
+                    }
+                });
+            };
+
+            let onEvent = () => {
+                element.removeEventListener('load', onEvent);
+                onLoad();
+            };
+
+            if (url === '::unload::'){
+                if (element.tagName === 'IMG' || element.tagName === 'IFRAME'){
+                    (element as HTMLImageElement).src = '';
+                }
+                else{
+                    removeAll(true);
+                }
+            }
+            else if (element.tagName === 'SELECT'){
+                fetchList(url, (item) => {
+                    if (item && typeof item === 'object' && 'value' in item && 'text' in item){
+                        let option = document.createElement('option');
+
+                        option.value = item['value'];
+                        option.textContent = item['text'];
+
+                        element.appendChild(option);
+                    }
+                });
+            }
+            else if (element.tagName === 'UL' || element.tagName === 'OL'){
+                fetchList(url, (item) => {
+                    if (item && typeof item === 'object' && 'value' in item && 'text' in item){
+                        let li = document.createElement('li');
+                        li.innerHTML = ((typeof item === 'string') ? item : item.toString());
+                        element.appendChild(li);
+                    }
+                });
+            }
+            else if (element.tagName === 'IMG' || element.tagName === 'IFRAME'){
+                element.addEventListener('load', onEvent);
+                (element as HTMLImageElement).src = url;
+            }
+            else{//Generic
+                fetch(url, (data) => {
+                    removeAll();
+                    element.innerHTML = ((typeof data === 'string') ? data : (data as object).toString());
+                });
+            }
         }
 
         public static AddAll(){
             DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
+            DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
+            DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
+            DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
 
-            Region.AddGlobal('$gstate', (regionId: string) => {
-                let getValue = (target: HTMLElement, key: string) => {
-                    let region = (Region.Infer(target) || Region.Get(regionId));
-                    let state = region.GetLocal(target, '$state', false);
-                    return ((state && key in state) ? state[key] : null);
-                };
-                
-                return {
-                    isDirty: (target: HTMLElement) => getValue(target, 'isDirty'),
-                    isTyping: (target: HTMLElement) => getValue(target, 'isTyping'),
-                    isValid: (target: HTMLElement) => getValue(target, 'isValid'),
-                    reset: (target: HTMLElement) => {
-                        let region = (Region.Infer(target) || Region.Get(regionId));
-                        let state = region.GetLocal(target, '$state', false);
-                        if (state){
-                            state.reset();
-                        }
-                    }
-                };
-            });
+            let getEntry = (regionId: string, target: HTMLElement, name: string, key: string) => {
+                let map = (Region.Infer(target) || Region.Get(regionId)).GetLocal(target, name, false);
+                if (!key){
+                    return ((map instanceof Value) ? map.Get() : map);
+                }
+
+                if (map && key in map){
+                    let entry = map[key];
+                    return ((typeof entry === 'function') ? (entry as () => void).bind(map) : ((entry instanceof Value) ? entry.Get() : entry));
+                }
+
+                return null;
+            };
+
+            let buildGlobals = (regionId: string, name: string, keys: Array<string>) => {
+                let map = {};
+                keys.forEach(key => map[key] = (target: HTMLElement) => getEntry(regionId, target, name, key));
+                return map;
+            };
+            
+            Region.AddGlobal('$$state', (regionId: string) => buildGlobals(regionId, '$state', ['isDirty', 'isTyping', 'isValid', 'reset']));
+            Region.AddGlobal('$$attr', (regionId: string) => (target: HTMLElement) => getEntry(regionId, target, '$attr', null));
+            Region.AddGlobal('$$xhr', (regionId: string) => buildGlobals(regionId, '$xhr', ['loaded', 'url', 'isAppend', 'isOnce', 'append', 'reload', 'unload']));
+            Region.AddGlobal('$$intersection', (regionId: string) => buildGlobals(regionId, '$intersection', ['ratio', 'visible', 'supported', 'stop']));
         }
     }
 

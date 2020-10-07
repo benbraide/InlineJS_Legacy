@@ -44,6 +44,8 @@ namespace InlineJS{
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
         outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
+        attributeChangeCallbacks: Array<(name: string) => void>;
+        intersectionObservers: Map<string, IntersectionObserver>;
         preserve: boolean;
     }
 
@@ -108,7 +110,7 @@ namespace InlineJS{
                 ancestor = ancestor.parentElement;
             }
 
-            return ((0 < index) ? null : ancestor);
+            return ((0 <= index) ? null : ancestor);
         }
 
         public GetElementScope(element: HTMLElement | string | true | RootElement): ElementScope{
@@ -197,6 +199,8 @@ namespace InlineJS{
                 postProcessCallbacks: new Array<() => void>(),
                 eventExpansionCallbacks: new Array<(event: string) => string | null>(),
                 outsideEventCallbacks: new Map<string, Array<(event: Event) => void>>(),
+                attributeChangeCallbacks: new Array<(name: string) => void>(),
+                intersectionObservers: new Map<string, IntersectionObserver>(),
                 preserve: false
             };
 
@@ -229,6 +233,7 @@ namespace InlineJS{
                 });
 
                 scope.element.removeAttribute(Region.GetElementKeyName());
+                scope.intersectionObservers.forEach(observer => observer.unobserve(scope.element));
                 [...scope.element.children].forEach(child => this.RemoveElement(child as HTMLElement));
                 
                 delete this.elementScopes_[scope.key];
@@ -1635,8 +1640,9 @@ namespace InlineJS{
             }
             
             RegionMap.scopeRegionIds.Push(region.GetId());
-            let result: any;
+            region.GetState().PushElementContext(element);
 
+            let result: any;
             try{
                 result = Evaluator.Evaluate(region.GetId(), element, expression);
                 if (typeof result === 'function'){
@@ -1646,6 +1652,7 @@ namespace InlineJS{
                 result = ((result instanceof Value) ? result.Get() : result);
             }
             finally{
+                region.GetState().PopElementContext();
                 RegionMap.scopeRegionIds.Pop();
             }
             
@@ -1653,8 +1660,13 @@ namespace InlineJS{
         }
 
         public static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any){
+            if (!(target = target.trim())){
+                return;
+            }
+
             try{
                 RegionMap.scopeRegionIds.Push(region.GetId());
+                region.GetState().PushElementContext(element);
                 Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
             }
             catch (err){
@@ -1669,6 +1681,7 @@ namespace InlineJS{
                 }
             }
             finally{
+                region.GetState().PopElementContext();
                 RegionMap.scopeRegionIds.Pop();
             }
         }
@@ -1791,6 +1804,9 @@ namespace InlineJS{
                 else if (0 < index){//Start of event
                     directive.parts.splice(0, index);
                     directive.raw = directive.parts.join('-');
+                    break;
+                }
+                else{//No modifiers
                     break;
                 }
             }
@@ -2015,7 +2031,10 @@ namespace InlineJS{
                                 });
                             }
                             else if (mutation.type === 'attributes'){
-                                
+                                let scope = region.GetElementScope(mutation.target as HTMLElement);
+                                if (scope){
+                                    scope.attributeChangeCallbacks.forEach(callback => callback(mutation.attributeName));
+                                }
                             }
                         });
                     });

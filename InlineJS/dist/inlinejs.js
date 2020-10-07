@@ -76,7 +76,7 @@ var InlineJS;
             for (; 0 <= index && ancestor && ancestor !== this.rootElement_; --index) {
                 ancestor = ancestor.parentElement;
             }
-            return ((0 < index) ? null : ancestor);
+            return ((0 <= index) ? null : ancestor);
         }
         GetElementScope(element) {
             let key;
@@ -150,6 +150,8 @@ var InlineJS;
                 postProcessCallbacks: new Array(),
                 eventExpansionCallbacks: new Array(),
                 outsideEventCallbacks: new Map(),
+                attributeChangeCallbacks: new Array(),
+                intersectionObservers: new Map(),
                 preserve: false
             };
             element.setAttribute(Region.GetElementKeyName(), key);
@@ -177,6 +179,7 @@ var InlineJS;
                     }
                 });
                 scope.element.removeAttribute(Region.GetElementKeyName());
+                scope.intersectionObservers.forEach(observer => observer.unobserve(scope.element));
                 [...scope.element.children].forEach(child => this.RemoveElement(child));
                 delete this.elementScopes_[scope.key];
             }
@@ -1291,6 +1294,7 @@ var InlineJS;
                 return null;
             }
             RegionMap.scopeRegionIds.Push(region.GetId());
+            region.GetState().PushElementContext(element);
             let result;
             try {
                 result = Evaluator.Evaluate(region.GetId(), element, expression);
@@ -1300,13 +1304,18 @@ var InlineJS;
                 result = ((result instanceof Value) ? result.Get() : result);
             }
             finally {
+                region.GetState().PopElementContext();
                 RegionMap.scopeRegionIds.Pop();
             }
             return result;
         }
         static Assign(region, element, target, value, callback) {
+            if (!(target = target.trim())) {
+                return;
+            }
             try {
                 RegionMap.scopeRegionIds.Push(region.GetId());
+                region.GetState().PushElementContext(element);
                 Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
             }
             catch (err) {
@@ -1321,6 +1330,7 @@ var InlineJS;
                 }
             }
             finally {
+                region.GetState().PopElementContext();
                 RegionMap.scopeRegionIds.Pop();
             }
         }
@@ -1414,6 +1424,9 @@ var InlineJS;
                 else if (0 < index) { //Start of event
                     directive.parts.splice(0, index);
                     directive.raw = directive.parts.join('-');
+                    break;
+                }
+                else { //No modifiers
                     break;
                 }
             }
@@ -1598,6 +1611,10 @@ var InlineJS;
                                 });
                             }
                             else if (mutation.type === 'attributes') {
+                                let scope = region.GetElementScope(mutation.target);
+                                if (scope) {
+                                    scope.attributeChangeCallbacks.forEach(callback => callback(mutation.attributeName));
+                                }
                             }
                         });
                     });

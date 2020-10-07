@@ -71,7 +71,7 @@
     </div>
     <div data-id="state" x-data>
         <h2>Group State</h2>
-        <form x-ref="form" x-state x-bind="function(){isTyping = $state.isTyping;gIsTyping = $gstate.isTyping(this.$self);isDirty = $state.isDirty;isValid = $state.isValid;}">
+        <form x-ref="form" x-state x-bind="function(){isTyping = $state.isTyping;gIsTyping = $$state.isTyping(this.$self);isDirty = $state.isDirty;isValid = $state.isValid;}">
             <div>
                 Name: <input type="text" value="Anon User" required>
             </div>
@@ -92,6 +92,24 @@
             <span>Valid: </span><strong x-text="isValid"></strong>
         </div>
     </div>
+    <div data-id="attr" x-data x-ref="root" x-attr-change="name">
+        <h2>Attribute Change</h2>
+        <input type="text" placeholder="Attribute Name" x-input="uname">
+        <input type="text" placeholder="Attribute Value" x-input="uvalue">
+        <button x-click="$parent.setAttribute(uname, uvalue)">Update</button>
+        <div>
+            <span>Name: </span><strong x-text="name"></strong>
+        </div>
+        <div>
+            <span>Value: </span><strong x-text="root.getAttribute(name) || 'N/A'"></strong>
+        </div>
+        <div>
+            <span>Name (from '$attr'): </span><strong x-text="$attr.name"></strong>
+        </div>
+        <div>
+            <span>Value (from '$attr'): </span><strong x-text="$attr.value"></strong>
+        </div>
+    </div>
     <div x-data>
         <h2>Borrowed Component</h2>
         <div>
@@ -104,7 +122,13 @@
         </div>
         <div>
             <span>Global Typing (borrowed): </span>
-            <strong x-text="$gstate.isTyping($component('state').form)"></strong>
+            <strong x-text="$$state.isTyping($component('state').form)"></strong>
+        </div>
+        <div>
+            <span>Global Attr Name (borrowed): </span><strong x-text="$$attr($component('attr').root).name"></strong>
+        </div>
+        <div>
+            <span>Global Attr Value (borrowed'): </span><strong x-text="$$attr($component('attr').root).value"></strong>
         </div>
     </div>
     <script src="/dist/inlinejs.js"></script>

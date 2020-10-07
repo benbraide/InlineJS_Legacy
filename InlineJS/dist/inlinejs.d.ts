@@ -27,6 +27,8 @@ declare namespace InlineJS {
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
         outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
+        attributeChangeCallbacks: Array<(name: string) => void>;
+        intersectionObservers: Map<string, IntersectionObserver>;
         preserve: boolean;
     }
     interface ExternalCallbacks {
