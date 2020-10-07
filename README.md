@@ -15,7 +15,7 @@ Similar to `Alpine.js` it works without creating shadow DOMs.
 ```js
 InlineJS.Bootstrap.Attach();
 ```
->`Attach` takes a array of attributes to attach to. Defaults to `['data-x-data', 'x-data']`
+>`Attach` takes an array of attributes to attach to. Defaults to `['data-x-data', 'x-data']`
 >**N/B** `$watch`, `$when`, and `$once` require `InlineJS.Region.externalCallbacks.isEqual` and `InlineJS.Region.externalCallbacks.deepCopy` to be initialized. Default behaviors are simple comparison and shallow copy. For example, you can initialize them with `undescore.js` utilities.
 
 ## Use
