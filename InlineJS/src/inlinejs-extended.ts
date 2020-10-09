@@ -19,13 +19,16 @@ namespace InlineJS{
         alert: (key: string) => void;
         resetCallbacks: Array<() => void>;
     }
+
+    export interface ExtendedDirectiveHandlerScope{
+        id: string;
+        path: string;
+        callbacks: Map<string, Array<(value?: any) => boolean>>;
+    }
     
     export class ExtendedDirectiveHandlers{
-        private static stateId_ = 0;
-        private static attrChangeId_ = 0;
-        private static xhrId_ = 0;
-        private static intObserverId_ = 0;
-        private static intersectionId_ = 0;
+        private static scopeId_ = 0;
+        private static scopes_ = new Map<string, ExtendedDirectiveHandlerScope>();
         
         public static State(region: Region, element: HTMLElement, directive: Directive){
             let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value), delay = 750, lazy = false;
@@ -51,15 +54,9 @@ namespace InlineJS{
             }
 
             let elementScope = region.AddElement(element, true);
-            let path = `${elementScope.key}.$state<${++ExtendedDirectiveHandlers.stateId_}>`;
+            let scope = ExtendedDirectiveHandlers.AddScope('state', elementScope, ['isDirty', 'isTyping', 'isValid']);
 
             let isRoot = false, forceSet = false;
-            let callbacks = {
-                isDirty: new Array<(state: boolean) => boolean>(),
-                isTyping: new Array<(state: boolean) => boolean>(),
-                isValid: new Array<(state: boolean) => boolean>()
-            };
-            
             if (!info){//Initialize info
                 isRoot = true;
                 info = {
@@ -78,7 +75,7 @@ namespace InlineJS{
                     alert: (key: string) => {
                         Region.Get(regionId).GetChanges().Add({
                             type: 'set',
-                            path: `${path}.${key}`,
+                            path: `${scope.path}.${key}`,
                             prop: key
                         });
                     },
@@ -87,7 +84,7 @@ namespace InlineJS{
 
                 elementScope.locals['$state'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                     if (prop in info.value){
-                        Region.Get(regionId).GetChanges().AddGetAccess(`${path}.${prop}`);
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                         return info.value[prop];
                     }
     
@@ -106,24 +103,24 @@ namespace InlineJS{
                     }
     
                     if (prop === 'onDirty'){
-                        return (callback: (state: boolean) => boolean) => callbacks.isDirty.push(callback);
+                        return (callback: (state: boolean) => boolean) => (scope.callbacks['isDirty'] as Array<(value?: any) => boolean>).push(callback);
                     }
     
                     if (prop === 'onTyping'){
-                        return (callback: (state: boolean) => boolean) => callbacks.isTyping.push(callback);
+                        return (callback: (state: boolean) => boolean) => (scope.callbacks['isTyping'] as Array<(value?: any) => boolean>).push(callback);
                     }
 
                     if (prop === 'onValid'){
-                        return (callback: (state: boolean) => boolean) => callbacks.isValid.push(callback);
+                        return (callback: (state: boolean) => boolean) => (scope.callbacks['isValid'] as Array<(value?: any) => boolean>).push(callback);
                     }
-                }, [...Object.keys(info.value), 'onDirty','onTyping','onValid']);
+                }, [...Object.keys(info.value), 'reset', 'onDirty','onTyping','onValid']);
             }
 
             let setValue = (key: string, value: boolean) => {
                 if (forceSet || value != info.value[key]){
                     info.value[key] = value;
                     info.alert(key);
-                    callbacks[key].forEach(callback => callback(value));
+                    (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(value));
                 }
             };
 
@@ -242,7 +239,7 @@ namespace InlineJS{
 
         public static AttrChange(region: Region, element: HTMLElement, directive: Directive){
             let elementScope = region.AddElement(element, true);
-            let path = `${elementScope.key}.$attrChange<${++ExtendedDirectiveHandlers.attrChangeId_}>`;
+            let scope = ExtendedDirectiveHandlers.AddScope('attrChange', elementScope, ['onChange']);
             
             let regionId = region.GetId(), info = {
                 name: 'N/A',
@@ -259,17 +256,27 @@ namespace InlineJS{
                 let key = myRegion.AddTemp(() => info);
                 CoreDirectiveHandlers.Assign(myRegion, element, directive.value, `$__InlineJS_CallTemp__('${key}')`, () => info);
                 
-                myRegion.GetChanges().Add({
-                    type: 'set',
-                    path: path,
-                    prop: ''
+                Object.keys(info).forEach((key) => {
+                    myRegion.GetChanges().Add({
+                        type: 'set',
+                        path: `${scope.path}.${key}`,
+                        prop: key
+                    });
                 });
+
+                Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(value)));
             });
 
-            elementScope.locals['$attr'] = new Value(() => {
-                region.GetChanges().AddGetAccess(path);
-                return info;
-            });
+            elementScope.locals['$attr'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop in info){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return info[prop];
+                }
+
+                if (prop in scope.callbacks){
+                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                }
+            }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
 
             let key = region.AddTemp(() => info);
             CoreDirectiveHandlers.Assign(region, element, directive.value, `$__InlineJS_CallTemp__('${key}')`, () => info);
@@ -278,76 +285,62 @@ namespace InlineJS{
         }
 
         public static XHRLoad(region: Region, element: HTMLElement, directive: Directive){
-            let regionId = region.GetId(), previousUrl = '', append = false, once = false, loaded = false;
+            let append = (state: boolean, isOnce = false) => {
+                info.isAppend = state;
+                info.isOnce = isOnce;
+            };
+            
+            let regionId = region.GetId(), info = {
+                url: '',
+                isAppend: false,
+                isOnce: false,
+                isLoaded: false,
+                append: append,
+                reload: () => load('::reload::'),
+                unload: () => load('::unload::')
+            };
+
             let load = (url: string) => {
-                ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? previousUrl : url), append, () => {
-                    loaded = true;
+                ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), info.isAppend, () => {
+                    info.isLoaded = true;
                     Region.Get(regionId).GetChanges().Add({
                         type: 'set',
-                        path: `${path}.loaded`,
-                        prop: 'loaded'
+                        path: `${scope.path}.isLoaded`,
+                        prop: 'isLoaded'
                     });
                     
-                    onLoadCallbacks.forEach(callback => callback());
-                    if (once){
-                        append = !append;
-                        once = false;
+                    Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(true)));
+                    if (info.isOnce){
+                        info.isAppend = !info.isAppend;
+                        info.isOnce = false;
                     }
                 });
             };
             
             region.GetState().TrapGetAccess(() => {
                 let url = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
-                if (url !== previousUrl && typeof url === 'string'){
-                    previousUrl = url;
+                if (url !== info.url && typeof url === 'string'){
                     load(url);
+                    info.url = url;
                 }
             }, true);
 
             let elementScope = region.AddElement(element, true);
-            let path = `${elementScope.key}.$xhr<${++ExtendedDirectiveHandlers.xhrId_}>`;
+            let scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
+
+            elementScope.locals['$xhr'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop in info){
+                    if (prop === 'isLoaded'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    }
+                    return info[prop];
+                }
+
+                if (prop in scope.callbacks){
+                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                }
+            }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
             
-            let onLoadCallbacks = new Array<() => boolean>();
-            elementScope.locals['$xhr'] = CoreDirectiveHandlers.CreateProxy((prop) => {
-                if (prop === 'loaded'){
-                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.loaded`);
-                    return loaded;
-                }
-
-                if (prop === 'url'){
-                    return previousUrl;
-                }
-
-                if (prop === 'isAppend'){
-                    return append;
-                }
-
-                if (prop === 'isOnce'){
-                    return once;
-                }
-
-                if (prop === 'append'){
-                    return (state: boolean, isOnce = false) => {
-                        append = state;
-                        once = isOnce;
-                    };
-                }
-
-                if (prop === 'reload'){
-                    return () => load('::reload::');
-                }
-
-                if (prop === 'unload'){
-                    return load('::unload::');
-                }
-
-                if (prop === 'onLoad'){
-                    return (callback: () => boolean) => onLoadCallbacks.push(callback);
-                }
-
-                return null;
-            }, ['loaded', 'index', 'value']);
-
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -360,112 +353,105 @@ namespace InlineJS{
             }
 
             let elementScope = region.AddElement(element, true);
-            let path = `${elementScope.key}.$xhr<${++ExtendedDirectiveHandlers.xhrId_}>`;
+            let scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
             
-            let regionId = region.GetId(), loaded = false;;
+            let regionId = region.GetId(), info = {
+                isLoaded: false
+            };
+
             ExtendedDirectiveHandlers.ObserveIntersection(region, element, options, (entry) => {
                 if ((!(entry instanceof IntersectionObserverEntry) || !entry.isIntersecting) && entry !== false){
                     return true;
                 }
 
                 ExtendedDirectiveHandlers.FetchLoad(element, url, false, () => {
-                    loaded = true;
+                    info.isLoaded = true;
                     Region.Get(regionId).GetChanges().Add({
                         type: 'set',
-                        path: `${path}.loaded`,
-                        prop: 'loaded'
+                        path: `${scope.path}.isLoaded`,
+                        prop: 'isLoaded'
                     });
 
-                    onLoadCallbacks.forEach(callback => callback());
+                    Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(true)));
                 });
                 
                 return false;
             });
 
-            let onLoadCallbacks = new Array<() => boolean>();
-            elementScope.locals['$lazyLoad'] = {
-                loaded: new Value(() => {
-                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.loaded`);
-                    return loaded;
-                }),
-                onLoad: (callback: () => boolean) => onLoadCallbacks.push(callback)
-            };
+            elementScope.locals['$lazyLoad'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop in info){
+                    if (prop === 'isLoaded'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    }
+                    return info[prop];
+                }
+
+                if (prop in scope.callbacks){
+                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                }
+            }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
 
             return DirectiveHandlerReturn.Handled;
         }
 
         public static Intersection(region: Region, element: HTMLElement, directive: Directive){
-            let regionId = region.GetId(), previousRatio = 0, visible = false, supported = true, stopped = false;
+            let regionId = region.GetId(), info = {
+                ratio: 0,
+                visible: false,
+                supported: true,
+                stopped: false
+            };
+
             ExtendedDirectiveHandlers.ObserveIntersection(region, element, ExtendedDirectiveHandlers.GetIntersectionOptions(region, element, directive.value), (entry) => {
-                if (stopped){
+                if (info.stopped){
                     return false;
                 }
                 
                 if (entry instanceof IntersectionObserverEntry){
-                    if (entry.isIntersecting != visible){//Visibility changed
-                        visible = entry.isIntersecting;
+                    if (entry.isIntersecting != info.visible){//Visibility changed
+                        info.visible = entry.isIntersecting;
                         Region.Get(regionId).GetChanges().Add({
                             type: 'set',
-                            path: `${path}.visible`,
+                            path: `${scope.path}.visible`,
                             prop: 'visible'
                         });
 
-                        onVisibleCallbacks.forEach(callback => callback(visible));
+                        (scope.callbacks['onVisible'] as Array<(value?: any) => boolean>).forEach(callback => callback(info.visible));
                     }
                     
-                    if (entry.intersectionRatio != previousRatio){
-                        previousRatio = entry.intersectionRatio;
+                    if (entry.intersectionRatio != info.ratio){
+                        info.ratio = entry.intersectionRatio;
                         Region.Get(regionId).GetChanges().Add({
                             type: 'set',
-                            path: `${path}.ratio`,
+                            path: `${scope.path}.ratio`,
                             prop: 'ratio'
                         });
 
-                        onRatioCallbacks.forEach(callback => callback(previousRatio));
+                        (scope.callbacks['onRatio'] as Array<(value?: any) => boolean>).forEach(callback => callback(info.ratio));
                     }
                 }
                 else{//Not supported
-                    supported = false;
+                    info.supported = false;
                 }
                 
                 return true;
             });
 
             let elementScope = region.AddElement(element, true);
-            let path = `${elementScope.key}.$intersection<${++ExtendedDirectiveHandlers.intersectionId_}>`;
+            let scope = ExtendedDirectiveHandlers.AddScope('intersection', elementScope, ['onVisible', 'onRatio']);
             
-            let onVisibleCallbacks = new Array<(state: boolean) => boolean>();
-            let onRatioCallbacks = new Array<(ratio: number) => boolean>();
-
             elementScope.locals['$intersection'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
-                if (prop === 'ratio'){
-                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.ratio`);
-                    return previousRatio;
+                if (prop in info){
+                    if (prop === 'ratio' || prop === 'visible'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    }
+                    return info[prop];
                 }
 
-                if (prop === 'visible'){
-                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.visible`);
-                    return visible;
+                if (prop in scope.callbacks){
+                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
-
-                if (prop === 'supported'){
-                    return supported;
-                }
-
-                if (prop === 'stop'){
-                    return () => {
-                        stopped = true;
-                    };
-                }
-
-                if (prop === 'onRatio'){
-                    return (callback: (ratio: number) => boolean) => onRatioCallbacks.push(callback);
-                }
-
-                if (prop === 'onVisible'){
-                    return (callback: (state: boolean) => boolean) => onVisibleCallbacks.push(callback);
-                }
-            }, ['ratio', 'visible', 'supported', 'stop','onRatio','onVisible']);
+            }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -503,9 +489,9 @@ namespace InlineJS{
             }
 
             let regionId = region.GetId(), elementScope = region.AddElement(element, true);
-            let path = `${elementScope.key}.$intObserver<${++ExtendedDirectiveHandlers.intObserverId_}>`;
+            let path = `${elementScope.key}.$intObserver<${++ExtendedDirectiveHandlers.scopeId_}>`;
             
-            let observer = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
+            let observer = new IntersectionObserver((entries: Array<IntersectionObserverEntry>) => {
                 entries.forEach((entry: IntersectionObserverEntry) => {
                     if (callback(entry)){
                         return;
@@ -612,6 +598,18 @@ namespace InlineJS{
                     }
                 });
             }
+        }
+
+        public static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>) : ExtendedDirectiveHandlerScope{
+            let id = `${prefix}<${++ExtendedDirectiveHandlers.scopeId_}>`;
+            ExtendedDirectiveHandlers.scopes_[id] = {
+                id: id,
+                path: `${elementScope.key}.$${id}`,
+                callbacks: new Map<string, Array<(value?: any) => boolean>>()
+            };
+
+            (callbacks || []).forEach(key => (ExtendedDirectiveHandlers.scopes_[id] as ExtendedDirectiveHandlerScope).callbacks[key] = new Array<(value?: any) => boolean>());
+            return ExtendedDirectiveHandlers.scopes_[id];
         }
 
         public static AddAll(){
