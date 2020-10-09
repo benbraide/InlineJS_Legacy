@@ -41,10 +41,12 @@ var InlineJS;
                     activeCount: 0,
                     doneInit: false,
                     alert: (key) => {
-                        InlineJS.Region.Get(regionId).GetChanges().Add({
+                        let myRegion = InlineJS.Region.Get(regionId);
+                        myRegion.GetChanges().Add({
                             type: 'set',
                             path: `${scope.path}.${key}`,
-                            prop: key
+                            prop: key,
+                            origin: myRegion.GetChanges().GetOrigin()
                         });
                     },
                     resetCallbacks: new Array()
@@ -196,7 +198,8 @@ var InlineJS;
                     myRegion.GetChanges().Add({
                         type: 'set',
                         path: `${scope.path}.${key}`,
-                        prop: key
+                        prop: key,
+                        origin: myRegion.GetChanges().GetOrigin()
                     });
                 });
                 Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => callback(value)));
@@ -231,10 +234,12 @@ var InlineJS;
             let load = (url) => {
                 ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), info.isAppend, () => {
                     info.isLoaded = true;
-                    InlineJS.Region.Get(regionId).GetChanges().Add({
+                    let myRegion = InlineJS.Region.Get(regionId);
+                    myRegion.GetChanges().Add({
                         type: 'set',
                         path: `${scope.path}.isLoaded`,
-                        prop: 'isLoaded'
+                        prop: 'isLoaded',
+                        origin: myRegion.GetChanges().GetOrigin()
                     });
                     Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => callback(true)));
                     if (info.isOnce) {
@@ -282,10 +287,12 @@ var InlineJS;
                 }
                 ExtendedDirectiveHandlers.FetchLoad(element, url, false, () => {
                     info.isLoaded = true;
-                    InlineJS.Region.Get(regionId).GetChanges().Add({
+                    let myRegion = InlineJS.Region.Get(regionId);
+                    myRegion.GetChanges().Add({
                         type: 'set',
                         path: `${scope.path}.isLoaded`,
-                        prop: 'isLoaded'
+                        prop: 'isLoaded',
+                        origin: myRegion.GetChanges().GetOrigin()
                     });
                     Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => callback(true)));
                 });
@@ -316,12 +323,14 @@ var InlineJS;
                     return false;
                 }
                 if (entry instanceof IntersectionObserverEntry) {
+                    let myRegion = InlineJS.Region.Get(regionId);
                     if (entry.isIntersecting != info.visible) { //Visibility changed
                         info.visible = entry.isIntersecting;
-                        InlineJS.Region.Get(regionId).GetChanges().Add({
+                        myRegion.GetChanges().Add({
                             type: 'set',
                             path: `${scope.path}.visible`,
-                            prop: 'visible'
+                            prop: 'visible',
+                            origin: myRegion.GetChanges().GetOrigin()
                         });
                         scope.callbacks['onVisible'].forEach(callback => callback(info.visible));
                     }
@@ -330,7 +339,8 @@ var InlineJS;
                         InlineJS.Region.Get(regionId).GetChanges().Add({
                             type: 'set',
                             path: `${scope.path}.ratio`,
-                            prop: 'ratio'
+                            prop: 'ratio',
+                            origin: myRegion.GetChanges().GetOrigin()
                         });
                         scope.callbacks['onRatio'].forEach(callback => callback(info.ratio));
                     }

@@ -73,10 +73,12 @@ namespace InlineJS{
                     activeCount: 0,
                     doneInit: false,
                     alert: (key: string) => {
-                        Region.Get(regionId).GetChanges().Add({
+                        let myRegion = Region.Get(regionId);
+                        myRegion.GetChanges().Add({
                             type: 'set',
                             path: `${scope.path}.${key}`,
-                            prop: key
+                            prop: key,
+                            origin: myRegion.GetChanges().GetOrigin()
                         });
                     },
                     resetCallbacks: new Array<() => void>()
@@ -260,7 +262,8 @@ namespace InlineJS{
                     myRegion.GetChanges().Add({
                         type: 'set',
                         path: `${scope.path}.${key}`,
-                        prop: key
+                        prop: key,
+                        origin: myRegion.GetChanges().GetOrigin()
                     });
                 });
 
@@ -303,10 +306,13 @@ namespace InlineJS{
             let load = (url: string) => {
                 ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), info.isAppend, () => {
                     info.isLoaded = true;
-                    Region.Get(regionId).GetChanges().Add({
+
+                    let myRegion = Region.Get(regionId);
+                    myRegion.GetChanges().Add({
                         type: 'set',
                         path: `${scope.path}.isLoaded`,
-                        prop: 'isLoaded'
+                        prop: 'isLoaded',
+                        origin: myRegion.GetChanges().GetOrigin()
                     });
                     
                     Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(true)));
@@ -366,10 +372,13 @@ namespace InlineJS{
 
                 ExtendedDirectiveHandlers.FetchLoad(element, url, false, () => {
                     info.isLoaded = true;
-                    Region.Get(regionId).GetChanges().Add({
+
+                    let myRegion = Region.Get(regionId);
+                    myRegion.GetChanges().Add({
                         type: 'set',
                         path: `${scope.path}.isLoaded`,
-                        prop: 'isLoaded'
+                        prop: 'isLoaded',
+                        origin: myRegion.GetChanges().GetOrigin()
                     });
 
                     Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(true)));
@@ -408,12 +417,14 @@ namespace InlineJS{
                 }
                 
                 if (entry instanceof IntersectionObserverEntry){
+                    let myRegion = Region.Get(regionId);
                     if (entry.isIntersecting != info.visible){//Visibility changed
                         info.visible = entry.isIntersecting;
-                        Region.Get(regionId).GetChanges().Add({
+                        myRegion.GetChanges().Add({
                             type: 'set',
                             path: `${scope.path}.visible`,
-                            prop: 'visible'
+                            prop: 'visible',
+                            origin: myRegion.GetChanges().GetOrigin()
                         });
 
                         (scope.callbacks['onVisible'] as Array<(value?: any) => boolean>).forEach(callback => callback(info.visible));
@@ -424,7 +435,8 @@ namespace InlineJS{
                         Region.Get(regionId).GetChanges().Add({
                             type: 'set',
                             path: `${scope.path}.ratio`,
-                            prop: 'ratio'
+                            prop: 'ratio',
+                            origin: myRegion.GetChanges().GetOrigin()
                         });
 
                         (scope.callbacks['onRatio'] as Array<(value?: any) => boolean>).forEach(callback => callback(info.ratio));

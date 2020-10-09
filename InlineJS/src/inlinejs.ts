@@ -497,6 +497,7 @@ namespace InlineJS{
         type: 'set' | 'delete';
         path: string;
         prop: string;
+        origin: ChangeCallbackType;
     }
 
     export interface BubbledChange{
@@ -504,7 +505,12 @@ namespace InlineJS{
         path: string;
     }
 
-    export type ChangeCallbackType = (change?: Change | BubbledChange) => void | boolean;
+    export type ChangeCallbackType = (changes?: Array<Change | BubbledChange>) => void | boolean;
+    export interface ChangeBatchInfo{
+        callback: ChangeCallbackType;
+        changes: Array<Change | BubbledChange>;
+    }
+    
     export interface SubscriberInfo{
         id: number;
         callback: ChangeCallbackType;
@@ -535,6 +541,7 @@ namespace InlineJS{
 
         private getAccessStorages_ = new Stack<GetAccessStorageInfo>();
         private getAccessHooks_ = new Stack<GetAccessHookType>();
+        private origins_ = new Stack<ChangeCallbackType>();
         
         public constructor (private regionId_: string){}
 
@@ -547,14 +554,20 @@ namespace InlineJS{
             setTimeout(() => {//Schedule changes
                 this.isScheduled_ = false;
                 if (0 < this.list_.length){
-                    let list = this.list_;
+                    let list = this.list_, batches = new Array<ChangeBatchInfo>();
                     this.list_ = new Array<Change | BubbledChange>();
             
-                    for (let item of list){//Traverse changes
+                    list.forEach((item) => {
                         if (item.path in this.subscribers_){
-                            (this.subscribers_[item.path] as Array<SubscriberInfo>).forEach(info => info.callback(item));
+                            (this.subscribers_[item.path] as Array<SubscriberInfo>).forEach((info) => {
+                                if (info.callback !== Changes.GetOrigin(item)){//Ignore originating callback
+                                    Changes.AddBatch(batches, item, info.callback);
+                                }
+                            });
                         }
-                    }
+                    });
+                    
+                    batches.forEach(batch => batch.callback(batch.changes));
                 }
 
                 let region = Region.Get(this.regionId_);
@@ -693,6 +706,44 @@ namespace InlineJS{
         public PopGetAccessHook(): GetAccessHookType{
             return this.getAccessHooks_.Pop();
         }
+
+        public PushOrigin(origin: ChangeCallbackType): void{
+            this.origins_.Push(origin);
+        }
+
+        public GetOrigin(){
+            return this.origins_.Peek();
+        }
+
+        public PopOrigin(){
+            return this.origins_.Pop();
+        }
+
+        public static SetOrigin(change: Change | BubbledChange, origin: ChangeCallbackType){
+            if ('original' in change){
+                change.original.origin = origin;
+            }
+            else{
+                change.origin = origin;
+            }
+        }
+
+        public static GetOrigin(change: Change | BubbledChange){
+            return (('original' in change) ? change.original.origin : change.origin);
+        }
+
+        public static AddBatch(batches: Array<ChangeBatchInfo>, change: Change | BubbledChange, callback: ChangeCallbackType){
+            let batch = batches.find(info => (info.callback === callback));
+            if (batch){
+                batch.changes.push(change);
+            }
+            else{//Add new
+                batches.push({
+                    callback: callback,
+                    changes: new Array(change)
+                });
+            }
+        }
     }
 
     export class State{
@@ -745,19 +796,28 @@ namespace InlineJS{
             }
 
             let ids = new Map<string, Array<number>>();
-            let onChange = (change: Change | BubbledChange) => {
+            let onChange = (changes: Array<Change | BubbledChange>) => {
+                let myRegion = Region.Get(this.regionId_)
+                if (myRegion){//Mark changes
+                    myRegion.GetChanges().PushOrigin(onChange);
+                }
+                
                 try{
                     if (changeCallback === true){
-                        stopped = (callback(change) === false);
+                        stopped = (callback(changes) === false);
                     }
                     else{
-                        stopped = (changeCallback(change) === false);
+                        stopped = (changeCallback(changes) === false);
                     }
                 }
                 catch (err){
                    this.ReportError(err, `InlineJs.Region<${this.regionId_}>.State.TrapAccess`);
                 }
 
+                if (myRegion){
+                    myRegion.GetChanges().PopOrigin();
+                }
+                
                 if (stopped){
                     for (let regionId in ids){
                         let myRegion = Region.Get(regionId);
@@ -932,7 +992,8 @@ namespace InlineJS{
         let change: Change = {
             type: type,
             path: path,
-            prop: prop
+            prop: prop,
+            origin: changes.GetOrigin()
         };
         
         changes.Add(change);
@@ -1710,37 +1771,40 @@ namespace InlineJS{
                 myRegion.GetChanges().Add({
                     type: 'set',
                     path: `${options.path}.length`,
-                    prop: 'length'
+                    prop: 'length',
+                    origin: myRegion.GetChanges().GetOrigin()
                 });
                 options.count = Object.keys(options.target['__InlineJS_Target__']).length;
             };
 
-            let onChange = (myRegion: Region, change: Change | BubbledChange) => {
-                if ('original' in change){//Bubbled
-                    if (options.isArray || change.original.type !== 'set' || `${options.path}.${change.original.prop}` !== change.original.path){
-                        return true;
-                    }
-
-                    addSizeChange(myRegion);
-                    insert(myRegion, change.original.prop);
-                }
-                else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`){
-                    let count = (options.target as Array<any>).length;
-                    if (count < options.count){//Item(s) removed
-                        (options.list as Array<HTMLElement>).splice(count).forEach(clone => info.marker.parentElement.removeChild(clone));
-                    }
-                    else if (options.count < count){//Item(s) added
-                        for (let diff = (count - options.count); 0 < diff; --diff){
-                            insert(myRegion);
+            let onChange = (myRegion: Region, changes: Array<Change | BubbledChange>) => {
+                changes.forEach((change) => {
+                    if ('original' in change){//Bubbled
+                        if (options.isArray || change.original.type !== 'set' || `${options.path}.${change.original.prop}` !== change.original.path){
+                            return true;
                         }
+
+                        addSizeChange(myRegion);
+                        insert(myRegion, change.original.prop);
                     }
-                    options.count = count;
-                }
-                else if (!options.isArray && change.type === 'delete' && change.prop in (options.list as Map<string, HTMLElement>)){
-                    info.marker.removeChild((options.list as Map<string, HTMLElement>)[change.prop]);
-                    addSizeChange(Region.Get(info.regionId));
-                    delete (options.list as Map<string, HTMLElement>)[change.prop];
-                }
+                    else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`){
+                        let count = (options.target as Array<any>).length;
+                        if (count < options.count){//Item(s) removed
+                            (options.list as Array<HTMLElement>).splice(count).forEach(clone => info.marker.parentElement.removeChild(clone));
+                        }
+                        else if (options.count < count){//Item(s) added
+                            for (let diff = (count - options.count); 0 < diff; --diff){
+                                insert(myRegion);
+                            }
+                        }
+                        options.count = count;
+                    }
+                    else if (!options.isArray && change.type === 'delete' && change.prop in (options.list as Map<string, HTMLElement>)){
+                        info.marker.removeChild((options.list as Map<string, HTMLElement>)[change.prop]);
+                        addSizeChange(Region.Get(info.regionId));
+                        delete (options.list as Map<string, HTMLElement>)[change.prop];
+                    }
+                });
 
                 return true;
             };

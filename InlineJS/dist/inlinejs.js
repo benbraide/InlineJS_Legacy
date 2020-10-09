@@ -401,6 +401,7 @@ var InlineJS;
             this.subscribers_ = new Map();
             this.getAccessStorages_ = new Stack();
             this.getAccessHooks_ = new Stack();
+            this.origins_ = new Stack();
         }
         Schedule() {
             if (this.isScheduled_) {
@@ -410,13 +411,18 @@ var InlineJS;
             setTimeout(() => {
                 this.isScheduled_ = false;
                 if (0 < this.list_.length) {
-                    let list = this.list_;
+                    let list = this.list_, batches = new Array();
                     this.list_ = new Array();
-                    for (let item of list) { //Traverse changes
+                    list.forEach((item) => {
                         if (item.path in this.subscribers_) {
-                            this.subscribers_[item.path].forEach(info => info.callback(item));
+                            this.subscribers_[item.path].forEach((info) => {
+                                if (info.callback !== Changes.GetOrigin(item)) { //Ignore originating callback
+                                    Changes.AddBatch(batches, item, info.callback);
+                                }
+                            });
                         }
-                    }
+                    });
+                    batches.forEach(batch => batch.callback(batch.changes));
                 }
                 let region = Region.Get(this.regionId_);
                 if (region) {
@@ -531,6 +537,38 @@ var InlineJS;
         PopGetAccessHook() {
             return this.getAccessHooks_.Pop();
         }
+        PushOrigin(origin) {
+            this.origins_.Push(origin);
+        }
+        GetOrigin() {
+            return this.origins_.Peek();
+        }
+        PopOrigin() {
+            return this.origins_.Pop();
+        }
+        static SetOrigin(change, origin) {
+            if ('original' in change) {
+                change.original.origin = origin;
+            }
+            else {
+                change.origin = origin;
+            }
+        }
+        static GetOrigin(change) {
+            return (('original' in change) ? change.original.origin : change.origin);
+        }
+        static AddBatch(batches, change, callback) {
+            let batch = batches.find(info => (info.callback === callback));
+            if (batch) {
+                batch.changes.push(change);
+            }
+            else { //Add new
+                batches.push({
+                    callback: callback,
+                    changes: new Array(change)
+                });
+            }
+        }
     }
     InlineJS.Changes = Changes;
     class State {
@@ -574,17 +612,24 @@ var InlineJS;
                 return new Map();
             }
             let ids = new Map();
-            let onChange = (change) => {
+            let onChange = (changes) => {
+                let myRegion = Region.Get(this.regionId_);
+                if (myRegion) { //Mark changes
+                    myRegion.GetChanges().PushOrigin(onChange);
+                }
                 try {
                     if (changeCallback === true) {
-                        stopped = (callback(change) === false);
+                        stopped = (callback(changes) === false);
                     }
                     else {
-                        stopped = (changeCallback(change) === false);
+                        stopped = (changeCallback(changes) === false);
                     }
                 }
                 catch (err) {
                     this.ReportError(err, `InlineJs.Region<${this.regionId_}>.State.TrapAccess`);
+                }
+                if (myRegion) {
+                    myRegion.GetChanges().PopOrigin();
                 }
                 if (stopped) {
                     for (let regionId in ids) {
@@ -715,7 +760,8 @@ var InlineJS;
         let change = {
             type: type,
             path: path,
-            prop: prop
+            prop: prop,
+            origin: changes.GetOrigin()
         };
         changes.Add(change);
         let parts = path.split('.');
@@ -1344,35 +1390,38 @@ var InlineJS;
                 myRegion.GetChanges().Add({
                     type: 'set',
                     path: `${options.path}.length`,
-                    prop: 'length'
+                    prop: 'length',
+                    origin: myRegion.GetChanges().GetOrigin()
                 });
                 options.count = Object.keys(options.target['__InlineJS_Target__']).length;
             };
-            let onChange = (myRegion, change) => {
-                if ('original' in change) { //Bubbled
-                    if (options.isArray || change.original.type !== 'set' || `${options.path}.${change.original.prop}` !== change.original.path) {
-                        return true;
-                    }
-                    addSizeChange(myRegion);
-                    insert(myRegion, change.original.prop);
-                }
-                else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`) {
-                    let count = options.target.length;
-                    if (count < options.count) { //Item(s) removed
-                        options.list.splice(count).forEach(clone => info.marker.parentElement.removeChild(clone));
-                    }
-                    else if (options.count < count) { //Item(s) added
-                        for (let diff = (count - options.count); 0 < diff; --diff) {
-                            insert(myRegion);
+            let onChange = (myRegion, changes) => {
+                changes.forEach((change) => {
+                    if ('original' in change) { //Bubbled
+                        if (options.isArray || change.original.type !== 'set' || `${options.path}.${change.original.prop}` !== change.original.path) {
+                            return true;
                         }
+                        addSizeChange(myRegion);
+                        insert(myRegion, change.original.prop);
                     }
-                    options.count = count;
-                }
-                else if (!options.isArray && change.type === 'delete' && change.prop in options.list) {
-                    info.marker.removeChild(options.list[change.prop]);
-                    addSizeChange(Region.Get(info.regionId));
-                    delete options.list[change.prop];
-                }
+                    else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`) {
+                        let count = options.target.length;
+                        if (count < options.count) { //Item(s) removed
+                            options.list.splice(count).forEach(clone => info.marker.parentElement.removeChild(clone));
+                        }
+                        else if (options.count < count) { //Item(s) added
+                            for (let diff = (count - options.count); 0 < diff; --diff) {
+                                insert(myRegion);
+                            }
+                        }
+                        options.count = count;
+                    }
+                    else if (!options.isArray && change.type === 'delete' && change.prop in options.list) {
+                        info.marker.removeChild(options.list[change.prop]);
+                        addSizeChange(Region.Get(info.regionId));
+                        delete options.list[change.prop];
+                    }
+                });
                 return true;
             };
             element.parentElement.removeChild(element);

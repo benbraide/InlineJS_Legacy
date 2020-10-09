@@ -113,12 +113,17 @@ declare namespace InlineJS {
         type: 'set' | 'delete';
         path: string;
         prop: string;
+        origin: ChangeCallbackType;
     }
     interface BubbledChange {
         original: Change;
         path: string;
     }
-    type ChangeCallbackType = (change?: Change | BubbledChange) => void | boolean;
+    type ChangeCallbackType = (changes?: Array<Change | BubbledChange>) => void | boolean;
+    interface ChangeBatchInfo {
+        callback: ChangeCallbackType;
+        changes: Array<Change | BubbledChange>;
+    }
     interface SubscriberInfo {
         id: number;
         callback: ChangeCallbackType;
@@ -144,6 +149,7 @@ declare namespace InlineJS {
         private subscribers_;
         private getAccessStorages_;
         private getAccessHooks_;
+        private origins_;
         constructor(regionId_: string);
         Schedule(): void;
         Add(item: Change | BubbledChange): void;
@@ -158,6 +164,12 @@ declare namespace InlineJS {
         PopGetAccessStorage(optimized: true): Array<GetAccessInfo>;
         PushGetAccessHook(hook: GetAccessHookType): void;
         PopGetAccessHook(): GetAccessHookType;
+        PushOrigin(origin: ChangeCallbackType): void;
+        GetOrigin(): ChangeCallbackType;
+        PopOrigin(): ChangeCallbackType;
+        static SetOrigin(change: Change | BubbledChange, origin: ChangeCallbackType): void;
+        static GetOrigin(change: Change | BubbledChange): ChangeCallbackType;
+        static AddBatch(batches: Array<ChangeBatchInfo>, change: Change | BubbledChange, callback: ChangeCallbackType): void;
     }
     class State {
         private regionId_;
