@@ -53,6 +53,8 @@ var InlineJS;
             this.observer_ = null;
             this.outsideEvents_ = new Array();
             this.nextTickCallbacks_ = new Array();
+            this.tempCallbacks_ = new Map();
+            this.tempCallbacksId_ = 0;
             this.state_ = new State(this.id_);
             this.changes_ = new Changes(this.id_);
         }
@@ -118,7 +120,7 @@ var InlineJS;
             return ((path in this.proxies_) ? this.proxies_[path] : null);
         }
         AddProxy(proxy) {
-            this.proxies_[proxy.GetName()] = proxy;
+            this.proxies_[proxy.GetPath()] = proxy;
         }
         RemoveProxy(path) {
             delete this.proxies_[path];
@@ -148,6 +150,7 @@ var InlineJS;
                 uninitCallbacks: new Array(),
                 changeRefs: new Array(),
                 directiveHandlers: new Map(),
+                preProcessCallbacks: new Array(),
                 postProcessCallbacks: new Array(),
                 eventExpansionCallbacks: new Array(),
                 outsideEventCallbacks: new Map(),
@@ -180,7 +183,7 @@ var InlineJS;
                     }
                 });
                 scope.element.removeAttribute(Region.GetElementKeyName());
-                scope.intersectionObservers.forEach(observer => observer.unobserve(scope.element));
+                Object.keys(scope.intersectionObservers).forEach(key => scope.intersectionObservers[key].unobserve(scope.element));
                 [...scope.element.children].forEach(child => this.RemoveElement(child));
                 delete this.elementScopes_[scope.key];
             }
@@ -205,7 +208,8 @@ var InlineJS;
                 document.body.addEventListener(event, (e) => {
                     let myRegion = Region.Get(id);
                     if (myRegion) {
-                        myRegion.elementScopes_.forEach((scope) => {
+                        Object.keys(myRegion.elementScopes_).forEach((key) => {
+                            let scope = myRegion.elementScopes_[key];
                             if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target)) {
                                 scope.outsideEventCallbacks[e.type].forEach(callback => callback(e));
                             }
@@ -229,6 +233,7 @@ var InlineJS;
         }
         AddNextTickCallback(callback) {
             this.nextTickCallbacks_.push(callback);
+            this.changes_.Schedule();
         }
         ExecuteNextTick() {
             if (this.nextTickCallbacks_.length == 0) {
@@ -288,10 +293,33 @@ var InlineJS;
             }
             return event;
         }
+        Call(target, ...args) {
+            return ((target.name in this.rootProxy_.GetTarget()) ? target.call(this.rootProxy_.GetNativeProxy(), ...args) : target(...args));
+        }
+        AddTemp(callback) {
+            let key = `Region<${this.id_}>.temp<${++this.tempCallbacksId_}>`;
+            this.tempCallbacks_[key] = callback;
+            return key;
+        }
+        CallTemp(key) {
+            if (!(key in this.tempCallbacks_)) {
+                return null;
+            }
+            let callback = this.tempCallbacks_[key];
+            delete this.tempCallbacks_[key];
+            return callback();
+        }
         static Get(id) {
             return ((id in RegionMap.entries) ? RegionMap.entries[id] : null);
         }
+        static GetCurrent(id) {
+            let scopeRegionId = RegionMap.scopeRegionIds.Peek();
+            return (scopeRegionId ? Region.Get(scopeRegionId) : Region.Get(id));
+        }
         static Infer(element) {
+            if (!element) {
+                return null;
+            }
             let key = ((typeof element === 'string') ? element : element.getAttribute(Region.GetElementKeyName()));
             if (!key) {
                 return null;
@@ -319,7 +347,25 @@ var InlineJS;
         static GetGlobal(key) {
             return ((key in Region.globals_) ? Region.globals_[key] : null);
         }
+        static AddPostProcessCallback(callback) {
+            Region.postProcessCallbacks_.push(callback);
+        }
+        static ExecutePostProcessCallbacks() {
+            if (Region.postProcessCallbacks_.length == 0) {
+                return;
+            }
+            Region.postProcessCallbacks_.forEach((callback) => {
+                try {
+                    callback();
+                }
+                catch (err) {
+                    console.error(err, `InlineJs.Region<NIL>.ExecutePostProcessCallbacks`);
+                }
+            });
+            Region.postProcessCallbacks_ = [];
+        }
         static SetDirectivePrefix(value) {
+            Region.directivePrfix = value;
             Region.directiveRegex = new RegExp(`^(data-)?${value}-(.+)$`);
         }
         static IsEqual(first, second) {
@@ -337,8 +383,15 @@ var InlineJS;
     }
     Region.components_ = new Map();
     Region.globals_ = new Map();
+    Region.postProcessCallbacks_ = new Array();
+    Region.directivePrfix = 'x';
     Region.directiveRegex = /^(data-)?x-(.+)$/;
+    Region.externalCallbacks = {
+        isEqual: (first, second) => (first === second),
+        deepCopy: (target) => target,
+    };
     InlineJS.Region = Region;
+    ;
     class Changes {
         constructor(regionId_) {
             this.regionId_ = regionId_;
@@ -349,7 +402,7 @@ var InlineJS;
             this.getAccessStorages_ = new Stack();
             this.getAccessHooks_ = new Stack();
         }
-        Schedule_() {
+        Schedule() {
             if (this.isScheduled_) {
                 return;
             }
@@ -373,7 +426,7 @@ var InlineJS;
         }
         Add(item) {
             this.list_.push(item);
-            this.Schedule_();
+            this.Schedule();
         }
         Subscribe(path, callback) {
             let id;
@@ -415,45 +468,62 @@ var InlineJS;
             }
         }
         AddGetAccess(path) {
-            let hook = this.getAccessHooks_.Peek();
-            if (hook && !hook(this.regionId_, path)) { //Rejected
+            let region = Region.GetCurrent(this.regionId_);
+            if (!region) {
                 return;
             }
-            let storageInfo;
-            let scopeRegionId = RegionMap.scopeRegionIds.Peek();
-            if (scopeRegionId && scopeRegionId != this.regionId_) { //Use scope
-                let scopeRegion = Region.Get(scopeRegionId);
-                storageInfo = (scopeRegion ? scopeRegion.GetChanges().getAccessStorages_.Peek() : null);
-            }
-            else {
-                storageInfo = this.getAccessStorages_.Peek();
-            }
-            if (!storageInfo) {
+            let hook = region.GetChanges().getAccessHooks_.Peek();
+            if (hook && !hook(region.GetId(), path)) { //Rejected
                 return;
             }
-            if (storageInfo.lastAccessPath && 0 < storageInfo.storage.length && storageInfo.lastAccessPath.length < path.length && path.substr(0, storageInfo.lastAccessPath.length) === storageInfo.lastAccessPath) { //Deeper access
-                storageInfo.storage[(storageInfo.storage.length - 1)].path = path;
+            let storageInfo = region.GetChanges().getAccessStorages_.Peek();
+            if (!storageInfo || !storageInfo.storage) {
+                return;
+            }
+            if (storageInfo.storage.raw) {
+                storageInfo.storage.raw.push({
+                    regionId: this.regionId_,
+                    path: path
+                });
+            }
+            if (!storageInfo.storage.optimized) {
+                return;
+            }
+            let optimized = storageInfo.storage.optimized;
+            if (storageInfo.lastAccessPath && 0 < optimized.length && storageInfo.lastAccessPath.length < path.length && path.substr(0, storageInfo.lastAccessPath.length) === storageInfo.lastAccessPath) { //Deeper access
+                optimized[(optimized.length - 1)].path = path;
             }
             else { //New entry
-                storageInfo.storage.push({
+                optimized.push({
                     regionId: this.regionId_,
                     path: path
                 });
             }
             storageInfo.lastAccessPath = path;
         }
+        ReplaceOptimizedGetAccesses() {
+            let info = this.getAccessStorages_.Peek();
+            if (info && info.storage) {
+                info.storage.optimized = new Array();
+                info.storage.raw.forEach(item => info.storage.optimized.push(item));
+            }
+        }
         PushGetAccessStorage(storage) {
             this.getAccessStorages_.Push({
-                storage: storage,
+                storage: (storage || {
+                    optimized: new Array(),
+                    raw: new Array()
+                }),
                 lastAccessPath: ''
             });
         }
-        GetGetAccessStorage() {
+        GetGetAccessStorage(optimized = true) {
             let info = this.getAccessStorages_.Peek();
-            return (info ? info.storage : null);
+            return ((info && info.storage) ? (optimized ? info.storage.optimized : info.storage) : null);
         }
-        PopGetAccessStorage() {
-            return this.getAccessStorages_.Pop().storage;
+        PopGetAccessStorage(optimized) {
+            let info = this.getAccessStorages_.Pop();
+            return ((info && info.storage) ? (optimized ? info.storage.optimized : info.storage) : null);
         }
         PushGetAccessHook(hook) {
             this.getAccessHooks_.Push(hook);
@@ -493,13 +563,13 @@ var InlineJS;
                 return new Map();
             }
             try {
-                region.GetChanges().PushGetAccessStorage(new Array());
+                region.GetChanges().PushGetAccessStorage(null);
                 stopped = (callback(null) === false);
             }
             catch (err) {
                 this.ReportError(err, `InlineJs.Region<${this.regionId_}>.State.TrapAccess`);
             }
-            let storage = region.GetChanges().PopGetAccessStorage();
+            let storage = region.GetChanges().PopGetAccessStorage(true);
             if (stopped || !changeCallback || storage.length == 0) {
                 return new Map();
             }
@@ -540,10 +610,16 @@ var InlineJS;
         ReportError(value, ref) {
             console.error(value, ref);
         }
+        Warn(value, ref) {
+            console.warn(value, ref);
+        }
+        Log(value, ref) {
+            console.log(value, ref);
+        }
     }
     InlineJS.State = State;
     class Evaluator {
-        static Evaluate(regionId, elementContext, expression) {
+        static Evaluate(regionId, elementContext, expression, useWindow = false) {
             if (!(expression = expression.trim())) {
                 return null;
             }
@@ -560,7 +636,7 @@ var InlineJS;
                     with (${Evaluator.GetContextKey()}){
                         return (${expression});
                     };
-                `)).bind(state.GetElementContext())(region.GeRootProxy().GetNativeProxy());
+                `)).bind(state.GetElementContext())(useWindow ? window : region.GeRootProxy().GetNativeProxy());
             }
             catch (err) {
                 result = null;
@@ -582,7 +658,7 @@ var InlineJS;
             return null;
         }
         let ownerProxies = owner.GetProxies();
-        if (name in ownerProxies) {
+        if (name in ownerProxies && name !== 'constructor' && name !== 'proto') {
             return ownerProxies[name];
         }
         if (!Array.isArray(target) && !Region.IsObject(target)) {
@@ -830,11 +906,25 @@ var InlineJS;
             Region.AddGlobal('$once', (regionId, contextElement) => (expression, callback) => {
                 RootProxy.Watch(regionId, contextElement, expression, value => (!value || (callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value) && false)), false);
             });
-            Region.AddGlobal('$nextTick', (regionId, contextElement) => (expression) => {
+            Region.AddGlobal('$nextTick', (regionId, contextElement) => (callback) => {
                 let region = Region.Get(regionId);
                 if (region) {
-                    region.AddNextTickCallback(() => CoreDirectiveHandlers.Evaluate(region, contextElement, expression));
+                    region.AddNextTickCallback(callback);
                 }
+            });
+            Region.AddGlobal('$post', () => (callback) => {
+                Region.AddPostProcessCallback(callback);
+            });
+            Region.AddGlobal('$use', (regionId) => (value) => {
+                let region = Region.GetCurrent(regionId);
+                if (region) {
+                    region.GetChanges().ReplaceOptimizedGetAccesses();
+                }
+                return value;
+            });
+            Region.AddGlobal('$__InlineJS_CallTemp__', (regionId) => (key) => {
+                let region = Region.Get(regionId);
+                return (region ? region.CallTemp(key) : null);
             });
         }
     }
@@ -965,7 +1055,7 @@ var InlineJS;
         }
         static Data(region, element, directive) {
             let proxy = region.GeRootProxy().GetNativeProxy();
-            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
             if (!Region.IsObject(data)) {
                 return DirectiveHandlerReturn.Handled;
             }
@@ -978,12 +1068,20 @@ var InlineJS;
         static Component(region, element, directive) {
             return (Region.AddComponent(region, element, directive.value) ? DirectiveHandlerReturn.Handled : DirectiveHandlerReturn.Nil);
         }
+        static Post(region, element, directive) {
+            let regionId = region.GetId();
+            region.AddElement(element, true).postProcessCallbacks.push(() => CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+            return DirectiveHandlerReturn.Handled;
+        }
         static Init(region, element, directive) {
             CoreDirectiveHandlers.Evaluate(region, element, directive.value);
             return DirectiveHandlerReturn.Handled;
         }
         static Bind(region, element, directive) {
-            region.GetState().TrapGetAccess(() => CoreDirectiveHandlers.Evaluate(region, element, directive.value), true);
+            region.GetState().TrapGetAccess(() => {
+                CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+                return true;
+            }, true);
             return DirectiveHandlerReturn.Handled;
         }
         static Uninit(region, element, directive) {
@@ -1170,8 +1268,8 @@ var InlineJS;
                 return -1;
             };
             let initLocals = (myRegion, clone, key) => {
-                myRegion.AddLocal(clone, '$each', {
-                    count: new Value(() => {
+                myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
+                    if (prop === 'count') {
                         if (options.isArray) {
                             return options.target.length;
                         }
@@ -1179,10 +1277,15 @@ var InlineJS;
                             myRegion.GetChanges().AddGetAccess(`${options.path}.length`);
                         }
                         return options.count;
-                    }),
-                    index: new Value(() => getIndex(clone, key)),
-                    value: new Value(() => (options.isArray ? options.target[getIndex(clone)] : options.target[key]))
-                });
+                    }
+                    if (prop === 'index') {
+                        return getIndex(clone, key);
+                    }
+                    if (prop === 'value') {
+                        return (options.isArray ? options.target[getIndex(clone)] : options.target[key]);
+                    }
+                    return null;
+                }, ['count', 'index', 'value']));
             };
             let insert = (myRegion, key) => {
                 let clone = element.cloneNode(true);
@@ -1305,6 +1408,9 @@ var InlineJS;
         }
         static InsertIfOrEach(region, element, info, callback) {
             info.marker.parentElement.insertBefore(element, info.marker);
+            if (callback) {
+                callback();
+            }
             region.GetState().PushElementContext(element);
             for (let i = 0; i < info.directives.length; ++i) {
                 if (Processor.DispatchDirective(region, element, info.directives[i]) == DirectiveHandlerReturn.QuitAll) {
@@ -1312,14 +1418,37 @@ var InlineJS;
                 }
             }
             region.GetState().PopElementContext();
-            if (callback) {
-                callback();
-            }
             if (!region.GetDoneInit()) {
                 Processor.All(region, element);
             }
         }
-        static Evaluate(region, element, expression) {
+        static CreateProxy(getter, contains) {
+            let handler = {
+                get(target, prop) {
+                    if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
+                        return Reflect.get(target, prop);
+                    }
+                    return getter(prop.toString());
+                },
+                set(target, prop, value) {
+                    return false;
+                },
+                deleteProperty(target, prop) {
+                    return false;
+                },
+                has(target, prop) {
+                    if (Reflect.has(target, prop)) {
+                        return true;
+                    }
+                    if (!contains) {
+                        return false;
+                    }
+                    return ((typeof contains === 'function') ? contains(prop.toString()) : (contains.indexOf(prop.toString()) != -1));
+                }
+            };
+            return new window.Proxy({}, handler);
+        }
+        static Evaluate(region, element, expression, useWindow = false) {
             if (!region) {
                 return null;
             }
@@ -1327,11 +1456,14 @@ var InlineJS;
             region.GetState().PushElementContext(element);
             let result;
             try {
-                result = Evaluator.Evaluate(region.GetId(), element, expression);
+                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow);
                 if (typeof result === 'function') {
-                    result = result.call(region.GeRootProxy().GetNativeProxy());
+                    result = region.Call(result);
                 }
                 result = ((result instanceof Value) ? result.Get() : result);
+            }
+            catch (err) {
+                region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.CoreDirectiveHandlers.Evaluate(${expression})`);
             }
             finally {
                 region.GetState().PopElementContext();
@@ -1343,21 +1475,23 @@ var InlineJS;
             if (!(target = target.trim())) {
                 return;
             }
+            RegionMap.scopeRegionIds.Push(region.GetId());
+            region.GetState().PushElementContext(element);
+            let targetObject;
             try {
-                RegionMap.scopeRegionIds.Push(region.GetId());
-                region.GetState().PushElementContext(element);
-                Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
+                targetObject = Evaluator.Evaluate(region.GetId(), element, target);
+            }
+            catch (err) { }
+            try {
+                if (typeof targetObject === 'function') {
+                    region.Call(targetObject, callback());
+                }
+                else {
+                    Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
+                }
             }
             catch (err) {
-                let result = Evaluator.Evaluate(region.GetId(), element, target);
-                if (typeof result === 'function') {
-                    if (callback) {
-                        result.call(region.GeRootProxy().GetNativeProxy(), callback());
-                    }
-                    else {
-                        result.call(region.GeRootProxy().GetNativeProxy());
-                    }
-                }
+                region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.CoreDirectiveHandlers.Assign(${target}=${value})`);
             }
             finally {
                 region.GetState().PopElementContext();
@@ -1369,6 +1503,7 @@ var InlineJS;
             DirectiveHandlerManager.AddHandler('data', CoreDirectiveHandlers.Data);
             DirectiveHandlerManager.AddHandler('component', CoreDirectiveHandlers.Component);
             DirectiveHandlerManager.AddHandler('init', CoreDirectiveHandlers.Init);
+            DirectiveHandlerManager.AddHandler('post', CoreDirectiveHandlers.Post);
             DirectiveHandlerManager.AddHandler('bind', CoreDirectiveHandlers.Bind);
             DirectiveHandlerManager.AddHandler('uninit', CoreDirectiveHandlers.Uninit);
             DirectiveHandlerManager.AddHandler('ref', CoreDirectiveHandlers.Ref);
@@ -1389,11 +1524,17 @@ var InlineJS;
             if (directive.parts[0] !== 'static') {
                 return DirectiveHandlerReturn.Nil;
             }
-            directive.parts.splice(0, 1);
-            directive.raw = directive.parts.join('-');
-            directive.key = Processor.GetCamelCaseDirectiveName(directive.raw);
+            let parts = [...directive.parts].splice(1);
+            let raw = parts.join('-');
+            let newDirective = {
+                original: directive.original,
+                parts: parts,
+                raw: raw,
+                key: Processor.GetCamelCaseDirectiveName(raw),
+                value: directive.value
+            };
             region.GetChanges().PushGetAccessHook(() => false); //Disable get access log
-            let result = DirectiveHandlerManager.Handle(region, element, directive);
+            let result = DirectiveHandlerManager.Handle(region, element, newDirective);
             region.GetChanges().PopGetAccessHook();
             return result;
         }
@@ -1402,19 +1543,19 @@ var InlineJS;
             if (directive.parts[0] !== 'attr') {
                 return DirectiveHandlerReturn.Nil;
             }
-            directive.parts.splice(0, 1);
-            directive.raw = directive.parts.join('-');
             let regionId = region.GetId();
-            let isBoolean = (booleanAttributes.indexOf(directive.raw) != -1);
+            let name = [...directive.parts].splice(1).join('-');
+            let isBoolean = (booleanAttributes.indexOf(name) != -1);
             region.GetState().TrapGetAccess(() => {
-                if (isBoolean && CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)) {
-                    element.setAttribute(directive.raw, directive.raw);
+                let result = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                if (isBoolean && !!result) {
+                    element.setAttribute(name, name);
                 }
                 else if (isBoolean) {
-                    element.removeAttribute(directive.raw);
+                    element.removeAttribute(name);
                 }
                 else { //Set evaluated value
-                    element.setAttribute(directive.raw, CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                    element.setAttribute(name, result);
                 }
             }, true);
             return DirectiveHandlerReturn.Handled;
@@ -1423,15 +1564,14 @@ var InlineJS;
             if (directive.parts[0] !== 'style') {
                 return DirectiveHandlerReturn.Nil;
             }
-            directive.parts.splice(0, 1);
-            directive.raw = directive.parts.join('-');
-            directive.key = Processor.GetCamelCaseDirectiveName(directive.raw);
-            if (!(directive.key in element.style)) { //Unrecognized style
+            let parts = [...directive.parts].splice(1);
+            let key = Processor.GetCamelCaseDirectiveName(parts.join('-'));
+            if (!(key in element.style)) { //Unrecognized style
                 return DirectiveHandlerReturn.Nil;
             }
             let regionId = region.GetId();
             region.GetState().TrapGetAccess(() => {
-                element.style[directive.key] = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                element.style[key] = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
             }, true);
             return DirectiveHandlerReturn.Handled;
         }
@@ -1445,7 +1585,7 @@ var InlineJS;
                 once: false,
                 window: false,
             };
-            let index = 0, length = directive.parts.length;
+            let index = 0, length = directive.parts.length, parts, raw;
             for (; index < directive.parts.length; ++index) {
                 let part = directive.parts[index];
                 if (part in options) {
@@ -1455,15 +1595,17 @@ var InlineJS;
                     }
                 }
                 else if (0 < index) { //Start of event
-                    directive.parts.splice(0, index);
-                    directive.raw = directive.parts.join('-');
+                    parts = [...directive.parts].splice(index);
+                    raw = parts.join('-');
                     break;
                 }
                 else { //No modifiers
+                    parts = directive.parts;
+                    raw = parts.join('-');
                     break;
                 }
             }
-            if (length <= index || directive.parts.length == 0 || (!options.on && knownEvents.indexOf(directive.raw) == -1)) { //Malformed
+            if (length <= index || !parts || parts.length == 0 || (!options.on && knownEvents.indexOf(raw) == -1)) { //Malformed
                 return DirectiveHandlerReturn.Nil;
             }
             let regionId = region.GetId(), stoppable;
@@ -1493,7 +1635,7 @@ var InlineJS;
                     }
                 }
             };
-            let event = region.ExpandEvent(directive.raw, element);
+            let event = region.ExpandEvent(raw, element);
             if (options.outside) {
                 stoppable = false;
                 region.AddOutsideEventCallback(element, event, onEvent);
@@ -1521,6 +1663,7 @@ var InlineJS;
             if (!isTemplate && (options === null || options === void 0 ? void 0 : options.checkTemplate) && element.closest('template')) { //Inside template -- ignore
                 return;
             }
+            Processor.Pre(region, element);
             if (Processor.One(region, element) != DirectiveHandlerReturn.QuitAll && !isTemplate) { //Process children
                 [...element.children].forEach(child => Processor.All(region, child));
             }
@@ -1541,18 +1684,24 @@ var InlineJS;
             region.GetState().PopElementContext();
             return result;
         }
+        static Pre(region, element) {
+            Processor.PreOrPost(region, element, 'preProcessCallbacks', 'Pre');
+        }
         static Post(region, element) {
+            Processor.PreOrPost(region, element, 'postProcessCallbacks', 'Post');
+        }
+        static PreOrPost(region, element, scopeKey, name) {
             let scope = region.GetElementScope(element);
             if (scope) {
-                scope.postProcessCallbacks.forEach((callback) => {
+                scope[scopeKey].forEach((callback) => {
                     try {
                         callback();
                     }
                     catch (err) {
-                        region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.Processor.Post(Element@${element.nodeName})`);
+                        region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.Processor.${name}(Element@${element.nodeName})`);
                     }
                 });
-                scope.postProcessCallbacks = [];
+                scope[scopeKey] = [];
             }
         }
         static DispatchDirective(region, element, directive) {
@@ -1560,7 +1709,7 @@ var InlineJS;
             try {
                 result = DirectiveHandlerManager.Handle(region, element, directive);
                 if (result == DirectiveHandlerReturn.Nil) {
-                    region.GetState().ReportError('Handler not found for directive. Skipping...', `InlineJs.Region<${region.GetId()}>.Processor.DispatchDirective(Element@${element.nodeName}, ${directive.original})`);
+                    region.GetState().Warn('Handler not found for directive. Skipping...', `InlineJs.Region<${region.GetId()}>.Processor.DispatchDirective(Element@${element.nodeName}, ${directive.original})`);
                 }
             }
             catch (err) {
@@ -1619,7 +1768,10 @@ var InlineJS;
     }
     InlineJS.Processor = Processor;
     class Bootstrap {
-        static Attach(anchors = ['data-x-data', 'x-data']) {
+        static Attach(anchors) {
+            if (!anchors) {
+                anchors = [`data-${Region.directivePrfix}-data`, `${Region.directivePrfix}-data`];
+            }
             anchors.forEach((anchor) => {
                 document.querySelectorAll(`[${anchor}]`).forEach((element) => {
                     if (!element.hasAttribute(anchor)) { //Probably contained inside another region
@@ -1658,6 +1810,7 @@ var InlineJS;
                                 }
                             }
                         });
+                        Region.ExecutePostProcessCallbacks();
                     });
                     RegionMap.entries[stringRegionId] = region;
                     Processor.All(region, element, {
@@ -1674,6 +1827,7 @@ var InlineJS;
                     });
                 });
             });
+            Region.ExecutePostProcessCallbacks();
         }
     }
     Bootstrap.lastRegionId_ = null;

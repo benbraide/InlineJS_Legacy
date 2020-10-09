@@ -24,6 +24,7 @@ declare namespace InlineJS {
         uninitCallbacks: Array<() => void>;
         changeRefs: Array<ChangeRefInfo>;
         directiveHandlers: Map<string, DirectiveHandlerType>;
+        preProcessCallbacks: Array<() => void>;
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
         outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
@@ -48,8 +49,10 @@ declare namespace InlineJS {
         private rootProxy_;
         private static components_;
         private static globals_;
-        static externalCallbacks: ExternalCallbacks;
+        private static postProcessCallbacks_;
+        static directivePrfix: string;
         static directiveRegex: RegExp;
+        static externalCallbacks: ExternalCallbacks;
         private componentKey_;
         private doneInit_;
         private elementScopes_;
@@ -60,6 +63,8 @@ declare namespace InlineJS {
         private observer_;
         private outsideEvents_;
         private nextTickCallbacks_;
+        private tempCallbacks_;
+        private tempCallbacksId_;
         constructor(id_: string, rootElement_: HTMLElement, rootProxy_: RootProxy);
         SetDoneInit(): void;
         GetDoneInit(): boolean;
@@ -85,13 +90,19 @@ declare namespace InlineJS {
         SetObserver(observer: MutationObserver): void;
         GetObserver(): MutationObserver;
         ExpandEvent(event: string, element: HTMLElement | string | true): string;
+        Call(target: (...args: any) => any, ...args: any): any;
+        AddTemp(callback: () => any): string;
+        CallTemp(key: string): any;
         static Get(id: string): Region;
+        static GetCurrent(id: string): Region;
         static Infer(element: HTMLElement | string): Region;
         static AddComponent(region: Region, element: HTMLElement, key: string): boolean;
         static Find(key: string, getNativeProxy: false): Region;
         static Find(key: string, getNativeProxy: true): any;
         static AddGlobal(key: string, callback: GlobalCallbackType): void;
         static GetGlobal(key: string): GlobalCallbackType;
+        static AddPostProcessCallback(callback: () => void): void;
+        static ExecutePostProcessCallbacks(): void;
         static SetDirectivePrefix(value: string): void;
         static IsEqual(first: any, second: any): boolean;
         static DeepCopy(target: any): any;
@@ -116,7 +127,10 @@ declare namespace InlineJS {
         regionId: string;
         path: string;
     }
-    type GetAccessStorage = Array<GetAccessInfo>;
+    interface GetAccessStorage {
+        optimized: Array<GetAccessInfo>;
+        raw: Array<GetAccessInfo>;
+    }
     interface GetAccessStorageInfo {
         storage: GetAccessStorage;
         lastAccessPath: string;
@@ -131,14 +145,17 @@ declare namespace InlineJS {
         private getAccessStorages_;
         private getAccessHooks_;
         constructor(regionId_: string);
-        private Schedule_;
+        Schedule(): void;
         Add(item: Change | BubbledChange): void;
         Subscribe(path: string, callback: ChangeCallbackType): number;
         Unsubscribe(id: number): void;
         AddGetAccess(path: string): void;
+        ReplaceOptimizedGetAccesses(): void;
         PushGetAccessStorage(storage: GetAccessStorage): void;
-        GetGetAccessStorage(): GetAccessStorage;
-        PopGetAccessStorage(): GetAccessStorage;
+        GetGetAccessStorage(optimized: false): GetAccessStorage;
+        GetGetAccessStorage(optimized: true): Array<GetAccessInfo>;
+        PopGetAccessStorage(optimized: false): GetAccessStorage;
+        PopGetAccessStorage(optimized: true): Array<GetAccessInfo>;
         PushGetAccessHook(hook: GetAccessHookType): void;
         PopGetAccessHook(): GetAccessHookType;
     }
@@ -155,9 +172,11 @@ declare namespace InlineJS {
         GetEventContext(): Event;
         TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true): Map<string, Array<number>>;
         ReportError(value: any, ref?: any): void;
+        Warn(value: any, ref?: any): void;
+        Log(value: any, ref?: any): void;
     }
     class Evaluator {
-        static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string): any;
+        static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow?: boolean): any;
         static GetContextKey(): string;
     }
     interface Proxy {
@@ -249,6 +268,7 @@ declare namespace InlineJS {
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Component(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Post(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Init(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Bind(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Uninit(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -266,7 +286,8 @@ declare namespace InlineJS {
         static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static InitIfOrEach(region: Region, element: HTMLElement): IfOrEachInfo;
         static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void): void;
-        static Evaluate(region: Region, element: HTMLElement, expression: string): any;
+        static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)): {};
+        static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean): any;
         static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any): void;
         static AddAll(): void;
     }
@@ -284,7 +305,9 @@ declare namespace InlineJS {
     class Processor {
         static All(region: Region, element: HTMLElement, options?: ProcessorOptions): void;
         static One(region: Region, element: HTMLElement, options?: ProcessorOptions): DirectiveHandlerReturn;
+        static Pre(region: Region, element: HTMLElement): void;
         static Post(region: Region, element: HTMLElement): void;
+        static PreOrPost(region: Region, element: HTMLElement, scopeKey: string, name: string): void;
         static DispatchDirective(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Check(element: HTMLElement, options: ProcessorOptions): boolean;
         static TraverseDirectives(element: HTMLElement, callback: (directive: Directive) => DirectiveHandlerReturn): DirectiveHandlerReturn;

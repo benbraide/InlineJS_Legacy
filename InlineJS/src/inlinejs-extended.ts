@@ -1,14 +1,23 @@
 namespace InlineJS{
-    export interface StateDirectiveInfo{
+    export interface StateDirectiveValue{
         isDirty: boolean;
         isTyping: boolean;
         isValid: boolean;
     }
-    
+
     export interface StateDirectiveCount{
         isDirty: number;
         isTyping: number;
         isValid: number;
+    }
+
+    export interface StateDirectiveInfo{
+        value: StateDirectiveValue;
+        count: StateDirectiveCount;
+        activeCount: number;
+        doneInit: boolean;
+        alert: (key: string) => void;
+        resetCallbacks: Array<() => void>;
     }
     
     export class ExtendedDirectiveHandlers{
@@ -19,6 +28,16 @@ namespace InlineJS{
         private static intersectionId_ = 0;
         
         public static State(region: Region, element: HTMLElement, directive: Directive){
+            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value), delay = 750, lazy = false;
+            if (options && typeof options === 'object'){//Retrieve options
+                delay = (('delay' in options) ? options.delay : delay);
+                lazy = (('lazy' in options) ? !!options.lazy : lazy);
+            }
+            
+            return ExtendedDirectiveHandlers.ContextState(region, element, lazy, delay, null);
+        }
+
+        public static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, info: StateDirectiveInfo){
             let isText: boolean = false, isUnknown: boolean = false, regionId = region.GetId();
             if (element.tagName === 'INPUT'){
                 let type = (element as HTMLInputElement).type;
@@ -31,185 +50,193 @@ namespace InlineJS{
                 isUnknown = true;
             }
 
-            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value), delay = 750, lazy = false, reported = false;
-            if (options && typeof options === 'object'){//Retrieve options
-                delay = (('delay' in options) ? options.delay : delay);
-                lazy = (('lazy' in options) ? !!options.lazy : lazy);
-            }
-
-            let info: StateDirectiveInfo = {
-                isDirty: false,
-                isTyping: false,
-                isValid: false
-            };
-
             let elementScope = region.AddElement(element, true);
             let path = `${elementScope.key}.$state<${++ExtendedDirectiveHandlers.stateId_}>`;
 
-            let addLocalKey = (map: Map<string, Value>, key: string) => {
-                map[key] = new Value(() => {
-                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.${key}`);
-                    return info[key];
-                });
+            let isRoot = false, forceSet = false;
+            let callbacks = {
+                isDirty: new Array<(state: boolean) => boolean>(),
+                isTyping: new Array<(state: boolean) => boolean>(),
+                isValid: new Array<(state: boolean) => boolean>()
             };
-
-            let parentState = region.GetLocal(region.GetElementAncestor(element, 0), '$state', false);
-            let hasParentState = (parentState && !(parentState instanceof NoResult));
             
-            let setLocalValue = (key: string, value: boolean, initial: boolean) => {
-                info[key] = value;
-                if (!hasParentState || !('parent' in parentState)){
-                    Region.Get(regionId).GetChanges().Add({
-                        type: 'set',
-                        path: `${path}.${key}`,
-                        prop: key
-                    });
-                }
-                else{//Alert parent
-                    parentState.parent[key](value, initial);
-                }
-            };
+            if (!info){//Initialize info
+                isRoot = true;
+                info = {
+                    value: {
+                        isDirty: false,
+                        isTyping: false,
+                        isValid: false
+                    },
+                    count: {
+                        isDirty: 0,
+                        isTyping: 0,
+                        isValid: 0
+                    },
+                    activeCount: 0,
+                    doneInit: false,
+                    alert: (key: string) => {
+                        Region.Get(regionId).GetChanges().Add({
+                            type: 'set',
+                            path: `${path}.${key}`,
+                            prop: key
+                        });
+                    },
+                    resetCallbacks: new Array<() => void>()
+                };
 
-            let locals = new Map<string, Value>();
-            if (!hasParentState || !('parent' in parentState)){
-                Object.keys(info).forEach(key => addLocalKey(locals, key));
+                elementScope.locals['$state'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                    if (prop in info.value){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${path}.${prop}`);
+                        return info.value[prop];
+                    }
+    
+                    if (prop === 'reset'){
+                        return () => {
+                            if (!info.doneInit){//Nothing to reset
+                                return;
+                            }
+                            
+                            info.doneInit = false;
+                            info.count.isDirty = info.count.isTyping = info.count.isValid = 0;
+                            info.value.isDirty = info.value.isTyping = info.value.isValid = false;
+                            info.resetCallbacks.forEach(callback => callback());
+                            finalize();
+                        };
+                    }
+    
+                    if (prop === 'onDirty'){
+                        return (callback: (state: boolean) => boolean) => callbacks.isDirty.push(callback);
+                    }
+    
+                    if (prop === 'onTyping'){
+                        return (callback: (state: boolean) => boolean) => callbacks.isTyping.push(callback);
+                    }
+
+                    if (prop === 'onValid'){
+                        return (callback: (state: boolean) => boolean) => callbacks.isValid.push(callback);
+                    }
+                }, [...Object.keys(info.value), 'onDirty','onTyping','onValid']);
             }
 
-            let getDirective = (): Directive => {
-                return {
-                    original: '',
-                    parts: null,
-                    raw: '',
-                    key: '',
-                    value: `{delay:${delay},lazy:${lazy}}`
-                };
+            let setValue = (key: string, value: boolean) => {
+                if (forceSet || value != info.value[key]){
+                    info.value[key] = value;
+                    info.alert(key);
+                    callbacks[key].forEach(callback => callback(value));
+                }
             };
-            
-            elementScope.locals['$state'] = locals;
-            if (isUnknown){
-                let childCount = element.children.length;
-                if (childCount == 0){
-                    elementScope.postProcessCallbacks.push(() => {
-                        setLocalValue('isValid', true, true);
-                        setLocalValue('isTyping', false, true);
-                        setLocalValue('isDirty', false, true);
-                    });
-                    
-                    return DirectiveHandlerReturn.Handled;
+
+            let finalize = () => {
+                if (info.doneInit){
+                    return;
                 }
                 
-                let counts: StateDirectiveCount = {
-                    isDirty: 0,
-                    isTyping: 0,
-                    isValid: 0
-                };
+                info.doneInit = true;
+                forceSet = true;
+                
+                setValue('isDirty', (0 < info.count.isDirty));
+                setValue('isTyping', false);
+                setValue('isValid', (info.count.isValid == info.activeCount));
 
-                let initialCounts: StateDirectiveCount = {
-                    isDirty: 0,
-                    isTyping: 0,
-                    isValid: 0
-                };
+                forceSet = false;
+            };
 
-                let updateCount = (key: string, value: -1 | 1, requireAll: boolean, initial: boolean) => {
-                    if (initial && (++initialCounts[key] < childCount || value == -1)){
-                        if (value == 1){
-                            counts[key] += value;
-                        }
-                        return;
+            if (isUnknown){//Pass to offspring
+                [...element.children].forEach((child) => ExtendedDirectiveHandlers.ContextState(region, (child as HTMLElement), lazy, delay, info));
+
+                if (isRoot){//Done
+                    if (info.activeCount == 0){
+                        return DirectiveHandlerReturn.Nil;
                     }
                     
-                    counts[key] += value;
-                    if ((counts[key] == 0 || (counts[key] < childCount && requireAll)) && info[key]){
-                        setLocalValue(key, false, initial);
-                    }
-                    else if (counts[key] > 0 && !info[key] && (!requireAll || counts[key] == childCount)){
-                        setLocalValue(key, true, initial);
-                    }
-                };
-
-                locals['parent'] = {
-                    isDirty: (value: boolean, initial: boolean) => updateCount('isDirty', (value ? 1 : -1), false, initial),
-                    isTyping: (value: boolean, initial: boolean) => updateCount('isTyping', (value ? 1 : -1), false, initial),
-                    isValid: (value: boolean, initial: boolean) => updateCount('isValid', (value ? 1 : -1), true, initial)
-                };
-
-                setTimeout(() => [...element.children].forEach((child) => {
-                    ExtendedDirectiveHandlers.State(region, (child as HTMLElement), getDirective());
-                    Processor.Post(region, (child as HTMLElement));
-                }), 0);
-
-                locals['reset'] = () => {
-                    [...element.children].forEach((child) => {
-                        let myRegion = Region.Get(regionId);
-                        let childState = myRegion.GetLocal(myRegion.GetElementAncestor((child as HTMLElement), 0), '$state', false);
-                        if (childState && !(childState instanceof NoResult) && 'reset' in childState){
-                            childState.reset();
-                        }
-                    });
-                };
+                    finalize();
+                }
+                
+                return DirectiveHandlerReturn.Handled;
             }
-            else{//Input element
-                let counter = 0;
-                let onEvent = () => {
+
+            let updateCount = (key: string, value: -1 | 1, requireAll: boolean) => {
+                if (info.doneInit){
+                    info.count[key] += value;
+                    if (info.count[key] == 0){
+                        setValue(key, false);
+                    }
+                    else if (info.count[key] == info.activeCount || (info.count[key] > 0 && !requireAll)){
+                        setValue(key, true);
+                    }
+                    else{
+                        setValue(key, false);
+                    }
+                }
+                else if (value == 1){//Initial update
+                    info.count[key] += 1;
+                }
+            };
+
+            let counter = 0, isDirty = false, isTyping = false, isValid = false;
+            let stoppedTyping = () => {
+                if (isTyping){
+                    isTyping = false;
+                    updateCount('isTyping', -1, false);
+                }
+
+                if (lazy && (element as HTMLInputElement).checkValidity() != isValid){
+                    isValid = !isValid;
+                    updateCount('isValid', (isValid ? 1 : -1), true);
+                }
+            };
+            
+            let onEvent = () => {
+                if (isText){
                     let checkpoint = ++counter;
                     setTimeout(() => {
-                        if (checkpoint != counter){
-                            return;
-                        }
-
-                        if (isText && info.isTyping){
-                            setLocalValue('isTyping', false, false);
-                        }
-
-                        if (lazy && (element as HTMLInputElement).checkValidity() != info.isValid){
-                            setLocalValue('isValid', !info.isValid, false);
+                        if (checkpoint == counter){
+                            stoppedTyping();
                         }
                     }, delay);
 
-                    if (isText && !info.isTyping){
-                        setLocalValue('isTyping', true, false);
+                    if (!isTyping){
+                        isTyping = true;
+                        updateCount('isTyping', 1, false);
                     }
-
-                    if (!info.isDirty){
-                        setLocalValue('isDirty', true, false);
-                    }
-
-                    if (!lazy && (element as HTMLInputElement).checkValidity() != info.isValid){
-                        setLocalValue('isValid', !info.isValid, false);
-                    }
-                };
-
-                if (isText){
-                    element.addEventListener('input', onEvent);
-                    element.addEventListener('paste', onEvent);
-                    element.addEventListener('cut', onEvent);
-                    element.addEventListener('blur', () => {
-                        if (info.isTyping){
-                            setLocalValue('isTyping', false, false);
-                        }
-                    });
-                }
-                else{
-                    element.addEventListener('change', onEvent);
                 }
 
-                elementScope.postProcessCallbacks.push(() => {
-                    setLocalValue('isValid', (element as HTMLInputElement).checkValidity(), true);
-                    setLocalValue('isTyping', false, true);
-                    setLocalValue('isDirty', false, true);
-                });
+                if (!isDirty){
+                    isDirty = true;
+                    updateCount('isDirty', 1, false);
+                }
 
-                locals['reset'] = () => {
-                    if (info.isDirty){
-                        setLocalValue('isDirty', false, false);
-                    }
-    
-                    if ((element as HTMLInputElement).checkValidity() != info.isValid){
-                        setLocalValue('isValid', !info.isValid, false);
-                    }
-                };
+                if ((!isText || !lazy) && (element as HTMLInputElement).checkValidity() != isValid){
+                    isValid = !isValid;
+                    updateCount('isValid', (isValid ? 1 : -1), true);
+                }
+            };
+
+            if (isText){
+                element.addEventListener('input', onEvent);
+                element.addEventListener('paste', onEvent);
+                element.addEventListener('cut', onEvent);
+                element.addEventListener('blur', stoppedTyping);
             }
+            else{
+                element.addEventListener('change', onEvent);
+            }
+
+            let initialState = () => {
+                isDirty = isTyping = false;
+                isValid = (element as HTMLInputElement).checkValidity();
+                updateCount('isValid', (isValid ? 1 : -1), true);
+            };
+
+            ++info.activeCount;
+            info.resetCallbacks.push(initialState);
             
+            initialState();
+            if (isRoot){//Done
+                finalize();
+            }
+
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -229,7 +256,9 @@ namespace InlineJS{
                     value: value
                 };
                 
-                CoreDirectiveHandlers.Assign(myRegion, element, directive.value, `'${name}'`, () => name);
+                let key = myRegion.AddTemp(() => info);
+                CoreDirectiveHandlers.Assign(myRegion, element, directive.value, `$__InlineJS_CallTemp__('${key}')`, () => info);
+                
                 myRegion.GetChanges().Add({
                     type: 'set',
                     path: path,
@@ -242,7 +271,9 @@ namespace InlineJS{
                 return info;
             });
 
-            CoreDirectiveHandlers.Assign(region, element, directive.value, `'N/A'`, () => info);
+            let key = region.AddTemp(() => info);
+            CoreDirectiveHandlers.Assign(region, element, directive.value, `$__InlineJS_CallTemp__('${key}')`, () => info);
+
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -257,6 +288,7 @@ namespace InlineJS{
                         prop: 'loaded'
                     });
                     
+                    onLoadCallbacks.forEach(callback => callback());
                     if (once){
                         append = !append;
                         once = false;
@@ -275,33 +307,171 @@ namespace InlineJS{
             let elementScope = region.AddElement(element, true);
             let path = `${elementScope.key}.$xhr<${++ExtendedDirectiveHandlers.xhrId_}>`;
             
-            elementScope.locals['$xhr'] = {
+            let onLoadCallbacks = new Array<() => boolean>();
+            elementScope.locals['$xhr'] = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'loaded'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.loaded`);
+                    return loaded;
+                }
+
+                if (prop === 'url'){
+                    return previousUrl;
+                }
+
+                if (prop === 'isAppend'){
+                    return append;
+                }
+
+                if (prop === 'isOnce'){
+                    return once;
+                }
+
+                if (prop === 'append'){
+                    return (state: boolean, isOnce = false) => {
+                        append = state;
+                        once = isOnce;
+                    };
+                }
+
+                if (prop === 'reload'){
+                    return () => load('::reload::');
+                }
+
+                if (prop === 'unload'){
+                    return load('::unload::');
+                }
+
+                if (prop === 'onLoad'){
+                    return (callback: () => boolean) => onLoadCallbacks.push(callback);
+                }
+
+                return null;
+            }, ['loaded', 'index', 'value']);
+
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static LazyLoad(region: Region, element: HTMLElement, directive: Directive){
+            let options = ExtendedDirectiveHandlers.GetIntersectionOptions(region, element, directive.value);
+            let url = (('url' in options) ? options['url'] : (('original' in options) ? options['original'] : null));
+
+            if (!url || typeof url !== 'string'){//Ignore
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let elementScope = region.AddElement(element, true);
+            let path = `${elementScope.key}.$xhr<${++ExtendedDirectiveHandlers.xhrId_}>`;
+            
+            let regionId = region.GetId(), loaded = false;;
+            ExtendedDirectiveHandlers.ObserveIntersection(region, element, options, (entry) => {
+                if ((!(entry instanceof IntersectionObserverEntry) || !entry.isIntersecting) && entry !== false){
+                    return true;
+                }
+
+                ExtendedDirectiveHandlers.FetchLoad(element, url, false, () => {
+                    loaded = true;
+                    Region.Get(regionId).GetChanges().Add({
+                        type: 'set',
+                        path: `${path}.loaded`,
+                        prop: 'loaded'
+                    });
+
+                    onLoadCallbacks.forEach(callback => callback());
+                });
+                
+                return false;
+            });
+
+            let onLoadCallbacks = new Array<() => boolean>();
+            elementScope.locals['$lazyLoad'] = {
                 loaded: new Value(() => {
                     Region.Get(regionId).GetChanges().AddGetAccess(`${path}.loaded`);
                     return loaded;
                 }),
-                url: new Value(() => {
-                    return previousUrl;
-                }),
-                isAppend: new Value(() => {
-                    return append;
-                }),
-                isOnce: new Value(() => {
-                    return once;
-                }),
-                append: (state: boolean, isOnce = false) => {
-                    append = state;
-                    once = isOnce;
-                },
-                reload: () => load('::reload::'),
-                unload: () => load('::unload::')
+                onLoad: (callback: () => boolean) => onLoadCallbacks.push(callback)
             };
 
             return DirectiveHandlerReturn.Handled;
         }
 
         public static Intersection(region: Region, element: HTMLElement, directive: Directive){
-            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            let regionId = region.GetId(), previousRatio = 0, visible = false, supported = true, stopped = false;
+            ExtendedDirectiveHandlers.ObserveIntersection(region, element, ExtendedDirectiveHandlers.GetIntersectionOptions(region, element, directive.value), (entry) => {
+                if (stopped){
+                    return false;
+                }
+                
+                if (entry instanceof IntersectionObserverEntry){
+                    if (entry.isIntersecting != visible){//Visibility changed
+                        visible = entry.isIntersecting;
+                        Region.Get(regionId).GetChanges().Add({
+                            type: 'set',
+                            path: `${path}.visible`,
+                            prop: 'visible'
+                        });
+
+                        onVisibleCallbacks.forEach(callback => callback(visible));
+                    }
+                    
+                    if (entry.intersectionRatio != previousRatio){
+                        previousRatio = entry.intersectionRatio;
+                        Region.Get(regionId).GetChanges().Add({
+                            type: 'set',
+                            path: `${path}.ratio`,
+                            prop: 'ratio'
+                        });
+
+                        onRatioCallbacks.forEach(callback => callback(previousRatio));
+                    }
+                }
+                else{//Not supported
+                    supported = false;
+                }
+                
+                return true;
+            });
+
+            let elementScope = region.AddElement(element, true);
+            let path = `${elementScope.key}.$intersection<${++ExtendedDirectiveHandlers.intersectionId_}>`;
+            
+            let onVisibleCallbacks = new Array<(state: boolean) => boolean>();
+            let onRatioCallbacks = new Array<(ratio: number) => boolean>();
+
+            elementScope.locals['$intersection'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop === 'ratio'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.ratio`);
+                    return previousRatio;
+                }
+
+                if (prop === 'visible'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.visible`);
+                    return visible;
+                }
+
+                if (prop === 'supported'){
+                    return supported;
+                }
+
+                if (prop === 'stop'){
+                    return () => {
+                        stopped = true;
+                    };
+                }
+
+                if (prop === 'onRatio'){
+                    return (callback: (ratio: number) => boolean) => onRatioCallbacks.push(callback);
+                }
+
+                if (prop === 'onVisible'){
+                    return (callback: (state: boolean) => boolean) => onVisibleCallbacks.push(callback);
+                }
+            }, ['ratio', 'visible', 'supported', 'stop','onRatio','onVisible']);
+
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
+            let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
                 if ('root' in options && typeof options['root'] === 'string'){
                     options['root'] = document.querySelector(options['root']);
@@ -319,63 +489,12 @@ namespace InlineJS{
                 options = {
                     root: null,
                     rootMargin: '0px',
-                    threshold: 0
+                    threshold: 0,
+                    original: options
                 };
             }
 
-            let regionId = region.GetId(), previousRatio = 0, visible = false, supported = true, stopped = false;
-            ExtendedDirectiveHandlers.ObserveIntersection(region, element, options, (entry) => {
-                if (stopped){
-                    return false;
-                }
-                
-                if (entry instanceof IntersectionObserverEntry){
-                    if (entry.isIntersecting != visible){//Visibility changed
-                        visible = entry.isIntersecting;
-                        Region.Get(regionId).GetChanges().Add({
-                            type: 'set',
-                            path: `${path}.visible`,
-                            prop: 'visible'
-                        });
-                    }
-                    
-                    if (entry.intersectionRatio != previousRatio){
-                        previousRatio = entry.intersectionRatio;
-                        Region.Get(regionId).GetChanges().Add({
-                            type: 'set',
-                            path: `${path}.ratio`,
-                            prop: 'ratio'
-                        });
-                    }
-                }
-                else{//Not supported
-                    supported = false;
-                }
-                
-                return true;
-            });
-
-            let elementScope = region.AddElement(element, true);
-            let path = `${elementScope.key}.$intersection<${++ExtendedDirectiveHandlers.intersectionId_}>`;
-            
-            elementScope.locals['$intersection'] = {
-                ratio: new Value(() => {
-                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.ratio`);
-                    return previousRatio;
-                }),
-                visible: new Value(() => {
-                    Region.Get(regionId).GetChanges().AddGetAccess(`${path}.visible`);
-                    return visible;
-                }),
-                supported: new Value(() => {
-                    return supported;
-                }),
-                stop: () => {
-                    stopped = true;
-                }
-            };
-
-            return DirectiveHandlerReturn.Handled;
+            return options;
         }
 
         public static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean){
@@ -416,15 +535,14 @@ namespace InlineJS{
             };
 
             let fetch = (url: string, callback: (response: any) => void) => {
-                window.fetch(url).then((response) => {
+                window.fetch(url).then(response => response.text()).then((data) => {
                     try{
-                        return response.json();
+                        callback(JSON.parse(data));
                     }
-                    catch (err){}
-
-                    return response.text();
-                }).then((data) => {
-                    callback(data);
+                    catch (err){
+                        callback(data);
+                    }
+                    
                     if (onLoad){
                         onLoad();
                     }
@@ -483,8 +601,15 @@ namespace InlineJS{
             }
             else{//Generic
                 fetch(url, (data) => {
-                    removeAll();
-                    element.innerHTML = ((typeof data === 'string') ? data : (data as object).toString());
+                    if (append){
+                        let tmpl = document.createElement('template');
+                        tmpl.innerHTML = ((typeof data === 'string') ? data : (data as object).toString());
+                        tmpl.content.childNodes.forEach(child => element.appendChild(child));
+                    }
+                    else{
+                        removeAll();
+                        element.innerHTML = ((typeof data === 'string') ? data : (data as object).toString());
+                    }
                 });
             }
         }
@@ -493,32 +618,23 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
             DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
+            DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
 
-            let getEntry = (regionId: string, target: HTMLElement, name: string, key: string) => {
-                let map = (Region.Infer(target) || Region.Get(regionId)).GetLocal(target, name, false);
-                if (!key){
-                    return ((map instanceof Value) ? map.Get() : map);
-                }
-
-                if (map && key in map){
-                    let entry = map[key];
-                    return ((typeof entry === 'function') ? (entry as () => void).bind(map) : ((entry instanceof Value) ? entry.Get() : entry));
-                }
-
-                return null;
+            let buildGlobal = (name: string) => {
+                Region.AddGlobal(`$$${name}`, (regionId: string) => {
+                    return (target: HTMLElement) => {
+                        let local = (Region.Infer(target) || Region.Get(regionId)).GetLocal(target, `$${name}`, true);
+                        return ((local instanceof Value) ? local.Get() : local);
+                    };
+                });
             };
 
-            let buildGlobals = (regionId: string, name: string, keys: Array<string>) => {
-                let map = {};
-                keys.forEach(key => map[key] = (target: HTMLElement) => getEntry(regionId, target, name, key));
-                return map;
-            };
-            
-            Region.AddGlobal('$$state', (regionId: string) => buildGlobals(regionId, '$state', ['isDirty', 'isTyping', 'isValid', 'reset']));
-            Region.AddGlobal('$$attr', (regionId: string) => (target: HTMLElement) => getEntry(regionId, target, '$attr', null));
-            Region.AddGlobal('$$xhr', (regionId: string) => buildGlobals(regionId, '$xhr', ['loaded', 'url', 'isAppend', 'isOnce', 'append', 'reload', 'unload']));
-            Region.AddGlobal('$$intersection', (regionId: string) => buildGlobals(regionId, '$intersection', ['ratio', 'visible', 'supported', 'stop']));
+            buildGlobal('state');
+            buildGlobal('attr');
+            buildGlobal('xhr');
+            buildGlobal('lazyLoad');
+            buildGlobal('intersection');
         }
     }
 

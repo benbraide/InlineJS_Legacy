@@ -41,6 +41,7 @@ namespace InlineJS{
         uninitCallbacks: Array<() => void>;
         changeRefs: Array<ChangeRefInfo>;
         directiveHandlers: Map<string, DirectiveHandlerType>;
+        preProcessCallbacks: Array<() => void>;
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
         outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
@@ -65,9 +66,14 @@ namespace InlineJS{
     export class Region{
         private static components_ = new Map<string, string>();
         private static globals_ = new Map<string, GlobalCallbackType>();
+        private static postProcessCallbacks_ = new Array<() => void>();
 
-        public static externalCallbacks: ExternalCallbacks;
+        public static directivePrfix = 'x';
         public static directiveRegex = /^(data-)?x-(.+)$/;
+        public static externalCallbacks: ExternalCallbacks = {
+            isEqual: (first: any, second: any) => (first === second),
+            deepCopy: (target: any) => target,
+        };
         
         private componentKey_ = '';
         private doneInit_ = false;
@@ -79,6 +85,8 @@ namespace InlineJS{
         private observer_: MutationObserver = null;
         private outsideEvents_ = new Array<string>();
         private nextTickCallbacks_ = new Array<() => void>();
+        private tempCallbacks_ = new Map<string, () => any>();
+        private tempCallbacksId_ = 0;
 
         public constructor(private id_: string, private rootElement_: HTMLElement, private rootProxy_: RootProxy){
             this.state_ = new State(this.id_);
@@ -163,7 +171,7 @@ namespace InlineJS{
         }
 
         public AddProxy(proxy: Proxy){
-            this.proxies_[proxy.GetName()] = proxy;
+            this.proxies_[proxy.GetPath()] = proxy;
         }
 
         public RemoveProxy(path: string){
@@ -198,6 +206,7 @@ namespace InlineJS{
                 uninitCallbacks: new Array<() => void>(),
                 changeRefs: new Array<ChangeRefInfo>(),
                 directiveHandlers: new Map<string, DirectiveHandlerType>(),
+                preProcessCallbacks: new Array<() => void>(),
                 postProcessCallbacks: new Array<() => void>(),
                 eventExpansionCallbacks: new Array<(event: string) => string | null>(),
                 outsideEventCallbacks: new Map<string, Array<(event: Event) => void>>(),
@@ -235,7 +244,7 @@ namespace InlineJS{
                 });
 
                 scope.element.removeAttribute(Region.GetElementKeyName());
-                scope.intersectionObservers.forEach(observer => observer.unobserve(scope.element));
+                Object.keys(scope.intersectionObservers).forEach(key => scope.intersectionObservers[key].unobserve(scope.element));
                 [...scope.element.children].forEach(child => this.RemoveElement(child as HTMLElement));
                 
                 delete this.elementScopes_[scope.key];
@@ -266,7 +275,8 @@ namespace InlineJS{
                 document.body.addEventListener(event, (e: Event) => {
                     let myRegion = Region.Get(id);
                     if (myRegion){
-                        myRegion.elementScopes_.forEach((scope) => {
+                        Object.keys(myRegion.elementScopes_).forEach((key) => {
+                            let scope = (myRegion.elementScopes_[key] as ElementScope);
                             if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target as Node)){
                                 (scope.outsideEventCallbacks[e.type] as Array<(event: Event) => void>).forEach(callback => callback(e));
                             }
@@ -293,6 +303,7 @@ namespace InlineJS{
 
         public AddNextTickCallback(callback: () => void){
             this.nextTickCallbacks_.push(callback);
+            this.changes_.Schedule();
         }
 
         public ExecuteNextTick(){
@@ -366,11 +377,41 @@ namespace InlineJS{
             return event;
         }
 
+        public Call(target: (...args: any) => any, ...args: any){
+            return ((target.name in this.rootProxy_.GetTarget()) ? target.call(this.rootProxy_.GetNativeProxy(), ...args) : target(...args));
+        }
+
+        public AddTemp(callback: () => any){
+            let key = `Region<${this.id_}>.temp<${++this.tempCallbacksId_}>`;
+            this.tempCallbacks_[key] = callback;
+            return key;
+        }
+
+        public CallTemp(key: string){
+            if (!(key in this.tempCallbacks_)){
+                return null;
+            }
+
+            let callback = (this.tempCallbacks_[key] as () => any);
+            delete this.tempCallbacks_[key];
+
+            return callback();
+        }
+
         public static Get(id: string): Region{
             return ((id in RegionMap.entries) ? RegionMap.entries[id] : null);
         }
 
+        public static GetCurrent(id: string): Region{
+            let scopeRegionId = RegionMap.scopeRegionIds.Peek();
+            return (scopeRegionId ? Region.Get(scopeRegionId) : Region.Get(id));
+        }
+
         public static Infer(element: HTMLElement | string): Region{
+            if (!element){
+                return null;
+            }
+            
             let key = ((typeof element === 'string') ? element : element.getAttribute(Region.GetElementKeyName()));
             if (!key){
                 return null;
@@ -409,7 +450,29 @@ namespace InlineJS{
             return ((key in Region.globals_) ? Region.globals_[key] : null);
         }
 
+        public static AddPostProcessCallback(callback: () => void){
+            Region.postProcessCallbacks_.push(callback);
+        }
+
+        public static ExecutePostProcessCallbacks(){
+            if (Region.postProcessCallbacks_.length == 0){
+                return;
+            }
+            
+            Region.postProcessCallbacks_.forEach((callback) => {
+                try{
+                    callback();
+                }
+                catch (err){
+                    console.error(err, `InlineJs.Region<NIL>.ExecutePostProcessCallbacks`);
+                }
+            });
+
+            Region.postProcessCallbacks_ = [];
+        }
+
         public static SetDirectivePrefix(value: string){
+            Region.directivePrfix = value;
             Region.directiveRegex = new RegExp(`^(data-)?${value}-(.+)$`);
         }
 
@@ -452,7 +515,11 @@ namespace InlineJS{
         path: string;
     }
 
-    export type GetAccessStorage = Array<GetAccessInfo>;
+    export interface GetAccessStorage{
+        optimized: Array<GetAccessInfo>,
+        raw: Array<GetAccessInfo>
+    };
+
     export interface GetAccessStorageInfo{
         storage: GetAccessStorage;
         lastAccessPath: string;
@@ -471,7 +538,7 @@ namespace InlineJS{
         
         public constructor (private regionId_: string){}
 
-        private Schedule_(){
+        public Schedule(){
             if (this.isScheduled_){
                 return;
             }
@@ -499,7 +566,7 @@ namespace InlineJS{
 
         public Add(item: Change | BubbledChange): void{
             this.list_.push(item);
-            this.Schedule_();
+            this.Schedule();
         }
 
         public Subscribe(path: string, callback: ChangeCallbackType): number{
@@ -547,53 +614,76 @@ namespace InlineJS{
         }
 
         public AddGetAccess(path: string){
-            let hook = this.getAccessHooks_.Peek();
-            if (hook && !hook(this.regionId_, path)){//Rejected
+            let region = Region.GetCurrent(this.regionId_);
+            if (!region){
+                return;
+            }
+            
+            let hook = region.GetChanges().getAccessHooks_.Peek();
+            if (hook && !hook(region.GetId(), path)){//Rejected
+                return;
+            }
+            
+            let storageInfo = region.GetChanges().getAccessStorages_.Peek();
+            if (!storageInfo || !storageInfo.storage){
                 return;
             }
 
-            let storageInfo: GetAccessStorageInfo;
-            let scopeRegionId = RegionMap.scopeRegionIds.Peek();
-
-            if (scopeRegionId && scopeRegionId != this.regionId_){//Use scope
-                let scopeRegion = Region.Get(scopeRegionId);
-                storageInfo = (scopeRegion ? scopeRegion.GetChanges().getAccessStorages_.Peek() : null);
-            }
-            else{
-                storageInfo = this.getAccessStorages_.Peek();
-            }
-
-            if (!storageInfo){
-                return;
-            }
-
-            if (storageInfo.lastAccessPath && 0 < storageInfo.storage.length && storageInfo.lastAccessPath.length < path.length && path.substr(0, storageInfo.lastAccessPath.length) === storageInfo.lastAccessPath){//Deeper access
-                storageInfo.storage[(storageInfo.storage.length - 1)].path = path;
-            }
-            else{//New entry
-                storageInfo.storage.push({
+            if (storageInfo.storage.raw){
+                storageInfo.storage.raw.push({
                     regionId: this.regionId_,
                     path: path
-                })
+                });
+            }
+
+            if (!storageInfo.storage.optimized){
+                return;
+            }
+            
+            let optimized = storageInfo.storage.optimized;
+            if (storageInfo.lastAccessPath && 0 < optimized.length && storageInfo.lastAccessPath.length < path.length && path.substr(0, storageInfo.lastAccessPath.length) === storageInfo.lastAccessPath){//Deeper access
+                optimized[(optimized.length - 1)].path = path;
+            }
+            else{//New entry
+                optimized.push({
+                    regionId: this.regionId_,
+                    path: path
+                });
             }
 
             storageInfo.lastAccessPath = path;
         }
 
+        public ReplaceOptimizedGetAccesses(){
+            let info = this.getAccessStorages_.Peek();
+            if (info && info.storage){
+                info.storage.optimized = new Array<GetAccessInfo>();
+                info.storage.raw.forEach(item => info.storage.optimized.push(item));
+            }
+        }
+
         public PushGetAccessStorage(storage: GetAccessStorage): void{
             this.getAccessStorages_.Push({
-                storage: storage,
+                storage: (storage || {
+                    optimized: new Array<GetAccessInfo>(),
+                    raw: new Array<GetAccessInfo>()
+                }),
                 lastAccessPath: ''
             });
         }
 
-        public GetGetAccessStorage(): GetAccessStorage{
+        public GetGetAccessStorage(optimized: false): GetAccessStorage;
+        public GetGetAccessStorage(optimized: true): Array<GetAccessInfo>;
+        public GetGetAccessStorage(optimized = true){
             let info = this.getAccessStorages_.Peek();
-            return (info ? info.storage : null);
+            return ((info && info.storage) ? (optimized ? info.storage.optimized : info.storage) : null);
         }
 
-        public PopGetAccessStorage(): GetAccessStorage{
-            return this.getAccessStorages_.Pop().storage;
+        public PopGetAccessStorage(optimized: false): GetAccessStorage;
+        public PopGetAccessStorage(optimized: true): Array<GetAccessInfo>;
+        public PopGetAccessStorage(optimized: boolean){
+            let info = this.getAccessStorages_.Pop();
+            return ((info && info.storage) ? (optimized ? info.storage.optimized : info.storage) : null);
         }
 
         public PushGetAccessHook(hook: GetAccessHookType): void{
@@ -642,14 +732,14 @@ namespace InlineJS{
             }
 
             try{
-                region.GetChanges().PushGetAccessStorage(new Array<GetAccessInfo>());
+                region.GetChanges().PushGetAccessStorage(null);
                 stopped = (callback(null) === false);
             }
             catch (err){
                this.ReportError(err, `InlineJs.Region<${this.regionId_}>.State.TrapAccess`);
             }
 
-            let storage = region.GetChanges().PopGetAccessStorage();
+            let storage = region.GetChanges().PopGetAccessStorage(true);
             if (stopped || !changeCallback || storage.length == 0){
                 return new Map<string, Array<number>>();
             }
@@ -697,10 +787,18 @@ namespace InlineJS{
         public ReportError(value: any, ref?: any): void{
             console.error(value, ref);
         }
+
+        public Warn(value: any, ref?: any): void{
+            console.warn(value, ref);
+        }
+
+        public Log(value: any, ref?: any): void{
+            console.log(value, ref);
+        }
     }
 
     export class Evaluator{
-        public static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string): any{
+        public static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow = false): any{
             if (!(expression = expression.trim())){
                 return null;
             }
@@ -721,7 +819,7 @@ namespace InlineJS{
                     with (${Evaluator.GetContextKey()}){
                         return (${expression});
                     };
-                `)).bind(state.GetElementContext())(region.GeRootProxy().GetNativeProxy());
+                `)).bind(state.GetElementContext())(useWindow ? window : region.GeRootProxy().GetNativeProxy());
             }
             catch (err){
                 result = null;
@@ -762,7 +860,7 @@ namespace InlineJS{
         }
         
         let ownerProxies = owner.GetProxies();
-        if (name in ownerProxies){
+        if (name in ownerProxies && name !== 'constructor' && name !== 'proto'){
             return ownerProxies[name];
         }
 
@@ -1068,11 +1166,29 @@ namespace InlineJS{
                 RootProxy.Watch(regionId, contextElement, expression, value => (!value || (callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value) && false)), false);
             });
 
-            Region.AddGlobal('$nextTick', (regionId: string, contextElement: HTMLElement) => (expression: string) => {
+            Region.AddGlobal('$nextTick', (regionId: string, contextElement: HTMLElement) => (callback: () => void) => {
                 let region = Region.Get(regionId);
                 if (region){
-                    region.AddNextTickCallback(() => CoreDirectiveHandlers.Evaluate(region, contextElement, expression));
+                    region.AddNextTickCallback(callback);
                 }
+            });
+
+            Region.AddGlobal('$post', () => (callback: () => void) => {
+                Region.AddPostProcessCallback(callback);
+            });
+
+            Region.AddGlobal('$use', (regionId: string) => (value: any) => {
+                let region = Region.GetCurrent(regionId);
+                if (region){
+                    region.GetChanges().ReplaceOptimizedGetAccesses();
+                }
+
+                return value;
+            });
+
+            Region.AddGlobal('$__InlineJS_CallTemp__', (regionId: string) => (key: string) => {
+                let region = Region.Get(regionId);
+                return (region ? region.CallTemp(key) : null);
             });
         }
     }
@@ -1249,7 +1365,7 @@ namespace InlineJS{
 
         public static Data(region: Region, element: HTMLElement, directive: Directive){
             let proxy = region.GeRootProxy().GetNativeProxy();
-            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
             
             if (!Region.IsObject(data)){
                 return DirectiveHandlerReturn.Handled;
@@ -1267,13 +1383,22 @@ namespace InlineJS{
             return (Region.AddComponent(region, element, directive.value) ? DirectiveHandlerReturn.Handled : DirectiveHandlerReturn.Nil);
         }
 
+        public static Post(region: Region, element: HTMLElement, directive: Directive){
+            let regionId = region.GetId();
+            region.AddElement(element, true).postProcessCallbacks.push(() => CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static Init(region: Region, element: HTMLElement, directive: Directive){
             CoreDirectiveHandlers.Evaluate(region, element, directive.value);
             return DirectiveHandlerReturn.Handled;
         }
 
         public static Bind(region: Region, element: HTMLElement, directive: Directive){
-            region.GetState().TrapGetAccess(() => CoreDirectiveHandlers.Evaluate(region, element, directive.value), true);
+            region.GetState().TrapGetAccess(() => {
+                CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+                return true;
+            }, true);
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -1496,8 +1621,8 @@ namespace InlineJS{
             };
 
             let initLocals = (myRegion: Region, clone: HTMLElement, key?: string) => {
-                myRegion.AddLocal(clone, '$each', {
-                    count: new Value(() => {
+                myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
+                    if (prop === 'count'){
                         if (options.isArray){
                             return (options.target as Array<any>).length;
                         }
@@ -1507,10 +1632,18 @@ namespace InlineJS{
                         }
                         
                         return options.count;
-                    }),
-                    index: new Value(() => getIndex(clone, key)),
-                    value: new Value(() => (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Map<string, any>)[key]))
-                });
+                    }
+                    
+                    if (prop === 'index'){
+                        return getIndex(clone, key);
+                    }
+
+                    if (prop === 'value'){
+                        return (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Map<string, any>)[key]);
+                    }
+
+                    return null;
+                }, ['count', 'index', 'value']));
             };
 
             let insert = (myRegion: Region, key?: string) => {
@@ -1653,8 +1786,11 @@ namespace InlineJS{
 
         public static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void){
             info.marker.parentElement.insertBefore(element, info.marker);
-            region.GetState().PushElementContext(element);
+            if (callback){
+                callback();
+            }
 
+            region.GetState().PushElementContext(element);
             for (let i = 0; i < info.directives.length; ++i){
                 if (Processor.DispatchDirective(region, element, info.directives[i]) == DirectiveHandlerReturn.QuitAll){
                     break;
@@ -1662,16 +1798,43 @@ namespace InlineJS{
             }
 
             region.GetState().PopElementContext();
-            if (callback){
-                callback();
-            }
-            
             if (!region.GetDoneInit()){
                 Processor.All(region, element);
             }
         }
 
-        public static Evaluate(region: Region, element: HTMLElement, expression: string): any{
+        public static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)){
+            let handler = {
+                get(target: object, prop: string | number | symbol): any{
+                    if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')){
+                        return Reflect.get(target, prop);
+                    }
+
+                    return getter(prop.toString());
+                },
+                set(target: object, prop: string | number | symbol, value: any){
+                    return false;
+                },
+                deleteProperty(target: object, prop: string | number | symbol){
+                    return false;
+                },
+                has(target: object, prop: string | number | symbol){
+                    if (Reflect.has(target, prop)){
+                        return true;
+                    }
+
+                    if (!contains){
+                        return false;
+                    }
+
+                    return ((typeof contains === 'function') ? contains(prop.toString()) : (contains.indexOf(prop.toString()) != -1));
+                }
+            };
+
+            return new window.Proxy({}, handler);
+        }
+        
+        public static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow = false): any{
             if (!region){
                 return null;
             }
@@ -1681,12 +1844,15 @@ namespace InlineJS{
 
             let result: any;
             try{
-                result = Evaluator.Evaluate(region.GetId(), element, expression);
+                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow);
                 if (typeof result === 'function'){
-                    result = (result as () => any).call(region.GeRootProxy().GetNativeProxy());
+                    result = region.Call(result as () => any);
                 }
 
                 result = ((result instanceof Value) ? result.Get() : result);
+            }
+            catch (err){
+                region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.CoreDirectiveHandlers.Evaluate(${expression})`);
             }
             finally{
                 region.GetState().PopElementContext();
@@ -1701,21 +1867,25 @@ namespace InlineJS{
                 return;
             }
 
+            RegionMap.scopeRegionIds.Push(region.GetId());
+            region.GetState().PushElementContext(element);
+
+            let targetObject: any;
             try{
-                RegionMap.scopeRegionIds.Push(region.GetId());
-                region.GetState().PushElementContext(element);
-                Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
+                targetObject = Evaluator.Evaluate(region.GetId(), element, target);
+            }
+            catch (err){}
+
+            try{
+                if (typeof targetObject === 'function'){
+                    region.Call(targetObject as (arg: any) => any, callback());
+                }
+                else{
+                    Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
+                }
             }
             catch (err){
-                let result = Evaluator.Evaluate(region.GetId(), element, target);
-                if (typeof result === 'function'){
-                    if (callback){
-                        (result as (ref: any) => void).call(region.GeRootProxy().GetNativeProxy(), callback());
-                    }
-                    else{
-                        (result as () => void).call(region.GeRootProxy().GetNativeProxy());
-                    }
-                }
+                region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.CoreDirectiveHandlers.Assign(${target}=${value})`);
             }
             finally{
                 region.GetState().PopElementContext();
@@ -1729,6 +1899,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('component', CoreDirectiveHandlers.Component);
 
             DirectiveHandlerManager.AddHandler('init', CoreDirectiveHandlers.Init);
+            DirectiveHandlerManager.AddHandler('post', CoreDirectiveHandlers.Post);
             DirectiveHandlerManager.AddHandler('bind', CoreDirectiveHandlers.Bind);
             DirectiveHandlerManager.AddHandler('uninit', CoreDirectiveHandlers.Uninit);
             DirectiveHandlerManager.AddHandler('ref', CoreDirectiveHandlers.Ref);
@@ -1753,12 +1924,19 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
             
-            directive.parts.splice(0, 1);
-            directive.raw = directive.parts.join('-');
-            directive.key = Processor.GetCamelCaseDirectiveName(directive.raw);
+            let parts = [...directive.parts].splice(1);
+            let raw = parts.join('-');
+            
+            let newDirective: Directive = {
+                original: directive.original,
+                parts: parts,
+                raw: raw,
+                key: Processor.GetCamelCaseDirectiveName(raw),
+                value: directive.value
+            };
             
             region.GetChanges().PushGetAccessHook(() => false);//Disable get access log
-            let result = DirectiveHandlerManager.Handle(region, element, directive);
+            let result = DirectiveHandlerManager.Handle(region, element, newDirective);
             region.GetChanges().PopGetAccessHook();
 
             return result;
@@ -1774,22 +1952,21 @@ namespace InlineJS{
             if (directive.parts[0] !== 'attr'){
                 return DirectiveHandlerReturn.Nil;
             }
-
-            directive.parts.splice(0, 1);
-            directive.raw = directive.parts.join('-');
-
-            let regionId = region.GetId();
-            let isBoolean = (booleanAttributes.indexOf(directive.raw) != -1);
             
+            let regionId = region.GetId();
+            let name = [...directive.parts].splice(1).join('-');
+            
+            let isBoolean = (booleanAttributes.indexOf(name) != -1);
             region.GetState().TrapGetAccess(() => {
-                if (isBoolean && CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)){
-                    element.setAttribute(directive.raw, directive.raw);
+                let result = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                if (isBoolean && !!result){
+                    element.setAttribute(name, name);
                 }
                 else if (isBoolean){
-                    element.removeAttribute(directive.raw);
+                    element.removeAttribute(name);
                 }
                 else{//Set evaluated value
-                    element.setAttribute(directive.raw, CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                    element.setAttribute(name, result);
                 }
             }, true);
             
@@ -1801,17 +1978,16 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            directive.parts.splice(0, 1);
-            directive.raw = directive.parts.join('-');
-            directive.key = Processor.GetCamelCaseDirectiveName(directive.raw);
+            let parts = [...directive.parts].splice(1);
+            let key = Processor.GetCamelCaseDirectiveName(parts.join('-'));
 
-            if (!(directive.key in element.style)){//Unrecognized style
+            if (!(key in element.style)){//Unrecognized style
                 return DirectiveHandlerReturn.Nil;
             }
 
             let regionId = region.GetId();
             region.GetState().TrapGetAccess(() => {
-                element.style[directive.key] = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                element.style[key] = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
             }, true);
             
             return DirectiveHandlerReturn.Handled;
@@ -1832,7 +2008,7 @@ namespace InlineJS{
                 window: false,
             };
 
-            let index = 0, length = directive.parts.length;
+            let index = 0, length = directive.parts.length, parts: Array<string>, raw: string;
             for (; index < directive.parts.length; ++index){
                 let part = directive.parts[index];
                 if (part in options){
@@ -1842,16 +2018,18 @@ namespace InlineJS{
                     }
                 }
                 else if (0 < index){//Start of event
-                    directive.parts.splice(0, index);
-                    directive.raw = directive.parts.join('-');
+                    parts = [...directive.parts].splice(index);
+                    raw = parts.join('-');
                     break;
                 }
                 else{//No modifiers
+                    parts = directive.parts;
+                    raw = parts.join('-');
                     break;
                 }
             }
 
-            if (length <= index || directive.parts.length == 0 || (!options.on && knownEvents.indexOf(directive.raw) == -1)){//Malformed
+            if (length <= index || !parts || parts.length == 0 || (!options.on && knownEvents.indexOf(raw) == -1)){//Malformed
                 return DirectiveHandlerReturn.Nil;
             }
 
@@ -1887,7 +2065,7 @@ namespace InlineJS{
                 }
             };
             
-            let event = region.ExpandEvent(directive.raw, element);
+            let event = region.ExpandEvent(raw, element);
             if (options.outside){
                 stoppable = false;
                 region.AddOutsideEventCallback(element, event, onEvent);
@@ -1924,6 +2102,7 @@ namespace InlineJS{
                 return;
             }
 
+            Processor.Pre(region, element);
             if (Processor.One(region, element) != DirectiveHandlerReturn.QuitAll && !isTemplate){//Process children
                 [...element.children].forEach(child => Processor.All(region, (child as HTMLElement)));
             }
@@ -1950,19 +2129,27 @@ namespace InlineJS{
             return result;
         }
 
+        public static Pre(region: Region, element: HTMLElement){
+            Processor.PreOrPost(region, element, 'preProcessCallbacks', 'Pre');
+        }
+
         public static Post(region: Region, element: HTMLElement){
+            Processor.PreOrPost(region, element, 'postProcessCallbacks', 'Post');
+        }
+
+        public static PreOrPost(region: Region, element: HTMLElement, scopeKey: string, name: string){
             let scope = region.GetElementScope(element);
             if (scope){
-                scope.postProcessCallbacks.forEach((callback) => {
+                (scope[scopeKey] as Array<() => void>).forEach((callback) => {
                     try{
                         callback();
                     }
                     catch (err){
-                        region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.Processor.Post(Element@${element.nodeName})`);
+                        region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.Processor.${name}(Element@${element.nodeName})`);
                     }
                 });
 
-                scope.postProcessCallbacks = [];
+                scope[scopeKey] = [];
             }
         }
         
@@ -1971,7 +2158,7 @@ namespace InlineJS{
             try{
                 result = DirectiveHandlerManager.Handle(region, element, directive);
                 if (result == DirectiveHandlerReturn.Nil){
-                    region.GetState().ReportError('Handler not found for directive. Skipping...', `InlineJs.Region<${region.GetId()}>.Processor.DispatchDirective(Element@${element.nodeName}, ${directive.original})`);
+                    region.GetState().Warn('Handler not found for directive. Skipping...', `InlineJs.Region<${region.GetId()}>.Processor.DispatchDirective(Element@${element.nodeName}, ${directive.original})`);
                 }
             }
             catch (err){
@@ -2043,7 +2230,11 @@ namespace InlineJS{
     export class Bootstrap{
         private static lastRegionId_: number = null;
         
-        public static Attach(anchors: Array<string> = ['data-x-data', 'x-data']){
+        public static Attach(anchors?: Array<string>){
+            if (!anchors){
+                anchors = [`data-${Region.directivePrfix}-data`, `${Region.directivePrfix}-data`];
+            }
+            
             anchors.forEach((anchor) => {//Traverse anchors
                 document.querySelectorAll(`[${anchor}]`).forEach((element) => {//Traverse elements
                     if (!element.hasAttribute(anchor)){//Probably contained inside another region
@@ -2086,6 +2277,8 @@ namespace InlineJS{
                                 }
                             }
                         });
+
+                        Region.ExecutePostProcessCallbacks();
                     });
 
                     RegionMap.entries[stringRegionId] = region;
@@ -2104,6 +2297,8 @@ namespace InlineJS{
                     });
                 });
             });
+
+            Region.ExecutePostProcessCallbacks();
         }
     }
 
