@@ -9,7 +9,6 @@
     <h1>InlineJS</h1>
     <div x-component="first" x-data="{email: 'user.yahoo@yahoo.com', name: 'John Doe', state: true, getName(){ return this.name }}">
         <h2 x-style-color="color" x-click="color = 'red'">First Component</h2>
-        <button x-click="">Click Me</button>
         <div>
             <span>Name: </span>
             <strong x-text="name"></strong>
@@ -80,15 +79,17 @@
             <hr>
         </div>
     </div>
-    <div x-data="{list: []}">
+    <div x-data="{list: [], add(){if (!this.input){return} this.list.push({text:this.input, editing: false}); this.input = ''}, remove(index){this.list.splice(index, 1)}}">
         <h2>TODO List</h2>
-        <input type="text" placeholder="Type here" x-model="input">
-        <button x-click="(() => { list.push(input); input = '' })()">Add</button>
+        <input type="text" placeholder="Type here" x-model="input" x-keydown.enter="add()">
+        <button x-click="add()">Add</button>
         <hr>
         <ul>
-            <li x-each="list">
-                <span x-text="$each.value"></span>
-                <button x-click="list.splice($each.index, 1)">x</button>
+            <li style="margin-top: 5px;" x-each="list">
+                <span style="text-transform: uppercase" x-text="$each.value.text" x-show="!$each.value.editing"></span>
+                <input type="text" x-model="$each.value.text" x-show="$each.value.editing" x-keydown.enter="$each.value.editing = false">
+                <button style="background-color: transparent; color: gray; border: 1px solid gray" x-click="$each.value.editing = true" x-show="!$each.value.editing">...</button>
+                <button style="background-color: transparent; color: red; border: 1px solid red" x-click="remove($each.index)">x</button>
             </li>
         </ul>
     </div>

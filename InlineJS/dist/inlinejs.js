@@ -390,6 +390,32 @@ var InlineJS;
         isEqual: (first, second) => (first === second),
         deepCopy: (target) => target,
     };
+    Region.keyMap = {
+        meta: 'Meta',
+        alt: 'Alt',
+        ctrl: 'Control',
+        shift: 'Shift',
+        enter: 'Enter',
+        esc: 'Escape',
+        tab: 'Tab',
+        space: ' ',
+        menu: 'ContextMenu',
+        backspace: 'Backspace',
+        del: 'Delete',
+        ins: 'Insert',
+        home: 'Home',
+        end: 'End',
+        plus: '+',
+        minus: '-',
+        star: '*',
+        slash: '/',
+        'page-up': 'PageUp',
+        'page-down': 'PageDown',
+        'arrow-left': 'ArrowLeft',
+        'arrow-up': 'ArrowUp',
+        'arrow-right': 'ArrowRight',
+        'arrow-down': 'ArrowDown',
+    };
     InlineJS.Region = Region;
     ;
     class Changes {
@@ -1627,61 +1653,94 @@ var InlineJS;
         static Event(region, element, directive) {
             const knownEvents = new Array('blur', 'change', 'click', 'contextmenu', 'context-menu', 'dblclick', 'focus', 'focusin', 'focusout', 'hover', 'keydown', 'keyup', 'mousedown', 'mouseenter', 'mouseleave', 'mousemove', 'mouseout', 'mouseover', 'mouseup', 'scroll', 'submit');
             let options = {
-                on: false,
                 outside: false,
-                prevented: false,
-                stopped: false,
+                prevent: false,
+                stop: false,
                 once: false,
                 window: false,
+                self: false,
+                camel: false,
+                join: false
             };
-            let index = 0, length = directive.parts.length, parts, raw;
-            for (; index < directive.parts.length; ++index) {
-                let part = directive.parts[index];
-                if (part in options) {
-                    if (part === 'on') { //Malformed
-                        options.on = true;
-                        if (index != 0) { //Malformed
-                            return DirectiveHandlerReturn.Nil;
-                        }
+            let keyOptions = {
+                meta: false,
+                ctrl: false,
+                shift: false,
+                key_: '',
+            };
+            let eventName;
+            if (directive.parts[0] === 'on') {
+                eventName = [...directive.parts].splice(1).join('-');
+            }
+            else if (knownEvents.indexOf(directive.parts[0].split('.')[0]) != -1) {
+                eventName = directive.raw;
+            }
+            if (!eventName) {
+                return DirectiveHandlerReturn.Nil;
+            }
+            let parts = eventName.split('.'), unknownParts, isKey = false;
+            if (parts.length > 1) { //Resolve modifiers
+                eventName = parts[0];
+                unknownParts = new Array();
+                parts.forEach((part) => {
+                    if (part in options) {
+                        options[part] = true;
                     }
                     else {
-                        options[part] = true;
-                        options.on = true;
+                        unknownParts.push(part);
                     }
-                }
-                else if (0 < index) { //Start of event
-                    parts = [...directive.parts].splice(index);
-                    raw = parts.join('-');
-                    break;
-                }
-                else { //No modifiers
-                    parts = directive.parts;
-                    raw = parts.join('-');
-                    break;
+                });
+                if (eventName === 'keydown' || eventName === 'keyup') {
+                    isKey = true;
+                    unknownParts.forEach((part) => {
+                        if (part in keyOptions) {
+                            keyOptions[part] = true;
+                        }
+                        else if (part in Region.keyMap) {
+                            keyOptions.key_ = Region.keyMap[part];
+                        }
+                        else {
+                            keyOptions.key_ = part;
+                        }
+                    });
                 }
             }
-            if (length <= index || !parts || parts.length == 0 || (!options.on && knownEvents.indexOf(raw) == -1)) { //Malformed
-                return DirectiveHandlerReturn.Nil;
+            if (options.camel) {
+                eventName = Processor.GetCamelCaseDirectiveName(eventName);
+            }
+            else if (options.join) {
+                eventName = eventName.split('-').join('.');
             }
             let regionId = region.GetId(), stoppable;
             let onEvent = (e) => {
                 let myRegion = Region.Get(regionId);
                 if (options.once && options.outside) {
-                    myRegion.AddOutsideEventCallback(element, event, onEvent);
+                    myRegion.RemoveOutsideEventCallback(element, event, onEvent);
                 }
                 else if (options.once) {
                     (options.window ? window : element).removeEventListener(event, onEvent);
                 }
-                if (options.prevented) {
+                if (options.prevent) {
                     e.preventDefault();
                 }
-                if (stoppable && options.stopped) {
+                if (stoppable && options.stop) {
                     e.stopPropagation();
                 }
-                if (myRegion) {
-                    myRegion.GetState().PushEventContext(e);
-                }
                 try {
+                    if (options.self && !options.outside && e.target !== element) {
+                        return;
+                    }
+                    if (isKey) {
+                        if ((keyOptions.meta && !e.metaKey) || (keyOptions.ctrl && !e.ctrlKey) || (keyOptions.shift && !e.shiftKey)) {
+                            return; //Key modifier absent
+                        }
+                        if (keyOptions.key_ && e.key !== keyOptions.key_) {
+                            return; //Keys don't match
+                        }
+                    }
+                    if (myRegion) {
+                        myRegion.GetState().PushEventContext(e);
+                    }
                     CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
                 }
                 finally {
@@ -1690,7 +1749,7 @@ var InlineJS;
                     }
                 }
             };
-            let event = region.ExpandEvent(raw, element);
+            let event = region.ExpandEvent(eventName, element);
             if (options.outside) {
                 stoppable = false;
                 region.AddOutsideEventCallback(element, event, onEvent);
