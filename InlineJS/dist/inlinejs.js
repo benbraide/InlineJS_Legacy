@@ -1096,6 +1096,9 @@ var InlineJS;
             DirectiveHandlerManager.bulkDirectiveHandlers_.push(handler);
         }
         static Handle(region, element, directive) {
+            if (!directive) {
+                return DirectiveHandlerReturn.Nil;
+            }
             let scope = region.AddElement(element, true);
             if (scope && directive.key in scope.directiveHandlers) {
                 let result = scope.directiveHandlers[directive.key](region, element, directive);
@@ -1156,6 +1159,21 @@ var InlineJS;
             }, true);
             return DirectiveHandlerReturn.Handled;
         }
+        static Static(region, element, directive) {
+            if (!directive.arg || !directive.arg.key) {
+                return DirectiveHandlerReturn.Nil;
+            }
+            let getTargetDirective = () => {
+                if (directive.arg.options.length == 0) {
+                    return `${Region.directivePrfix}-${directive.arg.key}`;
+                }
+                return `${Region.directivePrfix}-${directive.arg.key}.${directive.arg.options.join('.')}`;
+            };
+            region.GetChanges().PushGetAccessHook(() => false); //Disable get access log
+            let result = DirectiveHandlerManager.Handle(region, element, Processor.GetDirectiveWith(getTargetDirective(), directive.value));
+            region.GetChanges().PopGetAccessHook();
+            return result;
+        }
         static Uninit(region, element, directive) {
             let regionId = region.GetId();
             region.AddElement(element, true).uninitCallbacks.push(() => CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
@@ -1172,6 +1190,52 @@ var InlineJS;
                     return element;
                 });
             }
+            return DirectiveHandlerReturn.Handled;
+        }
+        static Attr(region, element, directive) {
+            const booleanAttributes = new Array('allowfullscreen', 'allowpaymentrequest', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'default', 'defer', 'disabled', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted', 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected');
+            if (!directive.arg || !directive.arg.key) {
+                return DirectiveHandlerReturn.Nil;
+            }
+            let regionId = region.GetId(), isBoolean = (booleanAttributes.indexOf(directive.arg.key) != -1);
+            region.GetState().TrapGetAccess(() => {
+                let result = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                if (isBoolean && !!result) {
+                    element.setAttribute(directive.arg.key, directive.arg.key);
+                }
+                else if (isBoolean) {
+                    element.removeAttribute(directive.arg.key);
+                }
+                else { //Set evaluated value
+                    element.setAttribute(directive.arg.key, result);
+                }
+            }, true);
+            return DirectiveHandlerReturn.Handled;
+        }
+        static Style(region, element, directive) {
+            let regionId = region.GetId();
+            if (!directive.arg) {
+                region.GetState().TrapGetAccess(() => {
+                    let entries = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                    if (!Region.IsObject(entries)) {
+                        return;
+                    }
+                    for (let key in entries) {
+                        element.style[key] = entries[key];
+                    }
+                }, true);
+                return DirectiveHandlerReturn.Handled;
+            }
+            if (!directive.arg.key) {
+                return DirectiveHandlerReturn.Nil;
+            }
+            let key = Processor.GetCamelCaseDirectiveName(directive.arg.key);
+            if (!(key in element.style)) { //Unrecognized style
+                return DirectiveHandlerReturn.Nil;
+            }
+            region.GetState().TrapGetAccess(() => {
+                element.style[key] = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+            }, true);
             return DirectiveHandlerReturn.Handled;
         }
         static Class(region, element, directive) {
@@ -1223,6 +1287,88 @@ var InlineJS;
                     onChange();
                 }
             }, true);
+            return DirectiveHandlerReturn.Handled;
+        }
+        static On(region, element, directive) {
+            if (!directive.arg || !directive.arg.key) {
+                return DirectiveHandlerReturn.Nil;
+            }
+            let options = {
+                outside: false,
+                prevent: false,
+                stop: false,
+                once: false,
+                window: false,
+                self: false
+            };
+            let keyOptions = {
+                meta: false,
+                ctrl: false,
+                shift: false,
+                key_: '',
+            };
+            let isKey = (directive.arg.key === 'keydown' || directive.arg.key === 'keyup');
+            directive.arg.options.forEach((option) => {
+                if (option in options) {
+                    options[option] = true;
+                }
+                else if (isKey && option in keyOptions) {
+                    keyOptions[option] = true;
+                }
+                else if (isKey && option in Region.keyMap) {
+                    keyOptions.key_ = Region.keyMap[option];
+                }
+                else if (isKey) {
+                    keyOptions.key_ = option;
+                }
+            });
+            let regionId = region.GetId(), stoppable;
+            let onEvent = (e) => {
+                let myRegion = Region.Get(regionId);
+                if (options.once && options.outside) {
+                    myRegion.RemoveOutsideEventCallback(element, event, onEvent);
+                }
+                else if (options.once) {
+                    (options.window ? window : element).removeEventListener(event, onEvent);
+                }
+                if (options.prevent) {
+                    e.preventDefault();
+                }
+                if (stoppable && options.stop) {
+                    e.stopPropagation();
+                }
+                try {
+                    if (options.self && !options.outside && e.target !== element) {
+                        return;
+                    }
+                    if (isKey) {
+                        if ((keyOptions.meta && !e.metaKey) || (keyOptions.ctrl && !e.ctrlKey) || (keyOptions.shift && !e.shiftKey)) {
+                            return; //Key modifier absent
+                        }
+                        if (keyOptions.key_ && e.key !== keyOptions.key_) {
+                            return; //Keys don't match
+                        }
+                    }
+                    if (myRegion) {
+                        myRegion.GetState().PushEventContext(e);
+                    }
+                    CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
+                }
+                finally {
+                    if (myRegion) {
+                        myRegion.GetState().PopEventContext();
+                    }
+                }
+            };
+            let event = region.ExpandEvent(directive.arg.key, element);
+            if (options.outside) {
+                stoppable = false;
+                region.AddOutsideEventCallback(element, event, onEvent);
+            }
+            else {
+                stoppable = true;
+                (options.window ? window : element).addEventListener(event, onEvent);
+            }
             return DirectiveHandlerReturn.Handled;
         }
         static Input(region, element, directive) {
@@ -1580,11 +1726,15 @@ var InlineJS;
             DirectiveHandlerManager.AddHandler('init', CoreDirectiveHandlers.Init);
             DirectiveHandlerManager.AddHandler('post', CoreDirectiveHandlers.Post);
             DirectiveHandlerManager.AddHandler('bind', CoreDirectiveHandlers.Bind);
+            DirectiveHandlerManager.AddHandler('static', CoreDirectiveHandlers.Static);
             DirectiveHandlerManager.AddHandler('uninit', CoreDirectiveHandlers.Uninit);
             DirectiveHandlerManager.AddHandler('ref', CoreDirectiveHandlers.Ref);
+            DirectiveHandlerManager.AddHandler('attr', CoreDirectiveHandlers.Attr);
+            DirectiveHandlerManager.AddHandler('style', CoreDirectiveHandlers.Style);
             DirectiveHandlerManager.AddHandler('class', CoreDirectiveHandlers.Class);
             DirectiveHandlerManager.AddHandler('text', CoreDirectiveHandlers.Text);
             DirectiveHandlerManager.AddHandler('html', CoreDirectiveHandlers.Html);
+            DirectiveHandlerManager.AddHandler('on', CoreDirectiveHandlers.On);
             DirectiveHandlerManager.AddHandler('input', CoreDirectiveHandlers.Input);
             DirectiveHandlerManager.AddHandler('lazyInput', CoreDirectiveHandlers.LazyInput);
             DirectiveHandlerManager.AddHandler('model', CoreDirectiveHandlers.Model);
@@ -1594,180 +1744,6 @@ var InlineJS;
         }
     }
     InlineJS.CoreDirectiveHandlers = CoreDirectiveHandlers;
-    class CoreBulkDirectiveHandlers {
-        static Static(region, element, directive) {
-            if (directive.parts[0] !== 'static') {
-                return DirectiveHandlerReturn.Nil;
-            }
-            let parts = [...directive.parts].splice(1);
-            let raw = parts.join('-');
-            let newDirective = {
-                original: directive.original,
-                parts: parts,
-                raw: raw,
-                key: Processor.GetCamelCaseDirectiveName(raw),
-                value: directive.value
-            };
-            region.GetChanges().PushGetAccessHook(() => false); //Disable get access log
-            let result = DirectiveHandlerManager.Handle(region, element, newDirective);
-            region.GetChanges().PopGetAccessHook();
-            return result;
-        }
-        static Attr(region, element, directive) {
-            const booleanAttributes = new Array('allowfullscreen', 'allowpaymentrequest', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'default', 'defer', 'disabled', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted', 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected');
-            if (directive.parts[0] !== 'attr') {
-                return DirectiveHandlerReturn.Nil;
-            }
-            let regionId = region.GetId();
-            let name = [...directive.parts].splice(1).join('-');
-            let isBoolean = (booleanAttributes.indexOf(name) != -1);
-            region.GetState().TrapGetAccess(() => {
-                let result = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
-                if (isBoolean && !!result) {
-                    element.setAttribute(name, name);
-                }
-                else if (isBoolean) {
-                    element.removeAttribute(name);
-                }
-                else { //Set evaluated value
-                    element.setAttribute(name, result);
-                }
-            }, true);
-            return DirectiveHandlerReturn.Handled;
-        }
-        static Style(region, element, directive) {
-            if (directive.parts[0] !== 'style') {
-                return DirectiveHandlerReturn.Nil;
-            }
-            let parts = [...directive.parts].splice(1);
-            let key = Processor.GetCamelCaseDirectiveName(parts.join('-'));
-            if (!(key in element.style)) { //Unrecognized style
-                return DirectiveHandlerReturn.Nil;
-            }
-            let regionId = region.GetId();
-            region.GetState().TrapGetAccess(() => {
-                element.style[key] = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
-            }, true);
-            return DirectiveHandlerReturn.Handled;
-        }
-        static Event(region, element, directive) {
-            const knownEvents = new Array('blur', 'change', 'click', 'contextmenu', 'context-menu', 'dblclick', 'focus', 'focusin', 'focusout', 'hover', 'keydown', 'keyup', 'mousedown', 'mouseenter', 'mouseleave', 'mousemove', 'mouseout', 'mouseover', 'mouseup', 'scroll', 'submit');
-            let options = {
-                outside: false,
-                prevent: false,
-                stop: false,
-                once: false,
-                window: false,
-                self: false,
-                camel: false,
-                join: false
-            };
-            let keyOptions = {
-                meta: false,
-                ctrl: false,
-                shift: false,
-                key_: '',
-            };
-            let eventName;
-            if (directive.parts[0] === 'on') {
-                eventName = [...directive.parts].splice(1).join('-');
-            }
-            else if (knownEvents.indexOf(directive.parts[0].split('.')[0]) != -1) {
-                eventName = directive.raw;
-            }
-            if (!eventName) {
-                return DirectiveHandlerReturn.Nil;
-            }
-            let parts = eventName.split('.'), unknownParts, isKey = false;
-            if (parts.length > 1) { //Resolve modifiers
-                eventName = parts[0];
-                unknownParts = new Array();
-                parts.forEach((part) => {
-                    if (part in options) {
-                        options[part] = true;
-                    }
-                    else {
-                        unknownParts.push(part);
-                    }
-                });
-                if (eventName === 'keydown' || eventName === 'keyup') {
-                    isKey = true;
-                    unknownParts.forEach((part) => {
-                        if (part in keyOptions) {
-                            keyOptions[part] = true;
-                        }
-                        else if (part in Region.keyMap) {
-                            keyOptions.key_ = Region.keyMap[part];
-                        }
-                        else {
-                            keyOptions.key_ = part;
-                        }
-                    });
-                }
-            }
-            if (options.camel) {
-                eventName = Processor.GetCamelCaseDirectiveName(eventName);
-            }
-            else if (options.join) {
-                eventName = eventName.split('-').join('.');
-            }
-            let regionId = region.GetId(), stoppable;
-            let onEvent = (e) => {
-                let myRegion = Region.Get(regionId);
-                if (options.once && options.outside) {
-                    myRegion.RemoveOutsideEventCallback(element, event, onEvent);
-                }
-                else if (options.once) {
-                    (options.window ? window : element).removeEventListener(event, onEvent);
-                }
-                if (options.prevent) {
-                    e.preventDefault();
-                }
-                if (stoppable && options.stop) {
-                    e.stopPropagation();
-                }
-                try {
-                    if (options.self && !options.outside && e.target !== element) {
-                        return;
-                    }
-                    if (isKey) {
-                        if ((keyOptions.meta && !e.metaKey) || (keyOptions.ctrl && !e.ctrlKey) || (keyOptions.shift && !e.shiftKey)) {
-                            return; //Key modifier absent
-                        }
-                        if (keyOptions.key_ && e.key !== keyOptions.key_) {
-                            return; //Keys don't match
-                        }
-                    }
-                    if (myRegion) {
-                        myRegion.GetState().PushEventContext(e);
-                    }
-                    CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
-                }
-                finally {
-                    if (myRegion) {
-                        myRegion.GetState().PopEventContext();
-                    }
-                }
-            };
-            let event = region.ExpandEvent(eventName, element);
-            if (options.outside) {
-                stoppable = false;
-                region.AddOutsideEventCallback(element, event, onEvent);
-            }
-            else {
-                stoppable = true;
-                (options.window ? window : element).addEventListener(event, onEvent);
-            }
-            return DirectiveHandlerReturn.Handled;
-        }
-        static AddAll() {
-            DirectiveHandlerManager.AddBulkHandler(CoreBulkDirectiveHandlers.Static);
-            DirectiveHandlerManager.AddBulkHandler(CoreBulkDirectiveHandlers.Attr);
-            DirectiveHandlerManager.AddBulkHandler(CoreBulkDirectiveHandlers.Style);
-            DirectiveHandlerManager.AddBulkHandler(CoreBulkDirectiveHandlers.Event);
-        }
-    }
-    InlineJS.CoreBulkDirectiveHandlers = CoreBulkDirectiveHandlers;
     class Processor {
         static All(region, element, options) {
             if (!Processor.Check(element, options)) { //Check failed -- ignore
@@ -1862,16 +1838,44 @@ var InlineJS;
             return result;
         }
         static GetDirective(attribute) {
-            let matches = attribute.name.match(Region.directiveRegex);
+            return Processor.GetDirectiveWith(attribute.name, attribute.value);
+        }
+        static GetDirectiveWith(name, value) {
+            if (!name || !(name = name.trim())) {
+                return null;
+            }
+            let matches = ((name.substr(0, 1) === ':') ? `x-attr${name}` : name).match(Region.directiveRegex);
             if (!matches || matches.length != 3 || !matches[2]) { //Not a directive
                 return null;
             }
+            let raw = matches[2], arg;
+            let colonIndex = raw.indexOf(':');
+            if (colonIndex != -1) {
+                let options = raw.substr(colonIndex + 1).split('.');
+                arg = {
+                    key: options[0],
+                    options: new Array()
+                };
+                for (let i = 1; i < options.length; ++i) {
+                    if (options[i] === 'camel') {
+                        arg.key = Processor.GetCamelCaseDirectiveName(arg.key);
+                    }
+                    else if (options[i] === 'join') {
+                        arg.key = arg.key.split('-').join('.');
+                    }
+                    else {
+                        arg.options.push(options[i]);
+                    }
+                }
+                raw = raw.substr(0, colonIndex);
+            }
             return {
-                original: attribute.name,
-                parts: matches[2].split('-'),
-                raw: matches[2],
-                key: Processor.GetCamelCaseDirectiveName(matches[2]),
-                value: attribute.value
+                original: name,
+                parts: raw.split('-'),
+                raw: raw,
+                key: Processor.GetCamelCaseDirectiveName(raw),
+                arg: arg,
+                value: value
             };
         }
         static GetCamelCaseDirectiveName(name) {
@@ -1949,6 +1953,5 @@ var InlineJS;
     (function () {
         RootProxy.AddGlobalCallbacks();
         CoreDirectiveHandlers.AddAll();
-        CoreBulkDirectiveHandlers.AddAll();
     })();
 })(InlineJS || (InlineJS = {}));

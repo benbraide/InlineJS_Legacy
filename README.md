@@ -11,11 +11,20 @@ Similar to `Alpine.js` it works without creating shadow DOMs.
  - Include script in your HTML file.
  - Initialize inside a `script` tag
 
+##  Configurations
+There are a few configurations that can be set before initialization.
+- `InlineJS.Region.directivePrefix`. Specifies the prefix used for directives. Defaults to `x`
+- `InlineJS.Region.directiveRegex`. Used to match directives on element attributes. Defaults to `/^(data-)?x-(.+)$/`
+- `InlineJS.Region.SetDirectivePrefix(value: string)`. Use this change the directives prefix. Updates `InlineJS.Region.directiveRegex` with the new prefix.
+- `InlineJS.Region.externalCallbacks.isEqual`. Used by some magic properties to test whether two arbitrary values are equal.
+- `InlineJS.Region.externalCallbacks.deepCopy`. Used by some magic properties to perform a deep copy of an object.
+
 ## Initialization
 ```js
 InlineJS.Bootstrap.Attach();
 ```
->`Attach` takes an array of attributes to attach to. Defaults to `['data-x-data', 'x-data']`
+>`Attach` takes an array of attributes to attach to. Defaults to `[``data-${InlineJS.Region.directivePrfix}-data`, `${InlineJS.Region.directivePrfix}-data``]`
+>>>>>>>>>
 >**N/B** `$watch`, `$when`, and `$once` require `InlineJS.Region.externalCallbacks.isEqual` and `InlineJS.Region.externalCallbacks.deepCopy` to be initialized. Default behaviors are simple comparison and shallow copy. For example, you can initialize them with `undescore.js` utilities.
 
 ## Use
@@ -24,7 +33,7 @@ InlineJS.Bootstrap.Attach();
 ```html
 <div x-data="{ open: false }">
     <button x-click="open = true">Open Dropdown</button>
-    <ul x-show="open" x-outside-click="open = false">
+    <ul x-show="open" x-click.outside="open = false">
         Dropdown Body
     </ul>
 </div>
@@ -62,12 +71,13 @@ You can even use it for non-trivial things:
 
 ## Learn
 
-There are 20 directives available to you:
+There are 21 directives available to you:
 
 | Directive | Description |
 | --- | --- |
 | [`x-data`](#x-data) | Declares a new component scope. |
 | [`x-component`](#x-component) | Assigns a key to a component. |
+| [`x-post`](#x-post) | Runs an expression after all directives on element, and offspring directives, have been executed. |
 | [`x-init`](#x-init) | Runs an expression when an element is initialized. |
 | [`x-uninit`](#x-uninit) | Runs an expression when an element is removed from the DOM. |
 | [`x-ref`](#x-ref) | Stores a reference to the DOM element in the component using the specified key. |
@@ -87,7 +97,7 @@ There are 20 directives available to you:
 | [`x-static-*`](#x-static) | Disables live updates inside specified directive. |
 | [`x-cloak`](#x-cloak) | This attribute is removed when Alpine initializes. Useful for hiding pre-initialized DOM. |
 
-And 18 global magic properties:
+And 19 global magic properties:
 
 | Magic Properties | Description |
 | --- | --- |
@@ -106,6 +116,8 @@ And 18 global magic properties:
 | [`$locals`](#locals) | Retrieve an associative object local to `$self`. |
 | [`$getLocals`](#getLocals) | Retrieve an associative object local to specified DOM element. |
 | [`$nextTick`](#nexttick) | Execute a given expression **after** `InlineJS` has made its reactive DOM updates. |
+| [`$post`](#post) | Execute a given expression **after** `InlineJS` has made its reactive DOM updates. |
+| [`$use`](#use) | Includes changes in ancestors. |
 | [`$watch`](#watch) | Will fire a provided callback when a component property you "watched" gets changed. |
 | [`$when`](#when) | Similar to `$watch`, but will trigger `when` the expression evaluates to a truth value. |
 | [`$once`](#once) | Similar to `$when`, but will trigger only `once`. |
@@ -128,7 +140,7 @@ And 18 global magic properties:
 You can extract data (and behavior) into reusable functions:
 
 ```html
-<div x-data="$window.dropdown">
+<div x-data="dropdown">
     <button x-click="open">Open</button>
 
     <div x-show="isOpen()" x-outside-click="close">
@@ -148,9 +160,6 @@ You can extract data (and behavior) into reusable functions:
 </script>
 ```
 
-> **N/B** the `$window` magic property is required to access an object inside the `window` object.
-
-
 You can also mix-in multiple data objects using object destructuring:
 
 ```html
@@ -159,12 +168,48 @@ You can also mix-in multiple data objects using object destructuring:
 
 ---
 
+### `x-component`
+**Example:** `<div x-data x-component="my-component"></div>`
+
+**Structure:** `<div x-data="..." x-component="[identifier]"></div>`
+
+`x-component` assigns a key to a component.
+
+---
+
+### `x-post`
+**Example:** `<div x-data x-post="$console.log('Every offspring initialized')"></div>`
+
+**Structure:** `<div x-data="..." x-post="[expression]"></div>`
+
+`x-post` runs an expression after all directives on element, and offspring directives, have been executed.
+
+---
+
 ### `x-init`
 **Example:** `<div x-data="{ foo: 'bar' }" x-init="foo = 'baz'"></div>`
 
 **Structure:** `<div x-data="..." x-init="[expression]"></div>`
 
-`x-init` runs an expression when an element is initialized.
+`x-init` runs an expression when an element is initialized. Changes are not tracked.
+
+---
+
+### `x-uninit`
+**Example:** `<div x-data="{ foo: 'bar' }" x-uninit="$console.log('Element removed')"></div>`
+
+**Structure:** `<div x-data="..." x-uninit="[expression]"></div>`
+
+`x-uninit` runs an expression when an element is removed from the DOM.
+
+---
+
+### `x-ref`
+**Example:** `<div x-data x-ref="myDiv"></div>`
+
+**Structure:** `<div x-data="..." x-ref="[variable]"></div>`
+
+`x-ref` stores a reference to the DOM element in the component using the specified key.
 
 ---
 

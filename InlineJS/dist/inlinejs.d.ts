@@ -273,11 +273,16 @@ declare namespace InlineJS {
         Rejected = 2,
         QuitAll = 3
     }
+    interface DirectiveArg {
+        key: string;
+        options: Array<string>;
+    }
     interface Directive {
         original: string;
         parts: Array<string>;
         raw: string;
         key: string;
+        arg: DirectiveArg;
         value: string;
     }
     type DirectiveHandlerType = (region: Region, element: HTMLElement, directive: Directive) => DirectiveHandlerReturn;
@@ -309,12 +314,16 @@ declare namespace InlineJS {
         static Post(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Init(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Bind(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Static(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn;
         static Uninit(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Ref(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Attr(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Style(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Class(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Text(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Html(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static TextOrHtml(region: Region, element: HTMLElement, directive: Directive, isHtml: boolean, callback?: () => boolean): DirectiveHandlerReturn;
+        static On(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Input(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static LazyInput(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Model(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -327,13 +336,6 @@ declare namespace InlineJS {
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)): {};
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean): any;
         static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any): void;
-        static AddAll(): void;
-    }
-    class CoreBulkDirectiveHandlers {
-        static Static(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn;
-        static Attr(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static Style(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static Event(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static AddAll(): void;
     }
     interface ProcessorOptions {
@@ -350,6 +352,7 @@ declare namespace InlineJS {
         static Check(element: HTMLElement, options: ProcessorOptions): boolean;
         static TraverseDirectives(element: HTMLElement, callback: (directive: Directive) => DirectiveHandlerReturn): DirectiveHandlerReturn;
         static GetDirective(attribute: Attr): Directive;
+        static GetDirectiveWith(name: string, value: string): Directive;
         static GetCamelCaseDirectiveName(name: string): string;
     }
     class Bootstrap {
