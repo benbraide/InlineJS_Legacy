@@ -1638,9 +1638,15 @@ var InlineJS;
             for (; index < directive.parts.length; ++index) {
                 let part = directive.parts[index];
                 if (part in options) {
-                    options[part] = true;
-                    if (!options.on) { //Malformed
-                        return DirectiveHandlerReturn.Nil;
+                    if (part === 'on') { //Malformed
+                        options.on = true;
+                        if (index != 0) { //Malformed
+                            return DirectiveHandlerReturn.Nil;
+                        }
+                    }
+                    else {
+                        options[part] = true;
+                        options.on = true;
                     }
                 }
                 else if (0 < index) { //Start of event
