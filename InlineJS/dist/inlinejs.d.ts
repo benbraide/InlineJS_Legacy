@@ -31,6 +31,7 @@ declare namespace InlineJS {
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Map<string, IntersectionObserver>;
         preserve: boolean;
+        paused: boolean;
     }
     interface ExternalCallbacks {
         isEqual: (first: any, second: any) => boolean;
@@ -110,7 +111,7 @@ declare namespace InlineJS {
         AddRef(key: string, element: HTMLElement): void;
         GetRefs(): Map<string, HTMLElement>;
         AddElement(element: HTMLElement, check?: boolean): ElementScope;
-        RemoveElement(element: HTMLElement | string): void;
+        RemoveElement(element: HTMLElement | string, preserve?: boolean): void;
         AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         AddNextTickCallback(callback: () => void): void;
@@ -212,7 +213,7 @@ declare namespace InlineJS {
         PushEventContext(Value: Event): void;
         PopEventContext(): Event;
         GetEventContext(): Event;
-        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true): Map<string, Array<number>>;
+        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, staticCallback?: () => void): Map<string, Array<number>>;
         ReportError(value: any, ref?: any): void;
         Warn(value: any, ref?: any): void;
         Log(value: any, ref?: any): void;
@@ -300,7 +301,8 @@ declare namespace InlineJS {
     }
     interface IfOrEachInfo {
         regionId: string;
-        marker: HTMLElement;
+        parent: HTMLElement;
+        marker: number;
         directives: Array<Directive>;
         attributes: Array<string>;
     }
@@ -333,14 +335,17 @@ declare namespace InlineJS {
         static Show(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Handled | DirectiveHandlerReturn.QuitAll;
         static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static InitIfOrEach(region: Region, element: HTMLElement): IfOrEachInfo;
-        static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void): void;
+        static InitIfOrEach(region: Region, element: HTMLElement, removeId?: boolean): IfOrEachInfo;
+        static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)): {};
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean): any;
         static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any): void;
         static Call(regionId: string, callback: (...args: any) => any, ...args: any): any;
         static ExtractDuration(value: string, defaultValue: number): number;
         static ToString(value: any): string;
+        static GetChildElementIndex(element: HTMLElement): number;
+        static GetChildElementAt(parent: HTMLElement, index: number): HTMLElement;
+        static InsertOrAppendChildElement(parent: HTMLElement, element: HTMLElement, index: number): void;
         static AddAll(): void;
     }
     interface ProcessorOptions {
