@@ -37,8 +37,8 @@
             <span>State: </span>
             <strong x-text="state"></strong>
         </div>
-        <p x-uninit="$console.log('State was changed to false')" x-if="state">State is true</p>
-        <p x-uninit="$console.log('State was changed to true')" x-if="!state">State is false</p>
+        <p x-uninit="$console.log('State was changed to false', $self)" x-if="state">State is true</p>
+        <p x-uninit="$console.log('State was changed to true', $self)" x-if="!state">State is false</p>
     </div>
     <div x-data="{list: ['First', 'Second', 'Third', 'Last']}">
         <h2>Array Loop</h2>
@@ -95,7 +95,7 @@
     </div>
     <div x-data>
         <h2>State</h2>
-        <input type="email" x-state="{lazy: true}" x-bind="function(){isTyping = $state.isTyping;isDirty = $state.isDirty;isValid = $state.isValid;}">
+        <input type="email" x-state.lazy x-bind="function(){isTyping = $state.isTyping;isDirty = $state.isDirty;isValid = $state.isValid;}">
         <div>
             <span>Typing: </span><strong x-text="isTyping"></strong>
         </div>
@@ -108,7 +108,7 @@
     </div>
     <div x-component="state" x-data>
         <h2>Group State</h2>
-        <form x-ref="form" x-state x-bind="[isValid, isTyping, isDirty] = [$state.isValid, $state.isTyping, $state.isDirty]">
+        <form x-ref="form" x-state.delay.3s x-bind="[isValid, isTyping, isDirty] = [$state.isValid, $state.isTyping, $state.isDirty]">
             <div>
                 Name: <input type="text" value="Anon User" required>
             </div>
@@ -119,7 +119,7 @@
                 <span>Typing: </span><strong x-text="isTyping"></strong>
             </div>
             <div>
-                <span>Global Typing: </span><strong x-text="$$state(form).isTyping"></strong>
+                <span>Global Typing: </span><strong x-text="$$state($refs.form).isTyping"></strong>
             </div>
             <div>
                 <span>Dirty: </span><strong x-text="$state.isDirty"></strong>
@@ -128,15 +128,15 @@
                 <span>Valid: </span><strong x-text="$state.isValid"></strong>
             </div>
             <div>
-                <button type="reset" x-on:click="$nextTick(() => {$$state(form).reset()})">Reset</button>
+                <button type="reset" x-on:click="$nextTick(() => {$$state($refs.form).reset()})">Reset</button>
                 <button class="ml-4 themed" :disabled="!isValid">Continue to payment</button>
             </div>
         </form>
     </div>
-    <div x-component="attr" x-data x-ref="root" x-attr-change="attr">
+    <div x-component="attr" x-ref="root" x-attr-change="attr" x-data>
         <h2>Attribute Change</h2>
-        <input type="text" placeholder="Attribute Name" x-input="uname">
-        <input type="text" placeholder="Attribute Value" x-input="uvalue">
+        <input type="text" placeholder="Attribute Name" x-model.out="uname">
+        <input type="text" placeholder="Attribute Value" x-model.out="uvalue">
         <button x-on:click="$parent.setAttribute(uname, uvalue)">Update</button>
         <div>
             <span>Name: </span><strong x-text="$use(attr.name)"></strong>
@@ -163,18 +163,19 @@
         </div>
         <div>
             <span>Global Typing (borrowed): </span>
-            <strong x-text="$$state($component('state').form).isTyping"></strong>
+            <strong x-text="$$state($component('state').$refs.form).isTyping"></strong>
         </div>
         <div>
-            <span>Global Attr Name (borrowed): </span><strong x-text="$$attr($component('attr').root).name"></strong>
+            <span>Global Attr Name (borrowed): </span><strong x-text="$$attr($component('attr').$refs.root).name"></strong>
         </div>
         <div>
-            <span>Global Attr Value (borrowed'): </span><strong x-text="$$attr($component('attr').root).value"></strong>
+            <span>Global Attr Value (borrowed'): </span><strong x-text="$$attr($component('attr').$refs.root).value"></strong>
         </div>
     </div>
     <script src="/dist/inlinejs.js"></script>
     <script src="/dist/inlinejs-extended.js"></script>
     <script>
+        InlineJS.Region.enableOptimizedBinds = false;
         InlineJS.Bootstrap.Attach();
 
         function cartData(){

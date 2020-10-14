@@ -14,6 +14,7 @@ declare namespace InlineJS {
         count: StateDirectiveCount;
         activeCount: number;
         doneInit: boolean;
+        setValue: (key: string, value: boolean) => void;
         alert: (key: string) => void;
         resetCallbacks: Array<() => void>;
     }

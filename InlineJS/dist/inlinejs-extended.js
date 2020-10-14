@@ -3,14 +3,28 @@ var InlineJS;
 (function (InlineJS) {
     class ExtendedDirectiveHandlers {
         static State(region, element, directive) {
-            let options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), delay = 750, lazy = false;
-            if (options && typeof options === 'object') { //Retrieve options
-                delay = (('delay' in options) ? options.delay : delay);
-                lazy = (('lazy' in options) ? !!options.lazy : lazy);
+            let delay = 750, lazy = false;
+            for (let i = 0; i < directive.arg.options.length; ++i) {
+                if (directive.arg.options[i] === 'delay' && i < (directive.arg.options.length - 1)) {
+                    delay = InlineJS.CoreDirectiveHandlers.ExtractDuration(directive.arg.options[i + 1], delay);
+                }
+                else if (directive.arg.options[i] === 'lazy') {
+                    lazy = true;
+                }
             }
             return ExtendedDirectiveHandlers.ContextState(region, element, lazy, delay, null);
         }
         static ContextState(region, element, lazy, delay, info) {
+            const eventKeys = {
+                isDirty: 'dirty',
+                isTyping: 'typing',
+                isValid: 'valid'
+            };
+            const inverseEventKeys = {
+                isDirty: 'clean',
+                isTyping: 'stopped.typing',
+                isValid: 'invalid'
+            };
             let isText = false, isUnknown = false, regionId = region.GetId();
             if (element.tagName === 'INPUT') {
                 let type = element.type;
@@ -40,6 +54,19 @@ var InlineJS;
                     },
                     activeCount: 0,
                     doneInit: false,
+                    setValue: (key, value) => {
+                        if (forceSet || value != info.value[key]) {
+                            info.value[key] = value;
+                            info.alert(key);
+                            scope.callbacks[key].forEach(callback => InlineJS.CoreDirectiveHandlers.Call(regionId, callback, value));
+                            if (value) {
+                                element.dispatchEvent(new CustomEvent(`state.${eventKeys[key]}`));
+                            }
+                            else { //Inverse
+                                element.dispatchEvent(new CustomEvent(`state.${inverseEventKeys[key]}`));
+                            }
+                        }
+                    },
                     alert: (key) => {
                         let myRegion = InlineJS.Region.Get(regionId);
                         myRegion.GetChanges().Add({
@@ -79,22 +106,15 @@ var InlineJS;
                     }
                 }, [...Object.keys(info.value), 'reset', 'onDirty', 'onTyping', 'onValid']);
             }
-            let setValue = (key, value) => {
-                if (forceSet || value != info.value[key]) {
-                    info.value[key] = value;
-                    info.alert(key);
-                    scope.callbacks[key].forEach(callback => callback(value));
-                }
-            };
             let finalize = () => {
                 if (info.doneInit) {
                     return;
                 }
                 info.doneInit = true;
                 forceSet = true;
-                setValue('isDirty', (0 < info.count.isDirty));
-                setValue('isTyping', false);
-                setValue('isValid', (info.count.isValid == info.activeCount));
+                info.setValue('isDirty', (0 < info.count.isDirty));
+                info.setValue('isTyping', false);
+                info.setValue('isValid', (info.count.isValid == info.activeCount));
                 forceSet = false;
             };
             if (isUnknown) { //Pass to offspring
@@ -111,13 +131,13 @@ var InlineJS;
                 if (info.doneInit) {
                     info.count[key] += value;
                     if (info.count[key] == 0) {
-                        setValue(key, false);
+                        info.setValue(key, false);
                     }
                     else if (info.count[key] == info.activeCount || (info.count[key] > 0 && !requireAll)) {
-                        setValue(key, true);
+                        info.setValue(key, true);
                     }
                     else {
-                        setValue(key, false);
+                        info.setValue(key, false);
                     }
                 }
                 else if (value == 1) { //Initial update
@@ -159,8 +179,6 @@ var InlineJS;
             };
             if (isText) {
                 element.addEventListener('input', onEvent);
-                element.addEventListener('paste', onEvent);
-                element.addEventListener('cut', onEvent);
                 element.addEventListener('blur', stoppedTyping);
             }
             else {
@@ -202,7 +220,11 @@ var InlineJS;
                         origin: myRegion.GetChanges().GetOrigin()
                     });
                 });
-                Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => callback(value)));
+                Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => InlineJS.CoreDirectiveHandlers.Call(regionId, callback, {
+                    name: name,
+                    value: value
+                })));
+                element.dispatchEvent(new CustomEvent(`attr.change`));
             });
             elementScope.locals['$attr'] = InlineJS.CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop in info) {
@@ -210,7 +232,7 @@ var InlineJS;
                     return info[prop];
                 }
                 if (prop in scope.callbacks) {
-                    (callback) => scope.callbacks[prop].push(callback);
+                    return (callback) => scope.callbacks[prop].push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
             let key = region.AddTemp(() => info);
@@ -241,7 +263,8 @@ var InlineJS;
                         prop: 'isLoaded',
                         origin: myRegion.GetChanges().GetOrigin()
                     });
-                    Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => callback(true)));
+                    Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => InlineJS.CoreDirectiveHandlers.Call(regionId, callback, true)));
+                    element.dispatchEvent(new CustomEvent(`xhr.load`));
                     if (info.isOnce) {
                         info.isAppend = !info.isAppend;
                         info.isOnce = false;
@@ -265,7 +288,7 @@ var InlineJS;
                     return info[prop];
                 }
                 if (prop in scope.callbacks) {
-                    (callback) => scope.callbacks[prop].push(callback);
+                    return (callback) => scope.callbacks[prop].push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
             return InlineJS.DirectiveHandlerReturn.Handled;
@@ -294,7 +317,8 @@ var InlineJS;
                         prop: 'isLoaded',
                         origin: myRegion.GetChanges().GetOrigin()
                     });
-                    Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => callback(true)));
+                    Object.keys(scope.callbacks).forEach(key => scope.callbacks[key].forEach(callback => InlineJS.CoreDirectiveHandlers.Call(regionId, callback, true)));
+                    element.dispatchEvent(new CustomEvent(`xhr.load`));
                 });
                 return false;
             });
@@ -306,7 +330,7 @@ var InlineJS;
                     return info[prop];
                 }
                 if (prop in scope.callbacks) {
-                    (callback) => scope.callbacks[prop].push(callback);
+                    return (callback) => scope.callbacks[prop].push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
             return InlineJS.DirectiveHandlerReturn.Handled;
@@ -332,7 +356,13 @@ var InlineJS;
                             prop: 'visible',
                             origin: myRegion.GetChanges().GetOrigin()
                         });
-                        scope.callbacks['onVisible'].forEach(callback => callback(info.visible));
+                        scope.callbacks['onVisible'].forEach(callback => InlineJS.CoreDirectiveHandlers.Call(regionId, callback, info.visible));
+                        if (info.visible) {
+                            element.dispatchEvent(new CustomEvent(`intersection.visible`));
+                        }
+                        else {
+                            element.dispatchEvent(new CustomEvent(`intersection.hidden`));
+                        }
                     }
                     if (entry.intersectionRatio != info.ratio) {
                         info.ratio = entry.intersectionRatio;
@@ -342,7 +372,8 @@ var InlineJS;
                             prop: 'ratio',
                             origin: myRegion.GetChanges().GetOrigin()
                         });
-                        scope.callbacks['onRatio'].forEach(callback => callback(info.ratio));
+                        scope.callbacks['onRatio'].forEach(callback => InlineJS.CoreDirectiveHandlers.Call(regionId, callback, info.ratio));
+                        element.dispatchEvent(new CustomEvent(`intersection.ratio`));
                     }
                 }
                 else { //Not supported
@@ -360,7 +391,7 @@ var InlineJS;
                     return info[prop];
                 }
                 if (prop in scope.callbacks) {
-                    (callback) => scope.callbacks[prop].push(callback);
+                    return (callback) => scope.callbacks[prop].push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
             return InlineJS.DirectiveHandlerReturn.Handled;

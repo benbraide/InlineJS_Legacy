@@ -50,6 +50,7 @@ declare namespace InlineJS {
         private static components_;
         private static globals_;
         private static postProcessCallbacks_;
+        static enableOptimizedBinds: boolean;
         static directivePrfix: string;
         static directiveRegex: RegExp;
         static externalCallbacks: ExternalCallbacks;
@@ -86,6 +87,7 @@ declare namespace InlineJS {
         private state_;
         private changes_;
         private proxies_;
+        private refs_;
         private observer_;
         private outsideEvents_;
         private nextTickCallbacks_;
@@ -105,6 +107,8 @@ declare namespace InlineJS {
         FindProxy(path: string): Proxy;
         AddProxy(proxy: Proxy): void;
         RemoveProxy(path: string): void;
+        AddRef(key: string, element: HTMLElement): void;
+        GetRefs(): Map<string, HTMLElement>;
         AddElement(element: HTMLElement, check?: boolean): ElementScope;
         RemoveElement(element: HTMLElement | string): void;
         AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
@@ -319,15 +323,13 @@ declare namespace InlineJS {
         static Ref(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Attr(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Style(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static Class(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Class(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static InternalAttr(region: Region, element: HTMLElement, directive: Directive, callback: (key: string, value: any) => void, validator?: (key: string) => boolean, acceptList?: boolean): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Text(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Html(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static TextOrHtml(region: Region, element: HTMLElement, directive: Directive, isHtml: boolean, callback?: () => boolean): DirectiveHandlerReturn;
         static On(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static Input(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static LazyInput(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Model(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static InternalInput(region: Region, element: HTMLElement, directive: Directive, preEvaluate: boolean, lazy?: boolean, callback?: () => boolean): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Show(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Handled | DirectiveHandlerReturn.QuitAll;
         static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -336,6 +338,9 @@ declare namespace InlineJS {
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)): {};
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean): any;
         static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any): void;
+        static Call(regionId: string, callback: (...args: any) => any, ...args: any): any;
+        static ExtractDuration(value: string, defaultValue: number): number;
+        static ToString(value: any): string;
         static AddAll(): void;
     }
     interface ProcessorOptions {

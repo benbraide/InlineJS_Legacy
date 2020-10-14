@@ -16,6 +16,7 @@ namespace InlineJS{
         count: StateDirectiveCount;
         activeCount: number;
         doneInit: boolean;
+        setValue: (key: string, value: boolean) => void;
         alert: (key: string) => void;
         resetCallbacks: Array<() => void>;
     }
@@ -31,16 +32,32 @@ namespace InlineJS{
         private static scopes_ = new Map<string, ExtendedDirectiveHandlerScope>();
         
         public static State(region: Region, element: HTMLElement, directive: Directive){
-            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value), delay = 750, lazy = false;
-            if (options && typeof options === 'object'){//Retrieve options
-                delay = (('delay' in options) ? options.delay : delay);
-                lazy = (('lazy' in options) ? !!options.lazy : lazy);
+            let delay = 750, lazy = false;
+            for (let i = 0; i < directive.arg.options.length; ++i){
+                if (directive.arg.options[i] === 'delay' && i < (directive.arg.options.length - 1)){
+                    delay = CoreDirectiveHandlers.ExtractDuration(directive.arg.options[i + 1], delay);
+                }
+                else if (directive.arg.options[i] === 'lazy'){
+                    lazy = true;
+                }
             }
             
             return ExtendedDirectiveHandlers.ContextState(region, element, lazy, delay, null);
         }
 
         public static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, info: StateDirectiveInfo){
+            const eventKeys = {
+                isDirty: 'dirty',
+                isTyping: 'typing',
+                isValid: 'valid'
+            };
+
+            const inverseEventKeys = {
+                isDirty: 'clean',
+                isTyping: 'stopped.typing',
+                isValid: 'invalid'
+            };
+            
             let isText: boolean = false, isUnknown: boolean = false, regionId = region.GetId();
             if (element.tagName === 'INPUT'){
                 let type = (element as HTMLInputElement).type;
@@ -72,6 +89,20 @@ namespace InlineJS{
                     },
                     activeCount: 0,
                     doneInit: false,
+                    setValue: (key: string, value: boolean) => {
+                        if (forceSet || value != info.value[key]){
+                            info.value[key] = value;
+                            info.alert(key);
+        
+                            (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, value));
+                            if (value){
+                                element.dispatchEvent(new CustomEvent(`state.${eventKeys[key]}`));
+                            }
+                            else{//Inverse
+                                element.dispatchEvent(new CustomEvent(`state.${inverseEventKeys[key]}`));
+                            }
+                        }
+                    },
                     alert: (key: string) => {
                         let myRegion = Region.Get(regionId);
                         myRegion.GetChanges().Add({
@@ -118,14 +149,6 @@ namespace InlineJS{
                 }, [...Object.keys(info.value), 'reset', 'onDirty','onTyping','onValid']);
             }
 
-            let setValue = (key: string, value: boolean) => {
-                if (forceSet || value != info.value[key]){
-                    info.value[key] = value;
-                    info.alert(key);
-                    (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(value));
-                }
-            };
-
             let finalize = () => {
                 if (info.doneInit){
                     return;
@@ -134,9 +157,9 @@ namespace InlineJS{
                 info.doneInit = true;
                 forceSet = true;
                 
-                setValue('isDirty', (0 < info.count.isDirty));
-                setValue('isTyping', false);
-                setValue('isValid', (info.count.isValid == info.activeCount));
+                info.setValue('isDirty', (0 < info.count.isDirty));
+                info.setValue('isTyping', false);
+                info.setValue('isValid', (info.count.isValid == info.activeCount));
 
                 forceSet = false;
             };
@@ -159,13 +182,13 @@ namespace InlineJS{
                 if (info.doneInit){
                     info.count[key] += value;
                     if (info.count[key] == 0){
-                        setValue(key, false);
+                        info.setValue(key, false);
                     }
                     else if (info.count[key] == info.activeCount || (info.count[key] > 0 && !requireAll)){
-                        setValue(key, true);
+                        info.setValue(key, true);
                     }
                     else{
-                        setValue(key, false);
+                        info.setValue(key, false);
                     }
                 }
                 else if (value == 1){//Initial update
@@ -214,8 +237,6 @@ namespace InlineJS{
 
             if (isText){
                 element.addEventListener('input', onEvent);
-                element.addEventListener('paste', onEvent);
-                element.addEventListener('cut', onEvent);
                 element.addEventListener('blur', stoppedTyping);
             }
             else{
@@ -267,7 +288,12 @@ namespace InlineJS{
                     });
                 });
 
-                Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(value)));
+                Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, {
+                    name: name,
+                    value: value
+                })));
+
+                element.dispatchEvent(new CustomEvent(`attr.change`));
             });
 
             elementScope.locals['$attr'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
@@ -277,7 +303,7 @@ namespace InlineJS{
                 }
 
                 if (prop in scope.callbacks){
-                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                    return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
 
@@ -315,7 +341,9 @@ namespace InlineJS{
                         origin: myRegion.GetChanges().GetOrigin()
                     });
                     
-                    Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(true)));
+                    Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, true)));
+                    element.dispatchEvent(new CustomEvent(`xhr.load`));
+                    
                     if (info.isOnce){
                         info.isAppend = !info.isAppend;
                         info.isOnce = false;
@@ -343,7 +371,7 @@ namespace InlineJS{
                 }
 
                 if (prop in scope.callbacks){
-                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                    return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
             
@@ -381,7 +409,8 @@ namespace InlineJS{
                         origin: myRegion.GetChanges().GetOrigin()
                     });
 
-                    Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => callback(true)));
+                    Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, true)));
+                    element.dispatchEvent(new CustomEvent(`xhr.load`));
                 });
                 
                 return false;
@@ -396,7 +425,7 @@ namespace InlineJS{
                 }
 
                 if (prop in scope.callbacks){
-                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                    return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
 
@@ -427,7 +456,13 @@ namespace InlineJS{
                             origin: myRegion.GetChanges().GetOrigin()
                         });
 
-                        (scope.callbacks['onVisible'] as Array<(value?: any) => boolean>).forEach(callback => callback(info.visible));
+                        (scope.callbacks['onVisible'] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, info.visible));
+                        if (info.visible){
+                            element.dispatchEvent(new CustomEvent(`intersection.visible`));
+                        }
+                        else{
+                            element.dispatchEvent(new CustomEvent(`intersection.hidden`));
+                        }
                     }
                     
                     if (entry.intersectionRatio != info.ratio){
@@ -439,7 +474,8 @@ namespace InlineJS{
                             origin: myRegion.GetChanges().GetOrigin()
                         });
 
-                        (scope.callbacks['onRatio'] as Array<(value?: any) => boolean>).forEach(callback => callback(info.ratio));
+                        (scope.callbacks['onRatio'] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, info.ratio));
+                        element.dispatchEvent(new CustomEvent(`intersection.ratio`));
                     }
                 }
                 else{//Not supported
@@ -461,7 +497,7 @@ namespace InlineJS{
                 }
 
                 if (prop in scope.callbacks){
-                    (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                    return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
 

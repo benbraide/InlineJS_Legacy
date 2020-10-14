@@ -1,5 +1,4 @@
-"use strict";
-var InlineJS;
+export var InlineJS;
 (function (InlineJS) {
     class Stack {
         constructor() {

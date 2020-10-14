@@ -1,4 +1,4 @@
-namespace InlineJS{
+export namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -68,6 +68,7 @@ namespace InlineJS{
         private static globals_ = new Map<string, GlobalCallbackType>();
         private static postProcessCallbacks_ = new Array<() => void>();
 
+        public static enableOptimizedBinds = true;
         public static directivePrfix = 'x';
         public static directiveRegex = /^(data-)?x-(.+)$/;
         public static externalCallbacks: ExternalCallbacks = {
@@ -109,6 +110,7 @@ namespace InlineJS{
         private state_: State;
         private changes_: Changes;
         private proxies_ = new Map<string, Proxy>();
+        private refs_ = new Map<string, HTMLElement>();
         private observer_: MutationObserver = null;
         private outsideEvents_ = new Array<string>();
         private nextTickCallbacks_ = new Array<() => void>();
@@ -203,6 +205,14 @@ namespace InlineJS{
 
         public RemoveProxy(path: string){
             delete this.proxies_[path];
+        }
+
+        public AddRef(key: string, element: HTMLElement){
+            this.refs_[key] = element;
+        }
+
+        public GetRefs(){
+            return this.refs_;
         }
 
         public AddElement(element: HTMLElement, check: boolean = true): ElementScope{
@@ -695,8 +705,12 @@ namespace InlineJS{
         }
 
         public ReplaceOptimizedGetAccesses(){
+            if (!Region.enableOptimizedBinds){
+                return;
+            }
+            
             let info = this.getAccessStorages_.Peek();
-            if (info && info.storage){
+            if (info && info.storage && info.storage.raw){
                 info.storage.optimized = new Array<GetAccessInfo>();
                 info.storage.raw.forEach(item => info.storage.optimized.push(item));
             }
@@ -705,7 +719,7 @@ namespace InlineJS{
         public PushGetAccessStorage(storage: GetAccessStorage): void{
             this.getAccessStorages_.Push({
                 storage: (storage || {
-                    optimized: new Array<GetAccessInfo>(),
+                    optimized: (Region.enableOptimizedBinds ? new Array<GetAccessInfo>() : null),
                     raw: new Array<GetAccessInfo>()
                 }),
                 lastAccessPath: ''
@@ -716,14 +730,14 @@ namespace InlineJS{
         public GetGetAccessStorage(optimized: true): Array<GetAccessInfo>;
         public GetGetAccessStorage(optimized = true){
             let info = this.getAccessStorages_.Peek();
-            return ((info && info.storage) ? (optimized ? info.storage.optimized : info.storage) : null);
+            return ((info && info.storage) ? (optimized ? (info.storage.optimized || info.storage.raw) : info.storage) : null);
         }
 
         public PopGetAccessStorage(optimized: false): GetAccessStorage;
         public PopGetAccessStorage(optimized: true): Array<GetAccessInfo>;
         public PopGetAccessStorage(optimized: boolean){
             let info = this.getAccessStorages_.Pop();
-            return ((info && info.storage) ? (optimized ? info.storage.optimized : info.storage) : null);
+            return ((info && info.storage) ? (optimized ? (info.storage.optimized || info.storage.raw) : info.storage) : null);
         }
 
         public PushGetAccessHook(hook: GetAccessHookType): void{
@@ -1216,13 +1230,13 @@ namespace InlineJS{
             Region.AddGlobal('$window', () => window);
             Region.AddGlobal('$document', () => document);
             Region.AddGlobal('$console', () => console);
-            Region.AddGlobal('$alert', () => window.alert);
+            Region.AddGlobal('$alert', () => window.alert.bind(window));
 
-            Region.AddGlobal('$event', (regionId: string) => new Value(() => Region.Get(regionId).GetState().GetEventContext()));
+            Region.AddGlobal('$event', (regionId: string) => Region.Get(regionId).GetState().GetEventContext());
             Region.AddGlobal('$expandEvent', (regionId: string) => (event: string, target?: HTMLElement) => Region.Get(regionId).ExpandEvent(event, (target || true)));
             Region.AddGlobal('$dispatchEvent', (regionId: string, contextElement: HTMLElement) => (event: Event | string, nextCycle: boolean = true, target?: Node) => {
                 let resolvedTarget = ((target as HTMLElement) || contextElement);
-                let resolvedEvent = ((typeof event === 'string') ? new Event(Region.Get(regionId).ExpandEvent(event, resolvedTarget)) : event);
+                let resolvedEvent = ((typeof event === 'string') ? new CustomEvent(Region.Get(regionId).ExpandEvent(event, resolvedTarget)) : event);
 
                 if (nextCycle){
                     setTimeout(() => resolvedTarget.dispatchEvent(resolvedEvent), 0);
@@ -1232,14 +1246,15 @@ namespace InlineJS{
                 }
             });
 
-            Region.AddGlobal('$self', (regionId: string) => new Value(() => Region.Get(regionId).GetState().GetElementContext()));
-            Region.AddGlobal('$root', (regionId: string) => new Value(() => Region.Get(regionId).GetRootElement()));
+            Region.AddGlobal('$refs', (regionId: string) => Region.Get(regionId).GetRefs());
+            Region.AddGlobal('$self', (regionId: string) => Region.Get(regionId).GetState().GetElementContext());
+            Region.AddGlobal('$root', (regionId: string) => Region.Get(regionId).GetRootElement());
 
-            Region.AddGlobal('$parent', (regionId: string) => new Value(() => Region.Get(regionId).GetElementAncestor(true, 0)));
+            Region.AddGlobal('$parent', (regionId: string) => Region.Get(regionId).GetElementAncestor(true, 0));
             Region.AddGlobal('$getAncestor', (regionId: string) => (index: number) => Region.Get(regionId).GetElementAncestor(true, index));
 
             Region.AddGlobal('$component', () => (id: string) => Region.Find(id, true));
-            Region.AddGlobal('$locals', (regionId: string) => new Value(() => Region.Get(regionId).GetElementScope(true).locals));
+            Region.AddGlobal('$locals', (regionId: string) => Region.Get(regionId).GetElementScope(true).locals);
             Region.AddGlobal('$getLocals', (regionId: string) => (element: HTMLElement) => Region.Get(regionId).AddElement(element).locals);
 
             Region.AddGlobal('$watch', (regionId: string, contextElement: HTMLElement) => (expression: string, callback: (value: any) => boolean) => {
@@ -1254,7 +1269,7 @@ namespace InlineJS{
                 RootProxy.Watch(regionId, contextElement, expression, value => (!value || (callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value) && false)), false);
             });
 
-            Region.AddGlobal('$nextTick', (regionId: string, contextElement: HTMLElement) => (callback: () => void) => {
+            Region.AddGlobal('$nextTick', (regionId: string) => (callback: () => void) => {
                 let region = Region.Get(regionId);
                 if (region){
                     region.AddNextTickCallback(callback);
@@ -1527,17 +1542,7 @@ namespace InlineJS{
         }
 
         public static Ref(region: Region, element: HTMLElement, directive: Directive){
-            if (element.tagName === 'TEMPLATE'){
-                CoreDirectiveHandlers.Assign(region, element, directive.value, 'this.content', () => {
-                    return (element as HTMLTemplateElement).content;
-                });
-            }
-            else{
-                CoreDirectiveHandlers.Assign(region, element, directive.value, 'this', () => {
-                    return element;
-                });
-            }
-            
+            region.AddRef(directive.value, element);
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -1547,79 +1552,70 @@ namespace InlineJS{
                 'default', 'defer', 'disabled', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted',
                 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected',
             );
-            
-            if (!directive.arg || !directive.arg.key){
-                return DirectiveHandlerReturn.Nil;
-            }
-            
-            let regionId = region.GetId(), isBoolean = (booleanAttributes.indexOf(directive.arg.key) != -1);
-            region.GetState().TrapGetAccess(() => {
-                let result = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
-                if (isBoolean && !!result){
-                    element.setAttribute(directive.arg.key, directive.arg.key);
+
+            return CoreDirectiveHandlers.InternalAttr(region, element, directive, (key, value) => {
+                if (booleanAttributes.indexOf(key) != -1){
+                    if (value){
+                        element.setAttribute(key, key);
+                    }
+                    else{//Remove attribute
+                        element.removeAttribute(key);
+                    }
                 }
-                else if (isBoolean){
-                    element.removeAttribute(directive.arg.key);
+                else if (value === null || value === undefined || value === false){
+                    element.removeAttribute(key);
                 }
                 else{//Set evaluated value
-                    element.setAttribute(directive.arg.key, result);
+                    element.setAttribute(key, CoreDirectiveHandlers.ToString(value));
                 }
-            }, true);
-            
-            return DirectiveHandlerReturn.Handled;
+            });
         }
 
         public static Style(region: Region, element: HTMLElement, directive: Directive){
+            return CoreDirectiveHandlers.InternalAttr(region, element, directive, (key, value) => { element.style[key] = CoreDirectiveHandlers.ToString(value) }, key => (key in element.style));
+        }
+
+        public static Class(region: Region, element: HTMLElement, directive: Directive){
+            return CoreDirectiveHandlers.InternalAttr(region, element, directive, (key, value) => {
+                key.trim().replace(/\s\s+/g, ' ').split(' ').forEach(item => value ? element.classList.add(item) : element.classList.remove(item));
+            }, null, true);
+        }
+
+        public static InternalAttr(region: Region, element: HTMLElement, directive: Directive, callback: (key: string, value: any) => void, validator?: (key: string) => boolean, acceptList = false){
             let regionId = region.GetId();
-            if (!directive.arg){
+            if (!directive.arg || !directive.arg.key){
+                let isList = (acceptList && directive.arg && directive.arg.options.indexOf('list') != -1), list: Array<string>;
                 region.GetState().TrapGetAccess(() => {
-                    let entries = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
-                    if (!Region.IsObject(entries)){
-                        return;
+                    if (isList && list){
+                        list.forEach(item => element.classList.remove(item));
+                        list = new Array<string>();
                     }
                     
-                    for (let key in entries){
-                        element.style[key] = entries[key];
+                    let entries = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                    if (Region.IsObject(entries)){
+                        for (let key in entries){
+                            callback(key, entries[key]);
+                        }
+                    }
+                    else if (isList && Array.isArray(entries)){
+                        (list = entries).forEach(entry => callback(CoreDirectiveHandlers.ToString(entry), true));
+                    }
+                    else if (isList && entries){
+                        (list = CoreDirectiveHandlers.ToString(entries).trim().replace(/\s\s+/g, ' ').split(' ')).forEach(entry => callback(entry, true));
                     }
                 }, true);
 
                 return DirectiveHandlerReturn.Handled;
             }
-            
-            if (!directive.arg.key){
+
+            if (validator && !validator(directive.arg.key)){
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let key = Processor.GetCamelCaseDirectiveName(directive.arg.key);
-            if (!(key in element.style)){//Unrecognized style
-                return DirectiveHandlerReturn.Nil;
-            }
-            
             region.GetState().TrapGetAccess(() => {
-                element.style[key] = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                callback(directive.arg.key, CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
             }, true);
-            
-            return DirectiveHandlerReturn.Handled;
-        }
 
-        public static Class(region: Region, element: HTMLElement, directive: Directive){
-            let regionId = region.GetId();
-            region.GetState().TrapGetAccess(() => {
-                let entries = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
-                if (!Region.IsObject(entries)){
-                    return;
-                }
-                
-                for (let key in entries){
-                    if (entries[key] && !element.classList.contains(key)){
-                        element.classList.add(key);
-                    }
-                    else if (!entries[key]){
-                        element.classList.remove(key);
-                    }
-                }
-            }, true);
-            
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -1636,21 +1632,21 @@ namespace InlineJS{
             let regionId = region.GetId();
             
             if (isHtml){
-                onChange = () => element.innerHTML = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                onChange = () => element.innerHTML = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
             }
             else if (element.tagName === 'INPUT'){
                 if ((element as HTMLInputElement).type === 'checkbox' || (element as HTMLInputElement).type === 'radio'){
                     onChange = () => (element as HTMLInputElement).checked = !!CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
                 }
                 else{
-                    onChange = () => (element as HTMLInputElement).value = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                    onChange = () => (element as HTMLInputElement).value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
                 }
             }
             else if (element.tagName === 'TEXTAREA' || element.tagName === 'SELECT'){
-                onChange = () => (element as HTMLTextAreaElement).value = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                onChange = () => (element as HTMLTextAreaElement).value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
             }
             else{//Unknown
-                onChange = () => element.innerText = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                onChange = () => element.textContent = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
             }
 
             region.GetState().TrapGetAccess(() => {
@@ -1683,10 +1679,24 @@ namespace InlineJS{
                 key_: '',
             };
             
-            let isKey = (directive.arg.key === 'keydown' || directive.arg.key === 'keyup');
+            let isKey = (directive.arg.key === 'keydown' || directive.arg.key === 'keyup'), debounce: number, debounceIsNext = false, isDebounced = false;
             directive.arg.options.forEach((option) => {
+                if (debounceIsNext){
+                    debounceIsNext = false;
+                    
+                    let debounceValue = CoreDirectiveHandlers.ExtractDuration(option, null);
+                    if (debounceValue !== null){
+                        debounce = debounceValue;
+                        return;
+                    }
+                }
+                
                 if (option in options){
                     options[option] = true;
+                }
+                else if (option === 'debounce'){
+                    debounce = (debounce || 250);
+                    debounceIsNext = true;
                 }
                 else if (isKey && option in keyOptions){
                     keyOptions[option] = true;
@@ -1701,6 +1711,15 @@ namespace InlineJS{
             
             let regionId = region.GetId(), stoppable: boolean;
             let onEvent = (e: Event) => {
+                if (isDebounced){
+                    return;
+                }
+                
+                if (debounce){
+                    isDebounced = true;
+                    setTimeout(() => { isDebounced = false }, debounce);
+                }
+                
                 let myRegion = Region.Get(regionId);
                 if (options.once && options.outside){
                     myRegion.RemoveOutsideEventCallback(element, event, onEvent);
@@ -1757,68 +1776,78 @@ namespace InlineJS{
             
             return DirectiveHandlerReturn.Handled;
         }
-
-        public static Input(region: Region, element: HTMLElement, directive: Directive){
-            return CoreDirectiveHandlers.InternalInput(region, element, directive, true, false);
-        }
-
-        public static LazyInput(region: Region, element: HTMLElement, directive: Directive){
-            return CoreDirectiveHandlers.InternalInput(region, element, directive, true, true);
-        }
-
+        
         public static Model(region: Region, element: HTMLElement, directive: Directive){
-            let doneInput = false;
-            
-            CoreDirectiveHandlers.TextOrHtml(region, element, directive, false, () => !doneInput);
-            CoreDirectiveHandlers.InternalInput(region, element, directive, false, false, () => {
-                region.AddNextTickCallback(() => doneInput = false);
-                return (doneInput = true);
-            });
-
-            return DirectiveHandlerReturn.Handled;
-        }
-
-        public static InternalInput(region: Region, element: HTMLElement, directive: Directive, preEvaluate: boolean, lazy: boolean = false, callback?: () => boolean){
-            let getValueExpression: () => string;
-            let getValue: () => any;
-            
-            let isCheckable = false;
-            if (element.tagName === 'INPUT'){
-                if ((element as HTMLInputElement).type === 'checkbox' || (element as HTMLInputElement).type === 'radio'){
-                    isCheckable = true;
-                    getValueExpression = () => 'this.checked';
-                    getValue = () => (element as HTMLInputElement).checked;
-                }
-                else{
-                    getValueExpression = () => 'this.value';
-                    getValue = () => (element as HTMLInputElement).value;
-                }
-            }
-            else if (element.tagName === 'TEXTAREA' || element.tagName === 'SELECT'){
-                getValueExpression = () => 'this.value';
-                getValue = () => (element as HTMLTextAreaElement).value;
-            }
-            else{
-                return DirectiveHandlerReturn.Nil;
-            }
-
-            if (preEvaluate){
-                CoreDirectiveHandlers.Assign(region, element, directive.value, getValueExpression(), getValue);
-            }
-
-            let onEvent = () => {
-                if (!callback || callback()){
-                    CoreDirectiveHandlers.Assign(region, element, directive.value, getValueExpression(), getValue);
-                }
+            let doneInput = false, options = {
+                out: false,
+                lazy: false,
+                number: false
             };
 
-            if (!lazy && !isCheckable && element.tagName !== 'SELECT'){
-                element.addEventListener('input', onEvent);
-                element.addEventListener('paste', onEvent);
-                element.addEventListener('cut', onEvent);
+            directive.arg.options.forEach((option) => {
+                if (option in options){
+                    options[option] = true;
+                }
+            });
+            
+            if (!options.out){//Bidirectional
+                CoreDirectiveHandlers.TextOrHtml(region, element, directive, false, () => !doneInput);
             }
-            else{//Delayed
-                element.addEventListener('change', onEvent);
+
+            let isCheckable = false, isInput = false;
+            if (element.tagName === 'INPUT'){
+                let type = (element as HTMLInputElement).type;
+                isCheckable = (type === 'checkbox' || type === 'radio');
+                isInput = true;
+            }
+
+            let isUnknown = (!isInput && element.tagName !== 'TEXTAREA' && element.tagName !== 'SELECT');
+            let convertValue = (value: string) => {
+                if (isCheckable){
+                    return [(element as HTMLInputElement).checked, (element as HTMLInputElement).checked];
+                }
+                
+                if (!options.number){
+                    return [`'${value}'`, value];
+                }
+
+                try{
+                    let parsedValue = parseInt(value);
+                    return [parsedValue, parsedValue];
+                }
+                catch (err){}
+
+                if (value){
+                    return [`'${value}'`, value];
+                }
+
+                return [null, null];
+            };
+
+            if (options.out && 'value' in element){//Initial assignment
+                let values = convertValue((element as HTMLInputElement).value);
+                CoreDirectiveHandlers.Assign(region, element, directive.value, values[0]?.toString(), () => values[1]);
+            }
+
+            let onEvent = (e: Event) => {
+                if (doneInput){
+                    return;
+                }
+                
+                if (isUnknown){//Unpdate inner text
+                    element.innerText = (e.target as HTMLInputElement).value;
+                }
+
+                let values = convertValue((e.target as HTMLInputElement).value);
+                CoreDirectiveHandlers.Assign(region, element, directive.value, values[0]?.toString(), () => values[1]);
+
+                doneInput = true;
+                region.AddNextTickCallback(() => doneInput = false);
+            };
+
+            element.addEventListener('change', onEvent);
+            if (!options.lazy){
+                element.addEventListener('input', onEvent);
             }
             
             return DirectiveHandlerReturn.Handled;
@@ -2171,6 +2200,40 @@ namespace InlineJS{
             }
         }
 
+        public static Call(regionId: string, callback: (...args: any) => any, ...args: any){
+            try{
+                return callback(...args);
+            }
+            catch (err){
+                Region.Get(regionId).GetState().ReportError(err, 'CoreDirectiveHandlers.Call');
+            }
+        }
+
+        public static ExtractDuration(value: string, defaultValue: number){
+            const regex = /[0-9]+(s|ms)?/;
+            if (!value || !value.match(regex)){
+                return defaultValue;
+            }
+
+            if (value.indexOf('m') == -1 && value.indexOf('s') != -1){//Seconds
+                return (parseInt(value) * 1000);
+            }
+
+            return parseInt(value);
+        }
+
+        public static ToString(value: any): string{
+            if (typeof value === 'string'){
+                return value;
+            }
+
+            if (value === null || value === undefined){
+                return '';
+            }
+
+            return value.toString();
+        }
+
         public static AddAll(){
             DirectiveHandlerManager.AddHandler('cloak', CoreDirectiveHandlers.Noop);
             DirectiveHandlerManager.AddHandler('data', CoreDirectiveHandlers.Data);
@@ -2191,8 +2254,6 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('html', CoreDirectiveHandlers.Html);
 
             DirectiveHandlerManager.AddHandler('on', CoreDirectiveHandlers.On);
-            DirectiveHandlerManager.AddHandler('input', CoreDirectiveHandlers.Input);
-            DirectiveHandlerManager.AddHandler('lazyInput', CoreDirectiveHandlers.LazyInput);
             DirectiveHandlerManager.AddHandler('model', CoreDirectiveHandlers.Model);
 
             DirectiveHandlerManager.AddHandler('show', CoreDirectiveHandlers.Show);
@@ -2328,38 +2389,52 @@ namespace InlineJS{
             if (!name || !(name = name.trim())){
                 return null;
             }
+
+            switch (name.substr(0, 1)){
+            case ':':
+                name = `x-attr${name}`;
+                break;
+            case '.':
+                name = `x-class:${name.substr(1)}`;
+                break;
+            case '@':
+                name = `x-on:${name.substr(1)}`;
+                break;
+            }
             
-            let matches = ((name.substr(0, 1) === ':') ? `x-attr${name}` : name).match(Region.directiveRegex);
+            let matches = name.match(Region.directiveRegex);
             if (!matches || matches.length != 3 || !matches[2]){//Not a directive
                 return null;
             }
 
-            let raw = matches[2], arg: DirectiveArg;
-            let colonIndex = raw.indexOf(':');
+            let raw: string = matches[2], arg: DirectiveArg = {
+                key: '',
+                options: new Array<string>()
+            };
 
+            let colonIndex = raw.indexOf(':'), options: Array<string>;
             if (colonIndex != -1){
-                let options = raw.substr(colonIndex + 1).split('.');
-
-                arg = {
-                    key: options[0],
-                    options: new Array<string>()
-                };
-
-                for (let i = 1; i < options.length; ++i){
-                    if (options[i] === 'camel'){
-                        arg.key = Processor.GetCamelCaseDirectiveName(arg.key);
-                    }
-                    else if (options[i] === 'join'){
-                        arg.key = arg.key.split('-').join('.');
-                    }
-                    else{
-                        arg.options.push(options[i]);
-                    }
-                }
-                
+                options = raw.substr(colonIndex + 1).split('.');
+                arg.key = options[0];
                 raw = raw.substr(0, colonIndex);
             }
+            else{//No args
+                options = raw.split('.');
+                raw = options[0];
+            }
 
+            for (let i = 1; i < options.length; ++i){
+                if (options[i] === 'camel'){
+                    arg.key = Processor.GetCamelCaseDirectiveName(arg.key);
+                }
+                else if (options[i] === 'join'){
+                    arg.key = arg.key.split('-').join('.');
+                }
+                else{
+                    arg.options.push(options[i]);
+                }
+            }
+            
             return {
                 original: name,
                 parts: raw.split('-'),
