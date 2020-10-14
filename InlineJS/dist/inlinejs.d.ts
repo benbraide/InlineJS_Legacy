@@ -309,7 +309,7 @@ declare namespace InlineJS {
     interface EachOptions {
         isArray: boolean;
         list: Array<HTMLElement> | Map<string, HTMLElement>;
-        target: Array<any> | Map<string, any>;
+        target: Array<any> | Map<string, any> | number;
         count: number;
         path: string;
     }

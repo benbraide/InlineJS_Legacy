@@ -1484,7 +1484,7 @@ namespace InlineJS{
     export interface EachOptions{
         isArray: boolean;
         list: Array<HTMLElement> | Map<string, HTMLElement>;
-        target: Array<any> | Map<string, any>;
+        target: Array<any> | Map<string, any> | number;
         count: number;
         path: string;
     }
@@ -1922,7 +1922,12 @@ namespace InlineJS{
         }
 
         public static Each(region: Region, element: HTMLElement, directive: Directive){
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, true);
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, true), isCount = false, isReverse = false;
+            if (directive.arg){
+                isCount = (directive.arg.options.indexOf('count') != -1);
+                isReverse = (directive.arg.options.indexOf('reverse') != -1);
+            }
+            
             let options: EachOptions = {
                 isArray: false,
                 list: null,
@@ -1986,12 +1991,29 @@ namespace InlineJS{
                 }
             };
 
+            let getRange = (from: number, to: number) => {
+                if (from < to){
+                    return Array.from({length: (to - from)}, (value, key) => (key + from));
+                }
+                return Array.from({length: (from - to)}, (value, key) => (from - key));
+            };
+
             let init = (myRegion: Region) => {
                 options.target = CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
                 info.parent.removeChild(element);
                 
                 if (!options.target){
                     return false;
+                }
+
+                if (typeof options.target === 'number' && Number.isInteger(options.target)){
+                    let offset = (isCount ? 1 : 0);
+                    if (options.target < 0){
+                        options.target = (isReverse ? getRange((options.target - offset + 1), (1 - offset)) : getRange(-offset, (options.target - offset)));
+                    }
+                    else{
+                        options.target = (isReverse ? getRange((options.target + offset - 1), (offset - 1)) : getRange(offset, (options.target + offset)));
+                    }
                 }
 
                 if (Array.isArray(options.target)){
@@ -2004,7 +2026,7 @@ namespace InlineJS{
                 }
                 else if (Region.IsObject(options.target)){
                     options.list = new Map<string, HTMLElement>();
-                    if ('__InlineJS_Target__' in options.target){
+                    if ('__InlineJS_Target__' in (options.target as Record<string, any>)){
                         options.path = options.target['__InlineJS_Path__'];
                         options.count = Object.keys(options.target['__InlineJS_Target__']).length;
                     }

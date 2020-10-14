@@ -1510,7 +1510,11 @@ var InlineJS;
             return DirectiveHandlerReturn.Handled;
         }
         static Each(region, element, directive) {
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, true);
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, true), isCount = false, isReverse = false;
+            if (directive.arg) {
+                isCount = (directive.arg.options.indexOf('count') != -1);
+                isReverse = (directive.arg.options.indexOf('reverse') != -1);
+            }
             let options = {
                 isArray: false,
                 list: null,
@@ -1564,11 +1568,26 @@ var InlineJS;
                     Object.keys(options.target).forEach(key => insert(myRegion, key));
                 }
             };
+            let getRange = (from, to) => {
+                if (from < to) {
+                    return Array.from({ length: (to - from) }, (value, key) => (key + from));
+                }
+                return Array.from({ length: (from - to) }, (value, key) => (from - key));
+            };
             let init = (myRegion) => {
                 options.target = CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
                 info.parent.removeChild(element);
                 if (!options.target) {
                     return false;
+                }
+                if (typeof options.target === 'number' && Number.isInteger(options.target)) {
+                    let offset = (isCount ? 1 : 0);
+                    if (options.target < 0) {
+                        options.target = (isReverse ? getRange((options.target - offset + 1), (1 - offset)) : getRange(-offset, (options.target - offset)));
+                    }
+                    else {
+                        options.target = (isReverse ? getRange((options.target + offset - 1), (offset - 1)) : getRange(offset, (options.target + offset)));
+                    }
                 }
                 if (Array.isArray(options.target)) {
                     options.isArray = true;

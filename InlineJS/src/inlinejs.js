@@ -162,14 +162,19 @@ export var InlineJS;
                 outsideEventCallbacks: new Map(),
                 attributeChangeCallbacks: new Array(),
                 intersectionObservers: new Map(),
-                preserve: false
+                preserve: false,
+                paused: false
             };
             element.setAttribute(Region.GetElementKeyName(), key);
             return this.elementScopes_[key];
         }
-        RemoveElement(element) {
+        RemoveElement(element, preserve = false) {
             let scope = this.GetElementScope(element);
             if (scope) {
+                if (scope.paused) { //Paused removal
+                    scope.paused = false;
+                    return;
+                }
                 scope.uninitCallbacks.forEach((callback) => {
                     try {
                         callback();
@@ -178,26 +183,34 @@ export var InlineJS;
                         this.state_.ReportError(err, `InlineJs.Region<${this.id_}>.$uninit`);
                     }
                 });
-                if (scope.preserve) {
-                    scope.preserve = false;
-                    return;
+                if (!preserve && !scope.preserve) {
+                    scope.changeRefs.forEach((info) => {
+                        let region = Region.Get(info.regionId);
+                        if (region) {
+                            region.changes_.Unsubscribe(info.subscriptionId);
+                        }
+                    });
+                    scope.element.removeAttribute(Region.GetElementKeyName());
+                    Object.keys(scope.intersectionObservers).forEach(key => scope.intersectionObservers[key].unobserve(scope.element));
                 }
-                scope.changeRefs.forEach((info) => {
-                    let region = Region.Get(info.regionId);
-                    if (region) {
-                        region.changes_.Unsubscribe(info.subscriptionId);
-                    }
-                });
-                scope.element.removeAttribute(Region.GetElementKeyName());
-                Object.keys(scope.intersectionObservers).forEach(key => scope.intersectionObservers[key].unobserve(scope.element));
-                [...scope.element.children].forEach(child => this.RemoveElement(child));
-                delete this.elementScopes_[scope.key];
+                else {
+                    scope.preserve = !(preserve = true);
+                }
+                [...scope.element.children].forEach(child => this.RemoveElement(child, preserve));
+                if (!preserve) { //Delete scope
+                    delete this.elementScopes_[scope.key];
+                }
             }
-            if (element === this.rootElement_) { //Remove from map
-                if (this.componentKey_ in Region.components_) {
-                    delete Region.components_[this.componentKey_];
-                }
-                delete RegionMap.entries[this.id_];
+            else if (typeof element !== 'string') {
+                [...element.children].forEach(child => this.RemoveElement(child, preserve));
+            }
+            if (!preserve && element === this.rootElement_) { //Remove from map
+                this.AddNextTickCallback(() => {
+                    if (this.componentKey_ in Region.components_) {
+                        delete Region.components_[this.componentKey_];
+                    }
+                    delete RegionMap.entries[this.id_];
+                });
             }
         }
         AddOutsideEventCallback(element, event, callback) {
@@ -631,7 +644,7 @@ export var InlineJS;
         GetEventContext() {
             return this.eventContext_.Peek();
         }
-        TrapGetAccess(callback, changeCallback) {
+        TrapGetAccess(callback, changeCallback, staticCallback) {
             let region = Region.Get(this.regionId_), stopped;
             if (!region) {
                 return new Map();
@@ -644,7 +657,10 @@ export var InlineJS;
                 this.ReportError(err, `InlineJs.Region<${this.regionId_}>.State.TrapAccess`);
             }
             let storage = region.GetChanges().PopGetAccessStorage(true);
-            if (stopped || !changeCallback || storage.length == 0) {
+            if (stopped || !changeCallback || storage.length == 0) { //Not reactive
+                if (staticCallback) {
+                    staticCallback();
+                }
                 return new Map();
             }
             let ids = new Map();
@@ -667,7 +683,7 @@ export var InlineJS;
                 if (myRegion) {
                     myRegion.GetChanges().PopOrigin();
                 }
-                if (stopped) {
+                if (stopped) { //Unsubscribe all subscribed
                     for (let regionId in ids) {
                         let myRegion = Region.Get(regionId);
                         if (!myRegion) {
@@ -1468,19 +1484,23 @@ export var InlineJS;
         static If(region, element, directive) {
             let info = CoreDirectiveHandlers.InitIfOrEach(region, element);
             region.GetState().TrapGetAccess(() => {
-                let myRegion = Region.Get(info.regionId);
-                let value = CoreDirectiveHandlers.Evaluate(myRegion, info.marker, directive.value);
-                if (!value && element.parentElement) {
-                    let scope = myRegion.GetElementScope(element);
-                    if (scope) { //Don't remove scope
-                        scope.preserve = true;
+                let myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(element);
+                if (!element.parentElement) {
+                    scope.paused = true; //Pause removal
+                    CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker); //Temporarily insert element into DOM
+                    if (CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)) {
+                        scope.paused = false; //Resume removal
+                        CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info); //Execute directives
                     }
+                    else { //Remove from DOM
+                        info.parent.removeChild(element);
+                    }
+                }
+                else if (!CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)) {
+                    scope.preserve = true; //Don't remove scope
                     element.parentElement.removeChild(element);
                 }
-                else if (value && !element.parentElement) {
-                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info);
-                }
-            }, true);
+            }, true, () => { region.GetElementScope(element).preserve = false; });
             if (!element.parentElement) { //Initial evaluation result is false
                 info.attributes.forEach(value => element.removeAttribute(value));
                 region.RemoveElement(element);
@@ -1489,7 +1509,11 @@ export var InlineJS;
             return DirectiveHandlerReturn.Handled;
         }
         static Each(region, element, directive) {
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element);
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, true), isCount = false, isReverse = false;
+            if (directive.arg) {
+                isCount = (directive.arg.options.indexOf('count') != -1);
+                isReverse = (directive.arg.options.indexOf('reverse') != -1);
+            }
             let options = {
                 isArray: false,
                 list: null,
@@ -1497,17 +1521,7 @@ export var InlineJS;
                 count: 0,
                 path: ''
             };
-            let getIndex = (clone, key) => {
-                if (!options.isArray) {
-                    return key;
-                }
-                for (let i = 0; i < options.list.length; ++i) {
-                    if (options.list[i] === clone) {
-                        return i;
-                    }
-                }
-                return -1;
-            };
+            let getIndex = (clone, key) => (options.isArray ? options.list.indexOf(clone) : key);
             let initLocals = (myRegion, clone, key) => {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
                     if (prop === 'count') {
@@ -1529,18 +1543,19 @@ export var InlineJS;
                 }, ['count', 'index', 'value']));
             };
             let insert = (myRegion, key) => {
-                let clone = element.cloneNode(true);
-                if (!options.isArray && key in options.list) {
-                    info.marker.parentElement.removeChild(options.list[key]);
+                let clone = element.cloneNode(true), offset;
+                if (!options.isArray) {
+                    offset = Object.keys(options.list).length;
+                    if (key in options.list) { //Remove existing
+                        info.parent.removeChild(options.list[key]);
+                    }
                     options.list[key] = clone;
                 }
-                else if (!options.isArray) {
-                    options.list[key] = clone;
-                }
-                else if (options.isArray) {
+                else { //Append to array
+                    offset = options.list.length;
                     options.list.push(clone);
                 }
-                CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => initLocals(myRegion, clone, key));
+                CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => initLocals(myRegion, clone, key), offset);
             };
             let build = (myRegion) => {
                 if (options.isArray) {
@@ -1552,10 +1567,26 @@ export var InlineJS;
                     Object.keys(options.target).forEach(key => insert(myRegion, key));
                 }
             };
+            let getRange = (from, to) => {
+                if (from < to) {
+                    return Array.from({ length: (to - from) }, (value, key) => (key + from));
+                }
+                return Array.from({ length: (from - to) }, (value, key) => (from - key));
+            };
             let init = (myRegion) => {
-                options.target = CoreDirectiveHandlers.Evaluate(myRegion, info.marker, directive.value);
+                options.target = CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
+                info.parent.removeChild(element);
                 if (!options.target) {
                     return false;
+                }
+                if (typeof options.target === 'number' && Number.isInteger(options.target)) {
+                    let offset = (isCount ? 1 : 0);
+                    if (options.target < 0) {
+                        options.target = (isReverse ? getRange((options.target - offset + 1), (1 - offset)) : getRange(-offset, (options.target - offset)));
+                    }
+                    else {
+                        options.target = (isReverse ? getRange((options.target + offset - 1), (offset - 1)) : getRange(offset, (options.target + offset)));
+                    }
                 }
                 if (Array.isArray(options.target)) {
                     options.isArray = true;
@@ -1602,7 +1633,7 @@ export var InlineJS;
                     else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`) {
                         let count = options.target.length;
                         if (count < options.count) { //Item(s) removed
-                            options.list.splice(count).forEach(clone => info.marker.parentElement.removeChild(clone));
+                            options.list.splice(count).forEach(clone => info.parent.removeChild(clone));
                         }
                         else if (options.count < count) { //Item(s) added
                             for (let diff = (count - options.count); 0 < diff; --diff) {
@@ -1612,29 +1643,22 @@ export var InlineJS;
                         options.count = count;
                     }
                     else if (!options.isArray && change.type === 'delete' && change.prop in options.list) {
-                        info.marker.removeChild(options.list[change.prop]);
+                        info.parent.removeChild(options.list[change.prop]);
                         addSizeChange(Region.Get(info.regionId));
                         delete options.list[change.prop];
                     }
                 });
                 return true;
             };
-            element.parentElement.removeChild(element);
-            if (region.GetRootElement() === element) {
-                element.removeAttribute(Region.GetElementKeyName());
-            }
-            else {
-                region.RemoveElement(element);
-            }
             info.attributes.forEach(value => element.removeAttribute(value));
             region.GetState().TrapGetAccess(() => init(Region.Get(info.regionId)), (change) => onChange(Region.Get(info.regionId), change));
             return DirectiveHandlerReturn.QuitAll;
         }
-        static InitIfOrEach(region, element) {
-            let regionId = region.GetId();
-            let marker = document.createElement('template');
-            let directives = new Array();
-            let attributes = new Array();
+        static InitIfOrEach(region, element, removeId = false) {
+            let regionId = region.GetId(), directives = new Array(), attributes = new Array();
+            if (removeId) {
+                element.removeAttribute(Region.GetElementKeyName());
+            }
             Processor.TraverseDirectives(element, (value) => {
                 attributes.push(value.original);
                 if (value.key !== 'if' && value.key !== 'each') {
@@ -1642,16 +1666,18 @@ export var InlineJS;
                 }
                 return DirectiveHandlerReturn.Nil;
             });
-            element.parentElement.insertBefore(marker, element);
             return {
                 regionId: regionId,
-                marker: marker,
+                parent: element.parentElement,
+                marker: CoreDirectiveHandlers.GetChildElementIndex(element),
                 directives: directives,
                 attributes: attributes
             };
         }
-        static InsertIfOrEach(region, element, info, callback) {
-            info.marker.parentElement.insertBefore(element, info.marker);
+        static InsertIfOrEach(region, element, info, callback, offset = 0) {
+            if (!element.parentElement) {
+                CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, (info.marker + (offset || 0)));
+            }
             if (callback) {
                 callback();
             }
@@ -1768,6 +1794,21 @@ export var InlineJS;
                 return '';
             }
             return value.toString();
+        }
+        static GetChildElementIndex(element) {
+            return (element.parentElement ? [...element.parentElement.children].indexOf(element) : -1);
+        }
+        static GetChildElementAt(parent, index) {
+            return ((index < parent.children.length) ? parent.children.item(index) : null);
+        }
+        static InsertOrAppendChildElement(parent, element, index) {
+            let sibling = CoreDirectiveHandlers.GetChildElementAt(parent, index);
+            if (sibling) {
+                parent.insertBefore(element, sibling);
+            }
+            else { //Append
+                parent.appendChild(element);
+            }
         }
         static AddAll() {
             DirectiveHandlerManager.AddHandler('cloak', CoreDirectiveHandlers.Noop);
