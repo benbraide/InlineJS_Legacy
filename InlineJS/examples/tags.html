@@ -76,12 +76,12 @@
     </head>
     <body>
     <div x-data="xdata()" class="bg-grey-lighter px-8 py-16 min-h-screen">
-        <input type="hidden" name="tags[]" x-each="tags" :value="$each.value">
+        <input type="hidden" name="tags[]" x-each="tags as tag" :value="tag">
 
         <div class="max-w-sm w-full mx-auto">
             <div class="tags-input">
-                <span class="tags-input-tag" x-each="tags">
-                    <span x-text="$each.value"></span>
+                <span class="tags-input-tag" x-each="tags as tag">
+                    <span x-text="tag"></span>
                     <button type="button" class="tags-input-remove" @click="deleteTag($each.index)">
                         &times;
                     </button>

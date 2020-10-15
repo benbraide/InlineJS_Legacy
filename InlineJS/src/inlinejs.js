@@ -1646,7 +1646,16 @@ export var InlineJS;
                 count: 0,
                 path: ''
             };
+            let valueKey = '', matches = directive.value.match(/^(.+)? as[ ]+([A-Za-z_][0-9A-Za-z_$]*)[ ]*$/), expression;
+            if (matches && 2 < matches.length) {
+                expression = matches[1];
+                valueKey = matches[2];
+            }
+            else {
+                expression = directive.value;
+            }
             let getIndex = (clone, key) => (options.isArray ? options.list.indexOf(clone) : key);
+            let getValue = (clone, key) => (options.isArray ? options.target[getIndex(clone)] : options.target[key]);
             let initLocals = (myRegion, clone, key) => {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
                     if (prop === 'count') {
@@ -1662,13 +1671,19 @@ export var InlineJS;
                         return getIndex(clone, key);
                     }
                     if (prop === 'value') {
-                        return (options.isArray ? options.target[getIndex(clone)] : options.target[key]);
+                        return getValue(clone, key);
+                    }
+                    if (prop === 'collection') {
+                        return options.target;
                     }
                     if (prop === 'parent') {
                         return Region.Get(info.regionId).GetLocal(clone.parentElement, '$each', true);
                     }
                     return null;
                 }, ['count', 'index', 'value']));
+                if (valueKey) {
+                    myRegion.AddLocal(clone, valueKey, new Value(() => getValue(clone, key)));
+                }
             };
             let insert = (myRegion, key) => {
                 let clone = element.cloneNode(true), offset;
@@ -1723,7 +1738,7 @@ export var InlineJS;
             let init = (myRegion, refresh = false) => {
                 if (!refresh) { //First initialization
                     empty();
-                    options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value));
+                    options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
                     info.parent.removeChild(element);
                     if (!options.target) {
                         return false;
@@ -1945,6 +1960,18 @@ export var InlineJS;
             }
             if (typeof value === 'object' && '__InlineJS_Target__' in value) {
                 return CoreDirectiveHandlers.ToString(value['__InlineJS_Target__']);
+            }
+            if (Region.IsObject(value)) {
+                let combined = '';
+                for (let key in value) {
+                    if (combined.length == 0) {
+                        combined = `${key}:${CoreDirectiveHandlers.ToString(value[key])}`;
+                    }
+                    else {
+                        combined += `,${key}:${CoreDirectiveHandlers.ToString(value[key])}`;
+                    }
+                }
+                return `{${combined}}`;
             }
             return value.toString();
         }

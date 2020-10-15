@@ -1,4 +1,4 @@
-export namespace InlineJS{
+namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -2099,7 +2099,18 @@ export namespace InlineJS{
                 path: ''
             };
 
+            let valueKey = '', matches = directive.value.match(/^(.+)? as[ ]+([A-Za-z_][0-9A-Za-z_$]*)[ ]*$/), expression: string;
+            if (matches && 2 < matches.length){
+                expression = matches[1];
+                valueKey = matches[2];
+            }
+            else{
+                expression = directive.value;
+            }
+
             let getIndex = (clone: HTMLElement, key?: string) => (options.isArray ? (options.list as Array<HTMLElement>).indexOf(clone) : key);
+            let getValue = (clone: HTMLElement, key?: string) => (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Map<string, any>)[key]);
+            
             let initLocals = (myRegion: Region, clone: HTMLElement, key?: string) => {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
                     if (prop === 'count'){
@@ -2119,7 +2130,11 @@ export namespace InlineJS{
                     }
 
                     if (prop === 'value'){
-                        return (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Map<string, any>)[key]);
+                        return getValue(clone, key);
+                    }
+
+                    if (prop === 'collection'){
+                        return options.target;
                     }
 
                     if (prop === 'parent'){
@@ -2128,6 +2143,10 @@ export namespace InlineJS{
 
                     return null;
                 }, ['count', 'index', 'value']));
+
+                if (valueKey){
+                    myRegion.AddLocal(clone, valueKey, new Value(() => getValue(clone, key)));
+                }
             };
 
             let insert = (myRegion: Region, key?: string) => {
@@ -2194,7 +2213,7 @@ export namespace InlineJS{
                 if (!refresh){//First initialization
                     empty();
                     
-                    options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value));
+                    options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
                     info.parent.removeChild(element);
                     
                     if (!options.target){
@@ -2457,6 +2476,19 @@ export namespace InlineJS{
 
             if (typeof value === 'object' && '__InlineJS_Target__' in value){
                 return CoreDirectiveHandlers.ToString(value['__InlineJS_Target__']);
+            }
+
+            if (Region.IsObject(value)){
+                let combined = '';
+                for (let key in value){
+                    if (combined.length == 0){
+                        combined = `${key}:${CoreDirectiveHandlers.ToString(value[key])}`;
+                    }
+                    else{
+                        combined += `,${key}:${CoreDirectiveHandlers.ToString(value[key])}`;
+                    }
+                }
+                return `{${combined}}`;
             }
 
             return value.toString();
