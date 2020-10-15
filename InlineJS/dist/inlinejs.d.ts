@@ -82,6 +82,7 @@ declare namespace InlineJS {
             'arrow-right': string;
             'arrow-down': string;
         };
+        static booleanAttributes: string[];
         private componentKey_;
         private doneInit_;
         private elementScopes_;
@@ -95,6 +96,7 @@ declare namespace InlineJS {
         private nextTickCallbacks_;
         private tempCallbacks_;
         private tempCallbacksId_;
+        private enableOptimizedBinds_;
         constructor(id_: string, rootElement_: HTMLElement, rootProxy_: RootProxy);
         SetDoneInit(): void;
         GetDoneInit(): boolean;
@@ -125,6 +127,8 @@ declare namespace InlineJS {
         Call(target: (...args: any) => any, ...args: any): any;
         AddTemp(callback: () => any): string;
         CallTemp(key: string): any;
+        SetOptimizedBindsState(enabled: boolean): void;
+        OptimizedBindsIsEnabled(): boolean;
         static Get(id: string): Region;
         static GetCurrent(id: string): Region;
         static Infer(element: HTMLElement | string): Region;
@@ -132,6 +136,7 @@ declare namespace InlineJS {
         static Find(key: string, getNativeProxy: false): Region;
         static Find(key: string, getNativeProxy: true): any;
         static AddGlobal(key: string, callback: GlobalCallbackType): void;
+        static RemoveGlobal(key: string): void;
         static GetGlobal(key: string): GlobalCallbackType;
         static AddPostProcessCallback(callback: () => void): void;
         static ExecutePostProcessCallbacks(): void;
@@ -297,6 +302,7 @@ declare namespace InlineJS {
         private static directiveHandlers_;
         private static bulkDirectiveHandlers_;
         static AddHandler(key: string, handler: DirectiveHandlerType): void;
+        static RemoveHandler(key: string): void;
         static GetHandler(key: string): DirectiveHandlerType;
         static AddBulkHandler(handler: DirectiveHandlerType): void;
         static Handle(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -370,6 +376,21 @@ declare namespace InlineJS {
         static GetDirective(attribute: Attr): Directive;
         static GetDirectiveWith(name: string, value: string): Directive;
         static GetCamelCaseDirectiveName(name: string): string;
+    }
+    class Config {
+        static SetDirectivePrefix(value: string): void;
+        static SetExternalCallbacks(isEqual: (first: any, second: any) => boolean, deepCopy: (target: any) => any): void;
+        static SetIsEqualExternalCallback(callback: (first: any, second: any) => boolean): void;
+        static SetDeepCopyExternalCallback(callback: (target: any) => any): void;
+        static AddKeyEventMap(key: string, target: string): void;
+        static RemoveKeyEventMap(key: string): void;
+        static AddBooleanAttribute(name: string): void;
+        static RemoveBooleanAttribute(name: string): void;
+        static SetOptimizedBindsState(enabled: boolean): void;
+        static AddDirective(name: string, handler: DirectiveHandlerType): void;
+        static RemoveDirective(name: string): void;
+        static AddGlobalMagicProperty(name: string, callback: GlobalCallbackType): void;
+        static RemoveGlobalMagicProperty(name: string): void;
     }
     class Bootstrap {
         private static lastRegionId_;

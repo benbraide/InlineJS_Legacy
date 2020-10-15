@@ -1,4 +1,4 @@
-namespace InlineJS{
+export namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -104,6 +104,12 @@ namespace InlineJS{
             'arrow-right': 'ArrowRight',
             'arrow-down': 'ArrowDown',
         };
+
+        public static booleanAttributes = new Array<string>(
+            'allowfullscreen', 'allowpaymentrequest', 'async', 'autofocus', 'autoplay', 'checked', 'controls',
+            'default', 'defer', 'disabled', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted',
+            'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected',
+        );
         
         private componentKey_ = '';
         private doneInit_ = false;
@@ -118,10 +124,12 @@ namespace InlineJS{
         private nextTickCallbacks_ = new Array<() => void>();
         private tempCallbacks_ = new Map<string, () => any>();
         private tempCallbacksId_ = 0;
+        private enableOptimizedBinds_ = true;
 
         public constructor(private id_: string, private rootElement_: HTMLElement, private rootProxy_: RootProxy){
             this.state_ = new State(this.id_);
             this.changes_ = new Changes(this.id_);
+            this.enableOptimizedBinds_ = Region.enableOptimizedBinds;
         }
 
         public SetDoneInit(){
@@ -451,6 +459,14 @@ namespace InlineJS{
             return callback();
         }
 
+        public SetOptimizedBindsState(enabled: boolean){
+            this.enableOptimizedBinds_ = enabled;
+        }
+
+        public OptimizedBindsIsEnabled(){
+            return this.enableOptimizedBinds_;
+        }
+
         public static Get(id: string): Region{
             return ((id in RegionMap.entries) ? RegionMap.entries[id] : null);
         }
@@ -499,6 +515,10 @@ namespace InlineJS{
             Region.globals_[key] = callback;
         }
 
+        public static RemoveGlobal(key: string){
+            delete Region.globals_[key];
+        }
+
         public static GetGlobal(key: string): GlobalCallbackType{
             return ((key in Region.globals_) ? Region.globals_[key] : null);
         }
@@ -530,11 +550,86 @@ namespace InlineJS{
         }
 
         public static IsEqual(first: any, second: any): boolean{
-            return (Region.externalCallbacks.isEqual ? Region.externalCallbacks.isEqual(first, second) : (first === second));
+            if ('__InlineJS_Target__' in first){//Get underlying object
+                first = first['__InlineJS_Target__'];
+            }
+
+            if ('__InlineJS_Target__' in second){//Get underlying object
+                second = second['__InlineJS_Target__'];
+            }
+
+            if (Region.externalCallbacks.isEqual){
+                return Region.externalCallbacks.isEqual(first, second);
+            }
+            
+            if (!first != !second || typeof first !== typeof second){
+                return false;
+            }
+
+            if (!first || typeof first !== 'object'){
+                return (first == second);
+            }
+
+            if (Array.isArray(first)){
+                if (!Array.isArray(second) || first.length != second.length){
+                    return false;
+                }
+
+                for (let i = 0; i < first.length; ++i){
+                    if (!Region.IsEqual(first[i], second[i])){
+                        return false;
+                    }
+                }
+                
+                return true;
+            }
+
+            if (!Region.IsObject(first) || !Region.IsObject(second)){
+                return (first === second);
+            }
+
+            if (Object.keys(first).length != Object.keys(second).length){
+                return false;
+            }
+
+            for (let key in first){
+                if (!(key in second) || !Region.IsEqual(first[key], second[key])){
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         public static DeepCopy(target: any): any{
-            return (Region.externalCallbacks.deepCopy ? Region.externalCallbacks.deepCopy(target) : target);
+            if ('__InlineJS_Target__' in target){//Get underlying object
+                target = target['__InlineJS_Target__'];
+            }
+            
+            if (Region.externalCallbacks.deepCopy){
+                return Region.externalCallbacks.deepCopy(target);
+            }
+
+            if (!target || typeof target !== 'object'){
+                return target;
+            }
+
+            if (Array.isArray(target)){
+                let copy = [];
+                target.forEach(item => copy.push(Region.DeepCopy(item)));
+                return copy;
+            }
+
+            if (!Region.IsObject(target)){
+                return target;
+            }
+            
+            let copy = {};
+            for (let key in target){
+                copy[key] = Region.DeepCopy(target[key]);
+            }
+            
+            return copy;
         }
 
         public static GetElementKeyName(){
@@ -721,7 +816,7 @@ namespace InlineJS{
         }
 
         public ReplaceOptimizedGetAccesses(){
-            if (!Region.enableOptimizedBinds){
+            if (!Region.Get(this.regionId_).OptimizedBindsIsEnabled()){
                 return;
             }
             
@@ -735,7 +830,7 @@ namespace InlineJS{
         public PushGetAccessStorage(storage: GetAccessStorage): void{
             this.getAccessStorages_.Push({
                 storage: (storage || {
-                    optimized: (Region.enableOptimizedBinds ? new Array<GetAccessInfo>() : null),
+                    optimized: (Region.Get(this.regionId_).OptimizedBindsIsEnabled() ? new Array<GetAccessInfo>() : null),
                     raw: new Array<GetAccessInfo>()
                 }),
                 lastAccessPath: ''
@@ -1437,6 +1532,10 @@ namespace InlineJS{
             DirectiveHandlerManager.directiveHandlers_[key] = handler;
         }
 
+        public static RemoveHandler(key: string){
+            delete DirectiveHandlerManager.directiveHandlers_[key];
+        }
+
         public static GetHandler(key: string): DirectiveHandlerType{
             return ((key in DirectiveHandlerManager.directiveHandlers_) ? DirectiveHandlerManager.directiveHandlers_[key] : null);
         }
@@ -1512,7 +1611,12 @@ namespace InlineJS{
 
             let target = proxy['__InlineJS_Target__'];
             for (let key in data){
-                target[key] = data[key];
+                if (key === '$enableOptimizedBinds'){
+                    region.SetOptimizedBindsState(!!data[key]);
+                }
+                else{
+                    target[key] = data[key];
+                }
             }
 
             return DirectiveHandlerReturn.Handled;
@@ -1573,14 +1677,8 @@ namespace InlineJS{
         }
 
         public static Attr(region: Region, element: HTMLElement, directive: Directive){
-            const booleanAttributes = new Array<string>(
-                'allowfullscreen', 'allowpaymentrequest', 'async', 'autofocus', 'autoplay', 'checked', 'controls',
-                'default', 'defer', 'disabled', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted',
-                'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected',
-            );
-
             return CoreDirectiveHandlers.InternalAttr(region, element, directive, (key, value) => {
-                if (booleanAttributes.indexOf(key) != -1){
+                if (Region.booleanAttributes.indexOf(key) != -1){
                     if (value){
                         element.setAttribute(key, key);
                     }
@@ -2599,6 +2697,64 @@ namespace InlineJS{
             return name.replace(/-([^-])/g, (...args) => {
                 return (args[1].charAt(0).toUpperCase() + args[1].slice(1));
             });
+        }
+    }
+
+    export class Config{
+        public static SetDirectivePrefix(value: string){
+            Region.SetDirectivePrefix(value);
+        }
+
+        public static SetExternalCallbacks(isEqual: (first: any, second: any) => boolean, deepCopy: (target: any) => any){
+            Region.externalCallbacks.isEqual = isEqual;
+            Region.externalCallbacks.deepCopy = deepCopy;
+        }
+
+        public static SetIsEqualExternalCallback(callback: (first: any, second: any) => boolean){
+            Region.externalCallbacks.isEqual = callback;
+        }
+
+        public static SetDeepCopyExternalCallback(callback: (target: any) => any){
+            Region.externalCallbacks.deepCopy = callback;
+        }
+
+        public static AddKeyEventMap(key: string, target: string){
+            Region.keyMap[key] = target;
+        }
+
+        public static RemoveKeyEventMap(key: string){
+            delete Region.keyMap[key];
+        }
+
+        public static AddBooleanAttribute(name: string){
+            Region.booleanAttributes.push(name);
+        }
+
+        public static RemoveBooleanAttribute(name: string){
+            let index = Region.booleanAttributes.indexOf(name);
+            if (index < Region.booleanAttributes.length){
+                Region.booleanAttributes.splice(index, 1);
+            }
+        }
+
+        public static SetOptimizedBindsState(enabled: boolean){
+            Region.enableOptimizedBinds = enabled;
+        }
+
+        public static AddDirective(name: string, handler: DirectiveHandlerType){
+            DirectiveHandlerManager.AddHandler(name, handler);
+        }
+
+        public static RemoveDirective(name: string){
+            DirectiveHandlerManager.RemoveHandler(name);
+        }
+        
+        public static AddGlobalMagicProperty(name: string, callback: GlobalCallbackType){
+            Region.AddGlobal(('$' + name), callback);
+        }
+
+        public static RemoveGlobalMagicProperty(name: string){
+            Region.RemoveGlobal(('$' + name));
         }
     }
 

@@ -1,0 +1,1 @@
+tsc src/inlinejs.ts --target 'ES2015' --module 'ES2015' --moduleResolution 'node'
