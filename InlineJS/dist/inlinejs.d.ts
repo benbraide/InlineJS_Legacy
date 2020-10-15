@@ -30,6 +30,7 @@ declare namespace InlineJS {
         outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Map<string, IntersectionObserver>;
+        falseIfCondition: Array<() => void>;
         preserve: boolean;
         paused: boolean;
     }
@@ -284,6 +285,7 @@ declare namespace InlineJS {
     }
     interface Directive {
         original: string;
+        expanded: string;
         parts: Array<string>;
         raw: string;
         key: string;
@@ -299,12 +301,16 @@ declare namespace InlineJS {
         static AddBulkHandler(handler: DirectiveHandlerType): void;
         static Handle(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
     }
+    interface LiteAttr {
+        name: string;
+        value: string;
+    }
     interface IfOrEachInfo {
         regionId: string;
+        scopeKey: string;
         parent: HTMLElement;
         marker: number;
-        directives: Array<Directive>;
-        attributes: Array<string>;
+        attributes: Array<LiteAttr>;
     }
     interface EachOptions {
         isArray: boolean;
@@ -333,9 +339,9 @@ declare namespace InlineJS {
         static On(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Model(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Show(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Handled | DirectiveHandlerReturn.QuitAll;
+        static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static InitIfOrEach(region: Region, element: HTMLElement, removeId?: boolean): IfOrEachInfo;
+        static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo;
         static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)): {};
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean): any;

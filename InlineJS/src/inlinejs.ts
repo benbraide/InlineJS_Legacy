@@ -1,4 +1,4 @@
-namespace InlineJS{
+export namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -47,6 +47,7 @@ namespace InlineJS{
         outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Map<string, IntersectionObserver>;
+        falseIfCondition: Array<() => void>;
         preserve: boolean;
         paused: boolean;
     }
@@ -250,6 +251,7 @@ namespace InlineJS{
                 outsideEventCallbacks: new Map<string, Array<(event: Event) => void>>(),
                 attributeChangeCallbacks: new Array<(name: string) => void>(),
                 intersectionObservers: new Map<string, IntersectionObserver>(),
+                falseIfCondition: null,
                 preserve: false,
                 paused: false
             };
@@ -575,7 +577,7 @@ namespace InlineJS{
     export interface GetAccessStorage{
         optimized: Array<GetAccessInfo>,
         raw: Array<GetAccessInfo>
-    };
+    }
 
     export interface GetAccessStorageInfo{
         storage: GetAccessStorage;
@@ -1417,6 +1419,7 @@ namespace InlineJS{
     
     export interface Directive{
         original: string;
+        expanded: string;
         parts: Array<string>;
         raw: string;
         key: string;
@@ -1473,12 +1476,17 @@ namespace InlineJS{
         }
     }
 
+    export interface LiteAttr{
+        name: string;
+        value: string;
+    }
+
     export interface IfOrEachInfo{
         regionId: string;
+        scopeKey: string;
         parent: HTMLElement;
         marker: number;
-        directives: Array<Directive>;
-        attributes: Array<string>;
+        attributes: Array<LiteAttr>;
     }
 
     export interface EachOptions{
@@ -1694,10 +1702,14 @@ namespace InlineJS{
                 meta: false,
                 ctrl: false,
                 shift: false,
-                key_: '',
+                keys_: null,
             };
             
             let isKey = (directive.arg.key === 'keydown' || directive.arg.key === 'keyup'), debounce: number, debounceIsNext = false, isDebounced = false;
+            if (isKey){
+                keyOptions.keys_ = new Array<string>();
+            }
+            
             directive.arg.options.forEach((option) => {
                 if (debounceIsNext){
                     debounceIsNext = false;
@@ -1720,17 +1732,31 @@ namespace InlineJS{
                     keyOptions[option] = true;
                 }
                 else if (isKey && option in Region.keyMap){
-                    keyOptions.key_ = Region.keyMap[option];
+                    keyOptions.keys_.push(Region.keyMap[option]);
                 }
                 else if (isKey){
-                    keyOptions.key_ = option;
+                    keyOptions.keys_.push(option);
                 }
             });
-            
+
             let regionId = region.GetId(), stoppable: boolean;
             let onEvent = (e: Event) => {
                 if (isDebounced){
                     return;
+                }
+
+                if (options.self && !options.outside && e.target !== element){
+                    return;
+                }
+
+                if (isKey){
+                    if ((keyOptions.meta && !(e as KeyboardEvent).metaKey) || (keyOptions.ctrl && !(e as KeyboardEvent).ctrlKey) || (keyOptions.shift && !(e as KeyboardEvent).shiftKey)){
+                        return;//Key modifier absent
+                    }
+
+                    if (keyOptions.keys_ && keyOptions.keys_.indexOf((e as KeyboardEvent).key) == -1){
+                        return;//Keys don't match
+                    }
                 }
                 
                 if (debounce){
@@ -1755,20 +1781,6 @@ namespace InlineJS{
                 }
                 
                 try{
-                    if (options.self && !options.outside && e.target !== element){
-                        return;
-                    }
-
-                    if (isKey){
-                        if ((keyOptions.meta && !(e as KeyboardEvent).metaKey) || (keyOptions.ctrl && !(e as KeyboardEvent).ctrlKey) || (keyOptions.shift && !(e as KeyboardEvent).shiftKey)){
-                            return;//Key modifier absent
-                        }
-
-                        if (keyOptions.key_ && (e as KeyboardEvent).key !== keyOptions.key_){
-                            return;//Keys don't match
-                        }
-                    }
-
                     if (myRegion){
                         myRegion.GetState().PushEventContext(e);
                     }
@@ -1891,14 +1903,21 @@ namespace InlineJS{
         }
 
         public static If(region: Region, element: HTMLElement, directive: Directive){
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element);
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isInserted = true, ifFirstEntry = true;
             region.GetState().TrapGetAccess(() => {
-                let myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(element);
-                if (!element.parentElement){
+                let myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
+                if (!scope.falseIfCondition){
+                    scope.falseIfCondition = new Array<() => void>();
+                }
+                
+                if (!isInserted){
                     scope.paused = true;//Pause removal
+                    if (!element.parentElement){
+                        CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker);//Temporarily insert element into DOM
+                    }
 
-                    CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker);//Temporarily insert element into DOM
                     if (CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)){
+                        isInserted = true;
                         scope.paused = false;//Resume removal
                         CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info);//Execute directives
                     }
@@ -1907,25 +1926,64 @@ namespace InlineJS{
                     }
                 }
                 else if (!CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)){
+                    isInserted = false;
                     scope.preserve = true;//Don't remove scope
-                    element.parentElement.removeChild(element);
+                    [...scope.falseIfCondition].forEach(callback => callback());
+
+                    if (!ifFirstEntry){
+                        info.attributes.forEach(attr => element.removeAttribute(attr.name));
+                    }
+
+                    if (element.parentElement){
+                        element.parentElement.removeChild(element);
+                    }
                 }
+                else if (ifFirstEntry){//Execute directives
+                    CoreDirectiveHandlers.InsertIfOrEach(region, element, info);
+                }
+
+                ifFirstEntry = false;
             }, true, () => { region.GetElementScope(element).preserve = false });
 
-            if (!element.parentElement){//Initial evaluation result is false
-                info.attributes.forEach(value => element.removeAttribute(value));
+            if (!isInserted){//Initial evaluation result is false
                 region.RemoveElement(element);
-                return DirectiveHandlerReturn.QuitAll;
             }
             
-            return DirectiveHandlerReturn.Handled;
+            return DirectiveHandlerReturn.QuitAll;
         }
 
         public static Each(region: Region, element: HTMLElement, directive: Directive){
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, true), isCount = false, isReverse = false;
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false;
             if (directive.arg){
                 isCount = (directive.arg.options.indexOf('count') != -1);
                 isReverse = (directive.arg.options.indexOf('reverse') != -1);
+            }
+
+            let scope = region.GetElementScope(info.scopeKey), ifConditionIsTrue = true, falseIfCondition = () => {
+                ifConditionIsTrue = false;
+                empty();
+
+                let myRegion = Region.Get(info.regionId);
+                if (options.path){
+                    myRegion.GetChanges().Add({
+                        type: 'set',
+                        path: options.path,
+                        prop: '',
+                        origin: myRegion.GetChanges().GetOrigin()
+                    });
+                }
+                
+                let myScope = myRegion.GetElementScope(element);
+                if (myScope){
+                    myScope.falseIfCondition.splice(myScope.falseIfCondition.indexOf(falseIfCondition), 1);
+                }
+            };
+
+            if (scope.falseIfCondition){
+                scope.falseIfCondition.push(falseIfCondition);
+            }
+            else{
+                element.removeAttribute(info.scopeKey);
             }
             
             let options: EachOptions = {
@@ -1945,7 +2003,7 @@ namespace InlineJS{
                         }
 
                         if (options.path){
-                            myRegion.GetChanges().AddGetAccess(`${options.path}.length`);
+                            Region.Get(info.regionId).GetChanges().AddGetAccess(`${options.path}.length`);
                         }
                         
                         return options.count;
@@ -1957,6 +2015,10 @@ namespace InlineJS{
 
                     if (prop === 'value'){
                         return (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Map<string, any>)[key]);
+                    }
+
+                    if (prop === 'parent'){
+                        return Region.Get(info.regionId).GetLocal(clone.parentElement, '$each', true);
                     }
 
                     return null;
@@ -1991,6 +2053,17 @@ namespace InlineJS{
                 }
             };
 
+            let empty = () => {
+                if (options.isArray && options.list){
+                    (options.list as Array<HTMLElement>).forEach(clone => info.parent.removeChild(clone));
+                }
+                else if (options.list){//Key-value pairs
+                    Object.keys((options.list as Map<string, HTMLElement>)).forEach(key => info.parent.removeChild((options.list as Map<string, HTMLElement>)[key]));
+                }
+
+                options.list = null;
+            };
+
             let getRange = (from: number, to: number) => {
                 if (from < to){
                     return Array.from({length: (to - from)}, (value, key) => (key + from));
@@ -1998,21 +2071,29 @@ namespace InlineJS{
                 return Array.from({length: (from - to)}, (value, key) => (from - key));
             };
 
-            let init = (myRegion: Region) => {
-                options.target = CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
-                info.parent.removeChild(element);
-                
-                if (!options.target){
-                    return false;
+            let expandTarget = (target: any) => {
+                if (typeof target === 'number' && Number.isInteger(target)){
+                    let offset = (isCount ? 1 : 0);
+
+                    if (target < 0){
+                        return (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
+                    }
+                    
+                    return (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
                 }
 
-                if (typeof options.target === 'number' && Number.isInteger(options.target)){
-                    let offset = (isCount ? 1 : 0);
-                    if (options.target < 0){
-                        options.target = (isReverse ? getRange((options.target - offset + 1), (1 - offset)) : getRange(-offset, (options.target - offset)));
-                    }
-                    else{
-                        options.target = (isReverse ? getRange((options.target + offset - 1), (offset - 1)) : getRange(offset, (options.target + offset)));
+                return target;
+            };
+
+            let init = (myRegion: Region, refresh = false) => {
+                if (!refresh){//First initialization
+                    empty();
+                    
+                    options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value));
+                    info.parent.removeChild(element);
+                    
+                    if (!options.target){
+                        return false;
                     }
                 }
 
@@ -2020,14 +2101,16 @@ namespace InlineJS{
                     options.isArray = true;
                     options.count = (options.target as Array<any>).length;
                     options.list = new Array<HTMLElement>();
-                    if ('__InlineJS_Path__' in options.target){
+                    if (!refresh && '__InlineJS_Path__' in options.target){
                         options.path = options.target['__InlineJS_Path__'];
                     }
                 }
                 else if (Region.IsObject(options.target)){
                     options.list = new Map<string, HTMLElement>();
                     if ('__InlineJS_Target__' in (options.target as Record<string, any>)){
-                        options.path = options.target['__InlineJS_Path__'];
+                        if (!refresh){
+                            options.path = options.target['__InlineJS_Path__'];
+                        }
                         options.count = Object.keys(options.target['__InlineJS_Target__']).length;
                     }
                     else{
@@ -2054,6 +2137,10 @@ namespace InlineJS{
             };
 
             let onChange = (myRegion: Region, changes: Array<Change | BubbledChange>) => {
+                if (!ifConditionIsTrue){
+                    return false;
+                }
+                
                 changes.forEach((change) => {
                     if ('original' in change){//Bubbled
                         if (options.isArray || change.original.type !== 'set' || `${options.path}.${change.original.prop}` !== change.original.path){
@@ -2062,6 +2149,21 @@ namespace InlineJS{
 
                         addSizeChange(myRegion);
                         insert(myRegion, change.original.prop);
+                    }
+                    else if (change.type === 'set' && change.path === options.path){//Object replaced
+                        empty();
+                        
+                        let target = myRegion.GeRootProxy().GetNativeProxy(), parts = change.path.split('.');
+                        for (let i = 1; i < parts.length; ++i){//Resolve target
+                            if (!target || typeof target !== 'object' || !('__InlineJS_Target__' in target)){
+                                return false;
+                            }
+
+                            target = target[parts[i]];
+                        }
+
+                        options.target = expandTarget(target);
+                        return (options.target && init(myRegion, true));
                     }
                     else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`){
                         let count = (options.target as Array<any>).length;
@@ -2085,56 +2187,46 @@ namespace InlineJS{
                 return true;
             };
             
-            info.attributes.forEach(value => element.removeAttribute(value));
             region.GetState().TrapGetAccess(() => init(Region.Get(info.regionId)), (change) => onChange(Region.Get(info.regionId), change));
             
             return DirectiveHandlerReturn.QuitAll;
         }
 
-        public static InitIfOrEach(region: Region, element: HTMLElement, removeId = false): IfOrEachInfo{
-            let regionId = region.GetId(), directives = new Array<Directive>(), attributes = new Array<string>();
-            if (removeId){
-                element.removeAttribute(Region.GetElementKeyName());
-            }
-            
-            Processor.TraverseDirectives(element, (value) => {
-                attributes.push(value.original);
-                if (value.key !== 'if' && value.key !== 'each'){
-                    directives.push(value);
+        public static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo{
+            let attributes = new Array<LiteAttr>(), elScopeKey = Region.GetElementKeyName(), scopeKey = element.getAttribute(elScopeKey);
+            [...element.attributes].forEach((attr) => {
+                if (attr.name === elScopeKey){
+                    return;
                 }
-
-                return DirectiveHandlerReturn.Nil;
+                
+                element.removeAttribute(attr.name);
+                if (attr.name !== except){
+                    let directive = Processor.GetDirectiveWith(attr.name, attr.value);
+                    attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
+                }
             });
-
+            
             return {
-                regionId: regionId,
+                regionId: region.GetId(),
+                scopeKey: scopeKey,
                 parent: element.parentElement,
                 marker: CoreDirectiveHandlers.GetChildElementIndex(element),
-                directives: directives,
                 attributes: attributes
             };
         }
 
         public static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset = 0){
             if (!element.parentElement){
+                element.removeAttribute(Region.GetElementKeyName());
                 CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, (info.marker + (offset || 0)));
             }
 
+            info.attributes.forEach(attr => element.setAttribute(attr.name, attr.value));
             if (callback){
                 callback();
             }
 
-            region.GetState().PushElementContext(element);
-            for (let i = 0; i < info.directives.length; ++i){
-                if (Processor.DispatchDirective(region, element, info.directives[i]) == DirectiveHandlerReturn.QuitAll){
-                    break;
-                }
-            }
-
-            region.GetState().PopElementContext();
-            if (!region.GetDoneInit()){
-                Processor.All(region, element);
-            }
+            Processor.All(region, element);
         }
 
         public static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)){
@@ -2256,6 +2348,10 @@ namespace InlineJS{
 
             if (value === null || value === undefined){
                 return '';
+            }
+
+            if (typeof value === 'object' && '__InlineJS_Target__' in value){
+                return CoreDirectiveHandlers.ToString(value['__InlineJS_Target__']);
             }
 
             return value.toString();
@@ -2435,19 +2531,20 @@ namespace InlineJS{
                 return null;
             }
 
+            let expanded = name;
             switch (name.substr(0, 1)){
             case ':':
-                name = `x-attr${name}`;
+                expanded = `x-attr${name}`;
                 break;
             case '.':
-                name = `x-class:${name.substr(1)}`;
+                expanded = `x-class:${name.substr(1)}`;
                 break;
             case '@':
-                name = `x-on:${name.substr(1)}`;
+                expanded = `x-on:${name.substr(1)}`;
                 break;
             }
             
-            let matches = name.match(Region.directiveRegex);
+            let matches = expanded.match(Region.directiveRegex);
             if (!matches || matches.length != 3 || !matches[2]){//Not a directive
                 return null;
             }
@@ -2482,6 +2579,7 @@ namespace InlineJS{
             
             return {
                 original: name,
+                expanded: expanded,
                 parts: raw.split('-'),
                 raw: raw,
                 key: Processor.GetCamelCaseDirectiveName(raw),
