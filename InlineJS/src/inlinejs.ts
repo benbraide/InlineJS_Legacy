@@ -1,4 +1,4 @@
-export namespace InlineJS{
+namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -1694,12 +1694,14 @@ export namespace InlineJS{
                 prevent: false,
                 stop: false,
                 once: false,
+                document: false,
                 window: false,
                 self: false
             };
 
             let keyOptions = {
                 meta: false,
+                alt: false,
                 ctrl: false,
                 shift: false,
                 keys_: null,
@@ -1750,11 +1752,11 @@ export namespace InlineJS{
                 }
 
                 if (isKey){
-                    if ((keyOptions.meta && !(e as KeyboardEvent).metaKey) || (keyOptions.ctrl && !(e as KeyboardEvent).ctrlKey) || (keyOptions.shift && !(e as KeyboardEvent).shiftKey)){
+                    if ((keyOptions.meta && !(e as KeyboardEvent).metaKey) || (keyOptions.alt && !(e as KeyboardEvent).altKey) || (keyOptions.ctrl && !(e as KeyboardEvent).ctrlKey) || (keyOptions.shift && !(e as KeyboardEvent).shiftKey)){
                         return;//Key modifier absent
                     }
 
-                    if (keyOptions.keys_ && keyOptions.keys_.indexOf((e as KeyboardEvent).key) == -1){
+                    if (keyOptions.keys_ && 0 < keyOptions.keys_.length && keyOptions.keys_.indexOf((e as KeyboardEvent).key) == -1){
                         return;//Keys don't match
                     }
                 }
@@ -1795,13 +1797,18 @@ export namespace InlineJS{
             };
             
             let event = region.ExpandEvent(directive.arg.key, element);
-            if (options.outside){
-                stoppable = false;
-                region.AddOutsideEventCallback(element, event, onEvent);
+            if (!options.outside){
+                stoppable = true;
+                if (options.window){
+                    window.addEventListener(event, onEvent);
+                }
+                else{
+                    (options.document ? document : element).addEventListener(event, onEvent);
+                }
             }
             else{
-                stoppable = true;
-                (options.window ? window : element).addEventListener(event, onEvent);
+                stoppable = false;
+                region.AddOutsideEventCallback(element, event, onEvent);
             }
             
             return DirectiveHandlerReturn.Handled;

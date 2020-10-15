@@ -1311,11 +1311,13 @@ export var InlineJS;
                 prevent: false,
                 stop: false,
                 once: false,
+                document: false,
                 window: false,
                 self: false
             };
             let keyOptions = {
                 meta: false,
+                alt: false,
                 ctrl: false,
                 shift: false,
                 keys_: null,
@@ -1359,10 +1361,10 @@ export var InlineJS;
                     return;
                 }
                 if (isKey) {
-                    if ((keyOptions.meta && !e.metaKey) || (keyOptions.ctrl && !e.ctrlKey) || (keyOptions.shift && !e.shiftKey)) {
+                    if ((keyOptions.meta && !e.metaKey) || (keyOptions.alt && !e.altKey) || (keyOptions.ctrl && !e.ctrlKey) || (keyOptions.shift && !e.shiftKey)) {
                         return; //Key modifier absent
                     }
-                    if (keyOptions.keys_ && keyOptions.keys_.indexOf(e.key) == -1) {
+                    if (keyOptions.keys_ && 0 < keyOptions.keys_.length && keyOptions.keys_.indexOf(e.key) == -1) {
                         return; //Keys don't match
                     }
                 }
@@ -1396,13 +1398,18 @@ export var InlineJS;
                 }
             };
             let event = region.ExpandEvent(directive.arg.key, element);
-            if (options.outside) {
-                stoppable = false;
-                region.AddOutsideEventCallback(element, event, onEvent);
+            if (!options.outside) {
+                stoppable = true;
+                if (options.window) {
+                    window.addEventListener(event, onEvent);
+                }
+                else {
+                    (options.document ? document : element).addEventListener(event, onEvent);
+                }
             }
             else {
-                stoppable = true;
-                (options.window ? window : element).addEventListener(event, onEvent);
+                stoppable = false;
+                region.AddOutsideEventCallback(element, event, onEvent);
             }
             return DirectiveHandlerReturn.Handled;
         }
