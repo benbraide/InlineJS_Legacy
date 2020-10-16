@@ -1,4 +1,4 @@
-export namespace InlineJS{
+namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -142,6 +142,10 @@ export namespace InlineJS{
 
         public GetId(){
             return this.id_;
+        }
+
+        public GetComponentKey(){
+            return this.componentKey_;
         }
 
         public GetRootElement(){
@@ -508,7 +512,7 @@ export namespace InlineJS{
         public static Find(key: string, getNativeProxy: false): Region;
         public static Find(key: string, getNativeProxy: true): any;
         public static Find(key: string, getNativeProxy: boolean): any{
-            if (!(key in Region.components_)){
+            if (!key || !(key in Region.components_)){
                 return null;
             }
             
@@ -1378,6 +1382,7 @@ export namespace InlineJS{
             Region.AddGlobal('$parent', (regionId: string) => Region.Get(regionId).GetElementAncestor(true, 0));
             Region.AddGlobal('$getAncestor', (regionId: string) => (index: number) => Region.Get(regionId).GetElementAncestor(true, index));
 
+            Region.AddGlobal('$componentKey', (regionId: string) => Region.Get(regionId).GetComponentKey());
             Region.AddGlobal('$component', () => (id: string) => Region.Find(id, true));
             Region.AddGlobal('$locals', (regionId: string) => Region.Get(regionId).GetElementScope(true).locals);
             Region.AddGlobal('$getLocals', (regionId: string) => (element: HTMLElement) => Region.Get(regionId).AddElement(element).locals);
@@ -1624,6 +1629,11 @@ export namespace InlineJS{
             for (let key in data){
                 if (key === '$enableOptimizedBinds'){
                     region.SetOptimizedBindsState(!!data[key]);
+                }
+                else if (key === '$component'){
+                    if (element === region.GetRootElement() && data[key] && typeof data[key] === 'string'){
+                        Region.AddComponent(region, element, data[key]);
+                    }
                 }
                 else{
                     target[key] = data[key];

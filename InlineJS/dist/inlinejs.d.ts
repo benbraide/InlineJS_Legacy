@@ -101,6 +101,7 @@ declare namespace InlineJS {
         SetDoneInit(): void;
         GetDoneInit(): boolean;
         GetId(): string;
+        GetComponentKey(): string;
         GetRootElement(): HTMLElement;
         GetElementAncestor(target: HTMLElement | true, index: number): HTMLElement;
         GetElementScope(element: HTMLElement | string | true | RootElement): ElementScope;

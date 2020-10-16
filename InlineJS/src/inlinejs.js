@@ -87,6 +87,9 @@ export var InlineJS;
         Region.prototype.GetId = function () {
             return this.id_;
         };
+        Region.prototype.GetComponentKey = function () {
+            return this.componentKey_;
+        };
         Region.prototype.GetRootElement = function () {
             return this.rootElement_;
         };
@@ -394,7 +397,7 @@ export var InlineJS;
             return true;
         };
         Region.Find = function (key, getNativeProxy) {
-            if (!(key in Region.components_)) {
+            if (!key || !(key in Region.components_)) {
                 return null;
             }
             var region = Region.Get(Region.components_[key]);
@@ -1109,6 +1112,7 @@ export var InlineJS;
             Region.AddGlobal('$root', function (regionId) { return Region.Get(regionId).GetRootElement(); });
             Region.AddGlobal('$parent', function (regionId) { return Region.Get(regionId).GetElementAncestor(true, 0); });
             Region.AddGlobal('$getAncestor', function (regionId) { return function (index) { return Region.Get(regionId).GetElementAncestor(true, index); }; });
+            Region.AddGlobal('$componentKey', function (regionId) { return Region.Get(regionId).GetComponentKey(); });
             Region.AddGlobal('$component', function () { return function (id) { return Region.Find(id, true); }; });
             Region.AddGlobal('$locals', function (regionId) { return Region.Get(regionId).GetElementScope(true).locals; });
             Region.AddGlobal('$getLocals', function (regionId) { return function (element) { return Region.Get(regionId).AddElement(element).locals; }; });
@@ -1291,6 +1295,11 @@ export var InlineJS;
             for (var key in data) {
                 if (key === '$enableOptimizedBinds') {
                     region.SetOptimizedBindsState(!!data[key]);
+                }
+                else if (key === '$component') {
+                    if (element === region.GetRootElement() && data[key] && typeof data[key] === 'string') {
+                        Region.AddComponent(region, element, data[key]);
+                    }
                 }
                 else {
                     target[key] = data[key];

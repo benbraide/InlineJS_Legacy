@@ -88,6 +88,9 @@ var InlineJS;
         Region.prototype.GetId = function () {
             return this.id_;
         };
+        Region.prototype.GetComponentKey = function () {
+            return this.componentKey_;
+        };
         Region.prototype.GetRootElement = function () {
             return this.rootElement_;
         };
@@ -395,7 +398,7 @@ var InlineJS;
             return true;
         };
         Region.Find = function (key, getNativeProxy) {
-            if (!(key in Region.components_)) {
+            if (!key || !(key in Region.components_)) {
                 return null;
             }
             var region = Region.Get(Region.components_[key]);
@@ -432,19 +435,20 @@ var InlineJS;
             Region.directiveRegex = new RegExp("^(data-)?" + value + "-(.+)$");
         };
         Region.IsEqual = function (first, second) {
-            if ('__InlineJS_Target__' in first) { //Get underlying object
+            var firstIsObject = (first && typeof first === 'object'), secondIsObject = (second && typeof second === 'object');
+            if (firstIsObject && '__InlineJS_Target__' in first) { //Get underlying object
                 first = first['__InlineJS_Target__'];
             }
-            if ('__InlineJS_Target__' in second) { //Get underlying object
+            if (secondIsObject && '__InlineJS_Target__' in second) { //Get underlying object
                 second = second['__InlineJS_Target__'];
             }
             if (Region.externalCallbacks.isEqual) {
                 return Region.externalCallbacks.isEqual(first, second);
             }
-            if (!first != !second || typeof first !== typeof second) {
+            if (firstIsObject != secondIsObject) {
                 return false;
             }
-            if (!first || typeof first !== 'object') {
+            if (!firstIsObject) {
                 return (first == second);
             }
             if (Array.isArray(first)) {
@@ -472,13 +476,14 @@ var InlineJS;
             return true;
         };
         Region.DeepCopy = function (target) {
-            if ('__InlineJS_Target__' in target) { //Get underlying object
+            var isObject = (target && typeof target === 'object');
+            if (isObject && '__InlineJS_Target__' in target) { //Get underlying object
                 target = target['__InlineJS_Target__'];
             }
             if (Region.externalCallbacks.deepCopy) {
                 return Region.externalCallbacks.deepCopy(target);
             }
-            if (!target || typeof target !== 'object') {
+            if (!isObject) {
                 return target;
             }
             if (Array.isArray(target)) {
@@ -1108,6 +1113,7 @@ var InlineJS;
             Region.AddGlobal('$root', function (regionId) { return Region.Get(regionId).GetRootElement(); });
             Region.AddGlobal('$parent', function (regionId) { return Region.Get(regionId).GetElementAncestor(true, 0); });
             Region.AddGlobal('$getAncestor', function (regionId) { return function (index) { return Region.Get(regionId).GetElementAncestor(true, index); }; });
+            Region.AddGlobal('$componentKey', function (regionId) { return Region.Get(regionId).GetComponentKey(); });
             Region.AddGlobal('$component', function () { return function (id) { return Region.Find(id, true); }; });
             Region.AddGlobal('$locals', function (regionId) { return Region.Get(regionId).GetElementScope(true).locals; });
             Region.AddGlobal('$getLocals', function (regionId) { return function (element) { return Region.Get(regionId).AddElement(element).locals; }; });
@@ -1290,6 +1296,11 @@ var InlineJS;
             for (var key in data) {
                 if (key === '$enableOptimizedBinds') {
                     region.SetOptimizedBindsState(!!data[key]);
+                }
+                else if (key === '$component') {
+                    if (element === region.GetRootElement() && data[key] && typeof data[key] === 'string') {
+                        Region.AddComponent(region, element, data[key]);
+                    }
                 }
                 else {
                     target[key] = data[key];
@@ -1548,7 +1559,8 @@ var InlineJS;
             var doneInput = false, options = {
                 out: false,
                 lazy: false,
-                number: false
+                number: false,
+                trim: false
             };
             directive.arg.options.forEach(function (option) {
                 if (option in options) {
@@ -1565,15 +1577,21 @@ var InlineJS;
                 isInput = true;
             }
             var isUnknown = (!isInput && element.tagName !== 'TEXTAREA' && element.tagName !== 'SELECT');
-            var convertValue = function (value) {
+            var convertValue = function (value, target) {
+                if (options.trim) {
+                    value = value.trim();
+                }
                 if (isCheckable) {
-                    return [element.checked, element.checked];
+                    return [target.checked, target.checked];
                 }
                 if (!options.number) {
                     return ["'" + value + "'", value];
                 }
                 try {
-                    var parsedValue = parseInt(value);
+                    var trimmedValue = value.trim(), parsedValue = parseInt(trimmedValue);
+                    if ((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) && 0 < trimmedValue.length) {
+                        return ["'" + value + "'", value];
+                    }
                     return [parsedValue, parsedValue];
                 }
                 catch (err) { }
@@ -1583,18 +1601,15 @@ var InlineJS;
                 return [null, null];
             };
             if (options.out && 'value' in element) { //Initial assignment
-                var values_1 = convertValue(element.value);
+                var values_1 = convertValue(element.value, element);
                 CoreDirectiveHandlers.Assign(region, element, directive.value, (_a = values_1[0]) === null || _a === void 0 ? void 0 : _a.toString(), function () { return values_1[1]; });
             }
             var onEvent = function (e) {
                 var _a;
-                if (doneInput) {
-                    return;
-                }
                 if (isUnknown) { //Unpdate inner text
                     element.innerText = e.target.value;
                 }
-                var values = convertValue(e.target.value);
+                var values = convertValue(e.target.value, e.target);
                 CoreDirectiveHandlers.Assign(region, element, directive.value, (_a = values[0]) === null || _a === void 0 ? void 0 : _a.toString(), function () { return values[1]; });
                 doneInput = true;
                 region.AddNextTickCallback(function () { return doneInput = false; });
@@ -2018,6 +2033,12 @@ var InlineJS;
             }
             if (value === null || value === undefined) {
                 return '';
+            }
+            if (value === true) {
+                return 'true';
+            }
+            if (value === false) {
+                return 'false';
             }
             if (typeof value === 'object' && '__InlineJS_Target__' in value) {
                 return CoreDirectiveHandlers.ToString(value['__InlineJS_Target__']);
