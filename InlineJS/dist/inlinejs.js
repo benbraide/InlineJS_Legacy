@@ -508,8 +508,8 @@ var InlineJS;
         Region.directivePrfix = 'x';
         Region.directiveRegex = /^(data-)?x-(.+)$/;
         Region.externalCallbacks = {
-            isEqual: function (first, second) { return (first === second); },
-            deepCopy: function (target) { return target; }
+            isEqual: null,
+            deepCopy: null
         };
         Region.keyMap = {
             meta: 'Meta',
@@ -1073,15 +1073,15 @@ var InlineJS;
             var previousValue;
             var onChange = function () {
                 var value = Evaluator.Evaluate(regionId, elementContext, expression);
-                if (Region.externalCallbacks.isEqual(value, previousValue)) {
+                if (Region.IsEqual(value, previousValue)) {
                     return true;
                 }
-                previousValue = Region.externalCallbacks.deepCopy(value);
+                previousValue = Region.DeepCopy(value);
                 return callback(value);
             };
             region.GetState().TrapGetAccess(function () {
                 var value = Evaluator.Evaluate(regionId, elementContext, expression);
-                previousValue = Region.externalCallbacks.deepCopy(value);
+                previousValue = Region.DeepCopy(value);
                 return (skipFirst || callback(value));
             }, onChange);
         };

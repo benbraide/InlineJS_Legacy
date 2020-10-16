@@ -1,4 +1,4 @@
-namespace InlineJS{
+export namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -74,8 +74,8 @@ namespace InlineJS{
         public static directivePrfix = 'x';
         public static directiveRegex = /^(data-)?x-(.+)$/;
         public static externalCallbacks: ExternalCallbacks = {
-            isEqual: (first: any, second: any) => (first === second),
-            deepCopy: (target: any) => target,
+            isEqual: null,
+            deepCopy: null,
         };
 
         public static keyMap = {
@@ -555,11 +555,12 @@ namespace InlineJS{
         }
 
         public static IsEqual(first: any, second: any): boolean{
-            if ('__InlineJS_Target__' in first){//Get underlying object
+            let firstIsObject = (first && typeof first === 'object'), secondIsObject = (second && typeof second === 'object');
+            if (firstIsObject && '__InlineJS_Target__' in first){//Get underlying object
                 first = first['__InlineJS_Target__'];
             }
 
-            if ('__InlineJS_Target__' in second){//Get underlying object
+            if (secondIsObject && '__InlineJS_Target__' in second){//Get underlying object
                 second = second['__InlineJS_Target__'];
             }
 
@@ -567,11 +568,11 @@ namespace InlineJS{
                 return Region.externalCallbacks.isEqual(first, second);
             }
             
-            if (!first != !second || typeof first !== typeof second){
+            if (firstIsObject != secondIsObject){
                 return false;
             }
 
-            if (!first || typeof first !== 'object'){
+            if (!firstIsObject){
                 return (first == second);
             }
 
@@ -607,7 +608,8 @@ namespace InlineJS{
         }
 
         public static DeepCopy(target: any): any{
-            if ('__InlineJS_Target__' in target){//Get underlying object
+            let isObject = (target && typeof target === 'object');
+            if (isObject && '__InlineJS_Target__' in target){//Get underlying object
                 target = target['__InlineJS_Target__'];
             }
             
@@ -615,7 +617,7 @@ namespace InlineJS{
                 return Region.externalCallbacks.deepCopy(target);
             }
 
-            if (!target || typeof target !== 'object'){
+            if (!isObject){
                 return target;
             }
 
@@ -1334,17 +1336,17 @@ namespace InlineJS{
             let previousValue: any;
             let onChange = () => {
                 let value = Evaluator.Evaluate(regionId, elementContext, expression);
-                if (Region.externalCallbacks.isEqual(value, previousValue)){
+                if (Region.IsEqual(value, previousValue)){
                     return true;
                 }
 
-                previousValue = Region.externalCallbacks.deepCopy(value);
+                previousValue = Region.DeepCopy(value);
                 return callback(value);
             };
 
             region.GetState().TrapGetAccess(() => {
                 let value = Evaluator.Evaluate(regionId, elementContext, expression);
-                previousValue = Region.externalCallbacks.deepCopy(value);
+                previousValue = Region.DeepCopy(value);
                 return (skipFirst || callback(value));
             }, onChange);
         }
@@ -1925,7 +1927,8 @@ namespace InlineJS{
             let doneInput = false, options = {
                 out: false,
                 lazy: false,
-                number: false
+                number: false,
+                trim: false
             };
 
             directive.arg.options.forEach((option) => {
@@ -1946,9 +1949,13 @@ namespace InlineJS{
             }
 
             let isUnknown = (!isInput && element.tagName !== 'TEXTAREA' && element.tagName !== 'SELECT');
-            let convertValue = (value: string) => {
+            let convertValue = (value: string, target: HTMLElement) => {
+                if (options.trim){
+                    value = value.trim();
+                }
+                
                 if (isCheckable){
-                    return [(element as HTMLInputElement).checked, (element as HTMLInputElement).checked];
+                    return [(target as HTMLInputElement).checked, (target as HTMLInputElement).checked];
                 }
                 
                 if (!options.number){
@@ -1956,7 +1963,10 @@ namespace InlineJS{
                 }
 
                 try{
-                    let parsedValue = parseInt(value);
+                    let trimmedValue = value.trim(), parsedValue = parseInt(trimmedValue);
+                    if ((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) && 0 < trimmedValue.length){
+                        return [`'${value}'`, value];    
+                    }
                     return [parsedValue, parsedValue];
                 }
                 catch (err){}
@@ -1969,20 +1979,16 @@ namespace InlineJS{
             };
 
             if (options.out && 'value' in element){//Initial assignment
-                let values = convertValue((element as HTMLInputElement).value);
+                let values = convertValue((element as HTMLInputElement).value, element);
                 CoreDirectiveHandlers.Assign(region, element, directive.value, values[0]?.toString(), () => values[1]);
             }
 
             let onEvent = (e: Event) => {
-                if (doneInput){
-                    return;
-                }
-                
                 if (isUnknown){//Unpdate inner text
                     element.innerText = (e.target as HTMLInputElement).value;
                 }
 
-                let values = convertValue((e.target as HTMLInputElement).value);
+                let values = convertValue((e.target as HTMLInputElement).value, (e.target as HTMLElement));
                 CoreDirectiveHandlers.Assign(region, element, directive.value, values[0]?.toString(), () => values[1]);
 
                 doneInput = true;
@@ -2481,6 +2487,14 @@ namespace InlineJS{
 
             if (value === null || value === undefined){
                 return '';
+            }
+
+            if (value === true){
+                return 'true';
+            }
+
+            if (value === false){
+                return 'false';
             }
 
             if (typeof value === 'object' && '__InlineJS_Target__' in value){

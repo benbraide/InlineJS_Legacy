@@ -431,19 +431,20 @@ export var InlineJS;
             Region.directiveRegex = new RegExp("^(data-)?" + value + "-(.+)$");
         };
         Region.IsEqual = function (first, second) {
-            if ('__InlineJS_Target__' in first) { //Get underlying object
+            var firstIsObject = (first && typeof first === 'object'), secondIsObject = (second && typeof second === 'object');
+            if (firstIsObject && '__InlineJS_Target__' in first) { //Get underlying object
                 first = first['__InlineJS_Target__'];
             }
-            if ('__InlineJS_Target__' in second) { //Get underlying object
+            if (secondIsObject && '__InlineJS_Target__' in second) { //Get underlying object
                 second = second['__InlineJS_Target__'];
             }
             if (Region.externalCallbacks.isEqual) {
                 return Region.externalCallbacks.isEqual(first, second);
             }
-            if (!first != !second || typeof first !== typeof second) {
+            if (firstIsObject != secondIsObject) {
                 return false;
             }
-            if (!first || typeof first !== 'object') {
+            if (!firstIsObject) {
                 return (first == second);
             }
             if (Array.isArray(first)) {
@@ -471,13 +472,14 @@ export var InlineJS;
             return true;
         };
         Region.DeepCopy = function (target) {
-            if ('__InlineJS_Target__' in target) { //Get underlying object
+            var isObject = (target && typeof target === 'object');
+            if (isObject && '__InlineJS_Target__' in target) { //Get underlying object
                 target = target['__InlineJS_Target__'];
             }
             if (Region.externalCallbacks.deepCopy) {
                 return Region.externalCallbacks.deepCopy(target);
             }
-            if (!target || typeof target !== 'object') {
+            if (!isObject) {
                 return target;
             }
             if (Array.isArray(target)) {
@@ -507,8 +509,8 @@ export var InlineJS;
         Region.directivePrfix = 'x';
         Region.directiveRegex = /^(data-)?x-(.+)$/;
         Region.externalCallbacks = {
-            isEqual: function (first, second) { return (first === second); },
-            deepCopy: function (target) { return target; }
+            isEqual: null,
+            deepCopy: null
         };
         Region.keyMap = {
             meta: 'Meta',
@@ -1072,15 +1074,15 @@ export var InlineJS;
             var previousValue;
             var onChange = function () {
                 var value = Evaluator.Evaluate(regionId, elementContext, expression);
-                if (Region.externalCallbacks.isEqual(value, previousValue)) {
+                if (Region.IsEqual(value, previousValue)) {
                     return true;
                 }
-                previousValue = Region.externalCallbacks.deepCopy(value);
+                previousValue = Region.DeepCopy(value);
                 return callback(value);
             };
             region.GetState().TrapGetAccess(function () {
                 var value = Evaluator.Evaluate(regionId, elementContext, expression);
-                previousValue = Region.externalCallbacks.deepCopy(value);
+                previousValue = Region.DeepCopy(value);
                 return (skipFirst || callback(value));
             }, onChange);
         };
@@ -1547,7 +1549,8 @@ export var InlineJS;
             var doneInput = false, options = {
                 out: false,
                 lazy: false,
-                number: false
+                number: false,
+                trim: false
             };
             directive.arg.options.forEach(function (option) {
                 if (option in options) {
@@ -1564,15 +1567,21 @@ export var InlineJS;
                 isInput = true;
             }
             var isUnknown = (!isInput && element.tagName !== 'TEXTAREA' && element.tagName !== 'SELECT');
-            var convertValue = function (value) {
+            var convertValue = function (value, target) {
+                if (options.trim) {
+                    value = value.trim();
+                }
                 if (isCheckable) {
-                    return [element.checked, element.checked];
+                    return [target.checked, target.checked];
                 }
                 if (!options.number) {
                     return ["'" + value + "'", value];
                 }
                 try {
-                    var parsedValue = parseInt(value);
+                    var trimmedValue = value.trim(), parsedValue = parseInt(trimmedValue);
+                    if ((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) && 0 < trimmedValue.length) {
+                        return ["'" + value + "'", value];
+                    }
                     return [parsedValue, parsedValue];
                 }
                 catch (err) { }
@@ -1582,18 +1591,15 @@ export var InlineJS;
                 return [null, null];
             };
             if (options.out && 'value' in element) { //Initial assignment
-                var values_1 = convertValue(element.value);
+                var values_1 = convertValue(element.value, element);
                 CoreDirectiveHandlers.Assign(region, element, directive.value, (_a = values_1[0]) === null || _a === void 0 ? void 0 : _a.toString(), function () { return values_1[1]; });
             }
             var onEvent = function (e) {
                 var _a;
-                if (doneInput) {
-                    return;
-                }
                 if (isUnknown) { //Unpdate inner text
                     element.innerText = e.target.value;
                 }
-                var values = convertValue(e.target.value);
+                var values = convertValue(e.target.value, e.target);
                 CoreDirectiveHandlers.Assign(region, element, directive.value, (_a = values[0]) === null || _a === void 0 ? void 0 : _a.toString(), function () { return values[1]; });
                 doneInput = true;
                 region.AddNextTickCallback(function () { return doneInput = false; });
@@ -2017,6 +2023,12 @@ export var InlineJS;
             }
             if (value === null || value === undefined) {
                 return '';
+            }
+            if (value === true) {
+                return 'true';
+            }
+            if (value === false) {
+                return 'false';
             }
             if (typeof value === 'object' && '__InlineJS_Target__' in value) {
                 return CoreDirectiveHandlers.ToString(value['__InlineJS_Target__']);
