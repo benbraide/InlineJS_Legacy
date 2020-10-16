@@ -300,13 +300,18 @@ namespace InlineJS{
                     scope.preserve = !(preserve = true);
                 }
                 
-                [...scope.element.children].forEach(child => this.RemoveElement(child as HTMLElement, preserve));
+                for (let i = 0; i < scope.element.children.length; ++i){
+                    this.RemoveElement(scope.element.children[i] as HTMLElement, preserve);
+                }
+                
                 if (!preserve){//Delete scope
                     delete this.elementScopes_[scope.key];
                 }
             }
             else if (typeof element !== 'string'){
-                [...element.children].forEach(child => this.RemoveElement(child as HTMLElement, preserve));
+                for (let i = 0; i < element.children.length; ++i){
+                    this.RemoveElement(element.children[i] as HTMLElement, preserve);
+                }
             }
             
             if (!preserve && element === this.rootElement_){//Remove from map
@@ -837,9 +842,9 @@ namespace InlineJS{
             });
         }
 
-        public GetGetAccessStorage(optimized: false): GetAccessStorage;
-        public GetGetAccessStorage(optimized: true): Array<GetAccessInfo>;
-        public GetGetAccessStorage(optimized = true){
+        public RetrieveGetAccessStorage(optimized: false): GetAccessStorage;
+        public RetrieveGetAccessStorage(optimized: true): Array<GetAccessInfo>;
+        public RetrieveGetAccessStorage(optimized = true){
             let info = this.getAccessStorages_.Peek();
             return ((info && info.storage) ? (optimized ? (info.storage.optimized || info.storage.raw) : info.storage) : null);
         }
@@ -853,6 +858,10 @@ namespace InlineJS{
 
         public PushGetAccessHook(hook: GetAccessHookType): void{
             this.getAccessHooks_.Push(hook);
+        }
+
+        public RetrieveGetAccessHook(): GetAccessHookType{
+            return this.getAccessHooks_.Peek();
         }
 
         public PopGetAccessHook(): GetAccessHookType{
@@ -952,7 +961,7 @@ namespace InlineJS{
 
             let ids = new Map<string, Array<number>>();
             let onChange = (changes: Array<Change | BubbledChange>) => {
-                let myRegion = Region.Get(this.regionId_)
+                let myRegion = Region.Get(this.regionId_);
                 if (myRegion){//Mark changes
                     myRegion.GetChanges().PushOrigin(onChange);
                 }
@@ -2317,19 +2326,19 @@ namespace InlineJS{
         }
 
         public static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo{
-            let attributes = new Array<LiteAttr>(), elScopeKey = Region.GetElementKeyName(), scopeKey = element.getAttribute(elScopeKey);
-            [...element.attributes].forEach((attr) => {
-                if (attr.name === elScopeKey){
-                    return;
+            let attrNames = new Array<string>(), attributes = new Array<LiteAttr>(), elScopeKey = Region.GetElementKeyName(), scopeKey = element.getAttribute(elScopeKey);
+            for (let i = 0; i < element.attributes.length; ++i){
+                let attr = element.attributes[i];
+                if (attr.name !== elScopeKey){
+                    attrNames.push(attr.name);
+                    if (attr.name !== except){
+                        let directive = Processor.GetDirectiveWith(attr.name, attr.value);
+                        attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
+                    }
                 }
-                
-                element.removeAttribute(attr.name);
-                if (attr.name !== except){
-                    let directive = Processor.GetDirectiveWith(attr.name, attr.value);
-                    attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
-                }
-            });
+            }
             
+            attrNames.forEach(name => element.removeAttribute(name));
             return {
                 regionId: region.GetId(),
                 scopeKey: scopeKey,
@@ -2495,7 +2504,17 @@ namespace InlineJS{
         }
 
         public static GetChildElementIndex(element: HTMLElement){
-            return (element.parentElement ? [...element.parentElement.children].indexOf(element) : -1);
+            if (!element.parentElement){
+                return -1;
+            }
+
+            for (let i = 0; i < element.parentElement.children.length; ++i){
+                if (element.parentElement.children[i] === element){
+                    return i;
+                }
+            }
+            
+            return -1;
         }
 
         public static GetChildElementAt(parent: HTMLElement, index: number){
@@ -2558,7 +2577,12 @@ namespace InlineJS{
 
             Processor.Pre(region, element);
             if (Processor.One(region, element) != DirectiveHandlerReturn.QuitAll && !isTemplate){//Process children
-                [...element.children].forEach(child => Processor.All(region, (child as HTMLElement)));
+                let children = new Array<HTMLElement>();
+                for (let i = 0; i < element.children.length; ++i){//Duplicate children
+                    children.push(element.children[i] as HTMLElement);
+                }
+
+                children.forEach(child => Processor.All(region, child));
             }
 
             Processor.Post(region, element);
@@ -2640,11 +2664,17 @@ namespace InlineJS{
         }
         
         public static TraverseDirectives(element: HTMLElement, callback: (directive: Directive) => DirectiveHandlerReturn): DirectiveHandlerReturn{
-            let attributes = [...element.attributes];//Duplicate attributes
+            let attributes = new Array<LiteAttr>();
+            for (let i = 0; i < element.attributes.length; ++i){//Duplicate attributes
+                attributes.push({
+                    name: element.attributes[i].name,
+                    value: element.attributes[i].value
+                });
+            }
+
             let result = DirectiveHandlerReturn.Nil;
-            
             for (let i = 0; i < attributes.length; ++i){//Traverse attributes
-                let directive = Processor.GetDirective(attributes[i]);
+                let directive = Processor.GetDirectiveWith(attributes[i].name, attributes[i].value);
                 if (directive){
                     let thisResult = callback(directive);
                     if (thisResult != DirectiveHandlerReturn.Nil){

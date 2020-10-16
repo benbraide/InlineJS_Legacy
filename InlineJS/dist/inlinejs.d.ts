@@ -195,11 +195,12 @@ declare namespace InlineJS {
         AddGetAccess(path: string): void;
         ReplaceOptimizedGetAccesses(): void;
         PushGetAccessStorage(storage: GetAccessStorage): void;
-        GetGetAccessStorage(optimized: false): GetAccessStorage;
-        GetGetAccessStorage(optimized: true): Array<GetAccessInfo>;
+        RetrieveGetAccessStorage(optimized: false): GetAccessStorage;
+        RetrieveGetAccessStorage(optimized: true): Array<GetAccessInfo>;
         PopGetAccessStorage(optimized: false): GetAccessStorage;
         PopGetAccessStorage(optimized: true): Array<GetAccessInfo>;
         PushGetAccessHook(hook: GetAccessHookType): void;
+        RetrieveGetAccessHook(): GetAccessHookType;
         PopGetAccessHook(): GetAccessHookType;
         PushOrigin(origin: ChangeCallbackType): void;
         GetOrigin(): ChangeCallbackType;

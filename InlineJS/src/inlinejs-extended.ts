@@ -165,7 +165,9 @@ namespace InlineJS{
             };
 
             if (isUnknown){//Pass to offspring
-                [...element.children].forEach((child) => ExtendedDirectiveHandlers.ContextState(region, (child as HTMLElement), lazy, delay, info));
+                for (let i = 0; i < element.children.length; ++i){
+                    ExtendedDirectiveHandlers.ContextState(region, (element.children[i] as HTMLElement), lazy, delay, info);
+                }
 
                 if (isRoot){//Done
                     if (info.activeCount == 0){
@@ -564,7 +566,9 @@ namespace InlineJS{
 
             let removeAll = (force: boolean = false) => {
                 if (force || !append){
-                    [...element.children].forEach(child => element.removeChild(child));
+                    while (element.firstElementChild){
+                        element.removeChild(element.firstElementChild);
+                    }
                 }
             };
 

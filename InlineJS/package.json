@@ -24,7 +24,8 @@
   },
   "scripts": {
     "test": "mocha --require @babel/register --require jsdom-global/register",
-    "dbg-test": "mocha --inspect-brk --require @babel/register --require jsdom-global/register"
+    "dbg-test": "mocha --inspect-brk --require @babel/register --require jsdom-global/register",
+    "build": "babel dist -d lib"
   },
   "author": "Benebo Braide",
   "license": "MIT",
