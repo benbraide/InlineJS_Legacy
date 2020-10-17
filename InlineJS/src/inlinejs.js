@@ -223,17 +223,13 @@ export var InlineJS;
                 else {
                     scope.preserve = !(preserve = true);
                 }
-                for (var i = 0; i < scope.element.children.length; ++i) {
-                    this.RemoveElement(scope.element.children[i], preserve);
-                }
+                Array.from(scope.element.children).forEach(function (child) { return _this.RemoveElement(child, preserve); });
                 if (!preserve) { //Delete scope
                     delete this.elementScopes_[scope.key];
                 }
             }
             else if (typeof element !== 'string') {
-                for (var i = 0; i < element.children.length; ++i) {
-                    this.RemoveElement(element.children[i], preserve);
-                }
+                Array.from(element.children).forEach(function (child) { return _this.RemoveElement(child, preserve); });
             }
             if (!preserve && element === this.rootElement_) { //Remove from map
                 this.AddNextTickCallback(function () {
@@ -1296,12 +1292,10 @@ export var InlineJS;
                 if (key === '$enableOptimizedBinds') {
                     region.SetOptimizedBindsState(!!data[key]);
                 }
-                else if (key === '$component') {
-                    if (element === region.GetRootElement() && data[key] && typeof data[key] === 'string') {
-                        Region.AddComponent(region, element, data[key]);
-                    }
+                else if (key === '$component' && data[key] && typeof data[key] === 'string') {
+                    Region.AddComponent(region, element, data[key]);
                 }
-                else {
+                else if (key !== '$component') {
                     target[key] = data[key];
                 }
             }
@@ -1423,7 +1417,20 @@ export var InlineJS;
             }
             else if (element.tagName === 'INPUT') {
                 if (element.type === 'checkbox' || element.type === 'radio') {
-                    onChange = function () { return element.checked = !!CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value); };
+                    onChange = function () {
+                        var value = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value), valueAttr = element.getAttribute('value');
+                        if (valueAttr) {
+                            if (value && Array.isArray(value)) {
+                                element.checked = (value.findIndex(function (item) { return (item == valueAttr); }) != -1);
+                            }
+                            else {
+                                element.checked = (value == valueAttr);
+                            }
+                        }
+                        else {
+                            element.checked = !!value;
+                        }
+                    };
                 }
                 else {
                     onChange = function () { return element.value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)); };
@@ -1554,12 +1561,13 @@ export var InlineJS;
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Model = function (region, element, directive) {
-            var _a;
-            var doneInput = false, options = {
+            var regionId = region.GetId(), doneInput = false, options = {
                 out: false,
+                "in": false,
                 lazy: false,
                 number: false,
-                trim: false
+                trim: false,
+                array: false
             };
             directive.arg.options.forEach(function (option) {
                 if (option in options) {
@@ -1568,50 +1576,88 @@ export var InlineJS;
             });
             if (!options.out) { //Bidirectional
                 CoreDirectiveHandlers.TextOrHtml(region, element, directive, false, function () { return !doneInput; });
+                if (options["in"]) { //Output disabled
+                    return DirectiveHandlerReturn.Handled;
+                }
             }
             var isCheckable = false, isInput = false;
             if (element.tagName === 'INPUT') {
-                var type = element.type;
-                isCheckable = (type === 'checkbox' || type === 'radio');
                 isInput = true;
+                isCheckable = (element.type === 'checkbox' || element.type === 'radio');
             }
-            var isUnknown = (!isInput && element.tagName !== 'TEXTAREA' && element.tagName !== 'SELECT');
+            var isSelect = (!isInput && element.tagName === 'SELECT');
+            var isUnknown = (!isInput && !isSelect && element.tagName !== 'TEXTAREA');
+            options.array = (options.array && isCheckable);
+            var parseValue = function (value) {
+                var parsedValue = (options.number ? parseFloat(value) : null);
+                return ((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) ? (value ? "'" + value + "'" : 'null') : parsedValue.toString());
+            };
             var convertValue = function (value, target) {
+                if (typeof value !== 'string') {
+                    var joined = value.reduce(function (cummulative, item) { return (cummulative ? (cummulative + "," + parseValue(item)) : "" + parseValue(item)); }, '');
+                    return "[" + joined + "]";
+                }
                 if (options.trim) {
                     value = value.trim();
                 }
                 if (isCheckable) {
-                    return [target.checked, target.checked];
+                    if (!target.checked) {
+                        return 'false';
+                    }
+                    var valueAttr = element.getAttribute('value');
+                    if (valueAttr) {
+                        return "'" + valueAttr + "'";
+                    }
+                    return 'true';
                 }
                 if (!options.number) {
-                    return ["'" + value + "'", value];
+                    return "'" + value + "'";
                 }
-                try {
-                    var trimmedValue = value.trim(), parsedValue = parseInt(trimmedValue);
-                    if ((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) && 0 < trimmedValue.length) {
-                        return ["'" + value + "'", value];
+                var parsedValue = parseInt(value);
+                if (parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) {
+                    return (value ? "'" + value + "'" : 'null');
+                }
+                return parsedValue.toString();
+            };
+            var getValue = function (target) {
+                if (!isSelect || !target.multiple) {
+                    return null;
+                }
+                return Array.from(target.options).filter(function (option) { return option.selected; }).map(function (option) { return (option.value || option.text); });
+            };
+            var setValue = function (value, target) {
+                if (options.array) {
+                    var evaluatedValue = Evaluator.Evaluate(regionId, element, directive.value), valueAttr_1 = element.getAttribute('value');
+                    if (evaluatedValue && Array.isArray(evaluatedValue) && valueAttr_1) {
+                        var index = evaluatedValue.findIndex(function (item) { return (item == valueAttr_1); });
+                        if (index == -1 && target.checked) {
+                            if (options.number) {
+                                var parsedValue = parseFloat(valueAttr_1);
+                                evaluatedValue.push((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) ? valueAttr_1 : parsedValue);
+                            }
+                            else { //No conversion necessary
+                                evaluatedValue.push(valueAttr_1);
+                            }
+                        }
+                        else if (index != -1 && !target.checked) { //Remove value from array
+                            evaluatedValue.splice(index, 1);
+                        }
                     }
-                    return [parsedValue, parsedValue];
                 }
-                catch (err) { }
-                if (value) {
-                    return ["'" + value + "'", value];
+                else { //Assign
+                    Evaluator.Evaluate(regionId, element, "(" + directive.value + ")=(" + convertValue((getValue(target) || value), target) + ")");
                 }
-                return [null, null];
             };
             if (options.out && 'value' in element) { //Initial assignment
-                var values_1 = convertValue(element.value, element);
-                CoreDirectiveHandlers.Assign(region, element, directive.value, (_a = values_1[0]) === null || _a === void 0 ? void 0 : _a.toString(), function () { return values_1[1]; });
+                setValue(element.value, element);
             }
             var onEvent = function (e) {
-                var _a;
                 if (isUnknown) { //Unpdate inner text
                     element.innerText = e.target.value;
                 }
-                var values = convertValue(e.target.value, e.target);
-                CoreDirectiveHandlers.Assign(region, element, directive.value, (_a = values[0]) === null || _a === void 0 ? void 0 : _a.toString(), function () { return values[1]; });
                 doneInput = true;
-                region.AddNextTickCallback(function () { return doneInput = false; });
+                setValue(e.target.value, e.target);
+                Region.Get(regionId).AddNextTickCallback(function () { return doneInput = false; });
             };
             element.addEventListener('change', onEvent);
             if (!options.lazy) {
@@ -1895,21 +1941,20 @@ export var InlineJS;
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {
-            var attrNames = new Array(), attributes = new Array(), elScopeKey = Region.GetElementKeyName(), scopeKey = element.getAttribute(elScopeKey);
-            for (var i = 0; i < element.attributes.length; ++i) {
-                var attr = element.attributes[i];
-                if (attr.name !== elScopeKey) {
-                    attrNames.push(attr.name);
-                    if (attr.name !== except) {
-                        var directive = Processor.GetDirectiveWith(attr.name, attr.value);
-                        attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
-                    }
+            var elScopeKey = Region.GetElementKeyName(), attributes = new Array();
+            Array.from(element.attributes).forEach(function (attr) {
+                if (attr.name === elScopeKey) {
+                    return;
                 }
-            }
-            attrNames.forEach(function (name) { return element.removeAttribute(name); });
+                element.removeAttribute(attr.name);
+                if (attr.name !== except) {
+                    var directive = Processor.GetDirectiveWith(attr.name, attr.value);
+                    attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
+                }
+            });
             return {
                 regionId: region.GetId(),
-                scopeKey: scopeKey,
+                scopeKey: element.getAttribute(elScopeKey),
                 parent: element.parentElement,
                 marker: CoreDirectiveHandlers.GetChildElementIndex(element),
                 attributes: attributes
@@ -1955,6 +2000,10 @@ export var InlineJS;
         };
         CoreDirectiveHandlers.Evaluate = function (region, element, expression, useWindow) {
             if (useWindow === void 0) { useWindow = false; }
+            var args = [];
+            for (var _i = 4; _i < arguments.length; _i++) {
+                args[_i - 4] = arguments[_i];
+            }
             if (!region) {
                 return null;
             }
@@ -1964,7 +2013,7 @@ export var InlineJS;
             try {
                 result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow);
                 if (typeof result === 'function') {
-                    result = region.Call(result);
+                    result = region.Call.apply(region, __spreadArrays([result], args));
                 }
                 result = ((result instanceof Value) ? result.Get() : result);
             }
@@ -1977,7 +2026,7 @@ export var InlineJS;
             }
             return result;
         };
-        CoreDirectiveHandlers.Assign = function (region, element, target, value, callback) {
+        CoreDirectiveHandlers.Assign = function (region, element, target, value, callback, nonFunctionCallback) {
             if (!(target = target.trim())) {
                 return;
             }
@@ -1992,7 +2041,7 @@ export var InlineJS;
                 if (typeof targetObject === 'function') {
                     region.Call(targetObject, callback());
                 }
-                else {
+                else if (!nonFunctionCallback || nonFunctionCallback(targetObject)) {
                     Evaluator.Evaluate(region.GetId(), element, "(" + target + ")=" + value);
                 }
             }
@@ -2116,11 +2165,7 @@ export var InlineJS;
             }
             Processor.Pre(region, element);
             if (Processor.One(region, element) != DirectiveHandlerReturn.QuitAll && !isTemplate) { //Process children
-                var children = new Array();
-                for (var i = 0; i < element.children.length; ++i) { //Duplicate children
-                    children.push(element.children[i]);
-                }
-                children.forEach(function (child) { return Processor.All(region, child); });
+                Array.from(element.children).forEach(function (child) { return Processor.All(region, child); });
             }
             Processor.Post(region, element);
         };
@@ -2186,14 +2231,7 @@ export var InlineJS;
             return true;
         };
         Processor.TraverseDirectives = function (element, callback) {
-            var attributes = new Array();
-            for (var i = 0; i < element.attributes.length; ++i) { //Duplicate attributes
-                attributes.push({
-                    name: element.attributes[i].name,
-                    value: element.attributes[i].value
-                });
-            }
-            var result = DirectiveHandlerReturn.Nil;
+            var result = DirectiveHandlerReturn.Nil, attributes = Array.from(element.attributes);
             for (var i = 0; i < attributes.length; ++i) { //Traverse attributes
                 var directive = Processor.GetDirectiveWith(attributes[i].name, attributes[i].value);
                 if (directive) {

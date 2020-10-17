@@ -1,4 +1,4 @@
-namespace InlineJS{
+export namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -304,18 +304,14 @@ namespace InlineJS{
                     scope.preserve = !(preserve = true);
                 }
                 
-                for (let i = 0; i < scope.element.children.length; ++i){
-                    this.RemoveElement(scope.element.children[i] as HTMLElement, preserve);
-                }
+                Array.from(scope.element.children).forEach(child => this.RemoveElement((child as HTMLElement), preserve));
                 
                 if (!preserve){//Delete scope
                     delete this.elementScopes_[scope.key];
                 }
             }
             else if (typeof element !== 'string'){
-                for (let i = 0; i < element.children.length; ++i){
-                    this.RemoveElement(element.children[i] as HTMLElement, preserve);
-                }
+                Array.from(element.children).forEach(child => this.RemoveElement((child as HTMLElement), preserve));
             }
             
             if (!preserve && element === this.rootElement_){//Remove from map
@@ -1630,12 +1626,10 @@ namespace InlineJS{
                 if (key === '$enableOptimizedBinds'){
                     region.SetOptimizedBindsState(!!data[key]);
                 }
-                else if (key === '$component'){
-                    if (element === region.GetRootElement() && data[key] && typeof data[key] === 'string'){
-                        Region.AddComponent(region, element, data[key]);
-                    }
+                else if (key === '$component' && data[key] && typeof data[key] === 'string'){
+                    Region.AddComponent(region, element, data[key]);
                 }
-                else{
+                else if (key !== '$component'){
                     target[key] = data[key];
                 }
             }
@@ -1781,7 +1775,20 @@ namespace InlineJS{
             }
             else if (element.tagName === 'INPUT'){
                 if ((element as HTMLInputElement).type === 'checkbox' || (element as HTMLInputElement).type === 'radio'){
-                    onChange = () => (element as HTMLInputElement).checked = !!CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                    onChange = () => {
+                        let value = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value), valueAttr = element.getAttribute('value');
+                        if (valueAttr){
+                            if (value && Array.isArray(value)){
+                                (element as HTMLInputElement).checked = ((value as Array<any>).findIndex(item => (item == valueAttr)) != -1);
+                            }
+                            else{
+                                (element as HTMLInputElement).checked = (value == valueAttr);
+                            }
+                        }
+                        else{
+                            (element as HTMLInputElement).checked = !!value;
+                        }
+                    };
                 }
                 else{
                     onChange = () => (element as HTMLInputElement).value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
@@ -1934,11 +1941,13 @@ namespace InlineJS{
         }
         
         public static Model(region: Region, element: HTMLElement, directive: Directive){
-            let doneInput = false, options = {
+            let regionId = region.GetId(), doneInput = false, options = {
                 out: false,
+                in: false,
                 lazy: false,
                 number: false,
-                trim: false
+                trim: false,
+                array: false,
             };
 
             directive.arg.options.forEach((option) => {
@@ -1949,48 +1958,95 @@ namespace InlineJS{
             
             if (!options.out){//Bidirectional
                 CoreDirectiveHandlers.TextOrHtml(region, element, directive, false, () => !doneInput);
+                if (options.in){//Output disabled
+                    return DirectiveHandlerReturn.Handled;
+                }
             }
 
             let isCheckable = false, isInput = false;
             if (element.tagName === 'INPUT'){
-                let type = (element as HTMLInputElement).type;
-                isCheckable = (type === 'checkbox' || type === 'radio');
                 isInput = true;
+                isCheckable = ((element as HTMLInputElement).type === 'checkbox' || (element as HTMLInputElement).type === 'radio');
             }
 
-            let isUnknown = (!isInput && element.tagName !== 'TEXTAREA' && element.tagName !== 'SELECT');
-            let convertValue = (value: string, target: HTMLElement) => {
+            let isSelect = (!isInput && element.tagName === 'SELECT');
+            let isUnknown = (!isInput && !isSelect && element.tagName !== 'TEXTAREA');
+
+            options.array = (options.array && isCheckable);
+            let parseValue = (value: string) => {
+                let parsedValue = (options.number ? parseFloat(value) : null);
+                return ((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) ? (value ? `'${value}'` : 'null') : parsedValue.toString());
+            };
+            
+            let convertValue = (value: string | Array<string>, target: HTMLElement) => {
+                if (typeof value !== 'string'){
+                    let joined = value.reduce((cummulative, item) => (cummulative ? (`${cummulative},${parseValue(item)}`) : `${parseValue(item)}`), '');
+                    return `[${joined}]`;
+                }
+                
                 if (options.trim){
                     value = value.trim();
                 }
                 
                 if (isCheckable){
-                    return [(target as HTMLInputElement).checked, (target as HTMLInputElement).checked];
+                    if (!(target as HTMLInputElement).checked){
+                        return 'false';
+                    }
+                    
+                    let valueAttr = element.getAttribute('value');
+                    if (valueAttr){
+                        return `'${valueAttr}'`;   
+                    }
+
+                    return 'true';
                 }
                 
                 if (!options.number){
-                    return [`'${value}'`, value];
+                    return `'${value}'`;
                 }
 
-                try{
-                    let trimmedValue = value.trim(), parsedValue = parseInt(trimmedValue);
-                    if ((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) && 0 < trimmedValue.length){
-                        return [`'${value}'`, value];    
+                let parsedValue = parseInt(value);
+                if (parsedValue === null || parsedValue === undefined || isNaN(parsedValue)){
+                    return (value ? `'${value}'` : 'null');
+                }
+
+                return parsedValue.toString();
+            };
+
+            let getValue = (target: HTMLElement) => {
+                if (!isSelect || !(target as HTMLSelectElement).multiple){
+                    return null;
+                }
+
+                return Array.from((target as HTMLSelectElement).options).filter(option => option.selected).map(option => (option.value || option.text));
+            };
+            
+            let setValue = (value: string, target: HTMLElement) => {
+                if (options.array){
+                    let evaluatedValue = Evaluator.Evaluate(regionId, element, directive.value), valueAttr = element.getAttribute('value');
+                    if (evaluatedValue && Array.isArray(evaluatedValue) && valueAttr){
+                        let index = (evaluatedValue as Array<any>).findIndex(item => (item == valueAttr));
+                        if (index == -1 && (target as HTMLInputElement).checked){
+                            if (options.number){
+                                let parsedValue = parseFloat(valueAttr);
+                                (evaluatedValue as Array<any>).push((parsedValue === null || parsedValue === undefined || isNaN(parsedValue)) ? valueAttr : parsedValue);
+                            }
+                            else{//No conversion necessary
+                                (evaluatedValue as Array<any>).push(valueAttr);
+                            }
+                        }
+                        else if (index != -1 && !(target as HTMLInputElement).checked){//Remove value from array
+                            (evaluatedValue as Array<any>).splice(index, 1);
+                        }
                     }
-                    return [parsedValue, parsedValue];
                 }
-                catch (err){}
-
-                if (value){
-                    return [`'${value}'`, value];
+                else{//Assign
+                    Evaluator.Evaluate(regionId, element, `(${directive.value})=(${convertValue((getValue(target) || value), target)})`);
                 }
-
-                return [null, null];
             };
 
             if (options.out && 'value' in element){//Initial assignment
-                let values = convertValue((element as HTMLInputElement).value, element);
-                CoreDirectiveHandlers.Assign(region, element, directive.value, values[0]?.toString(), () => values[1]);
+                setValue((element as HTMLInputElement).value, element);
             }
 
             let onEvent = (e: Event) => {
@@ -1998,11 +2054,9 @@ namespace InlineJS{
                     element.innerText = (e.target as HTMLInputElement).value;
                 }
 
-                let values = convertValue((e.target as HTMLInputElement).value, (e.target as HTMLElement));
-                CoreDirectiveHandlers.Assign(region, element, directive.value, values[0]?.toString(), () => values[1]);
-
                 doneInput = true;
-                region.AddNextTickCallback(() => doneInput = false);
+                setValue((e.target as HTMLInputElement).value, (e.target as HTMLElement));
+                Region.Get(regionId).AddNextTickCallback(() => doneInput = false);
             };
 
             element.addEventListener('change', onEvent);
@@ -2342,22 +2396,22 @@ namespace InlineJS{
         }
 
         public static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo{
-            let attrNames = new Array<string>(), attributes = new Array<LiteAttr>(), elScopeKey = Region.GetElementKeyName(), scopeKey = element.getAttribute(elScopeKey);
-            for (let i = 0; i < element.attributes.length; ++i){
-                let attr = element.attributes[i];
-                if (attr.name !== elScopeKey){
-                    attrNames.push(attr.name);
-                    if (attr.name !== except){
-                        let directive = Processor.GetDirectiveWith(attr.name, attr.value);
-                        attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
-                    }
+            let elScopeKey = Region.GetElementKeyName(), attributes = new Array<LiteAttr>();
+            Array.from(element.attributes).forEach((attr) => {
+                if (attr.name === elScopeKey){
+                    return;
                 }
-            }
+
+                element.removeAttribute(attr.name);
+                if (attr.name !== except){
+                    let directive = Processor.GetDirectiveWith(attr.name, attr.value);
+                    attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
+                }
+            });
             
-            attrNames.forEach(name => element.removeAttribute(name));
             return {
                 regionId: region.GetId(),
-                scopeKey: scopeKey,
+                scopeKey: element.getAttribute(elScopeKey),
                 parent: element.parentElement,
                 marker: CoreDirectiveHandlers.GetChildElementIndex(element),
                 attributes: attributes
@@ -2409,7 +2463,7 @@ namespace InlineJS{
             return new window.Proxy({}, handler);
         }
         
-        public static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow = false): any{
+        public static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{
             if (!region){
                 return null;
             }
@@ -2421,7 +2475,7 @@ namespace InlineJS{
             try{
                 result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow);
                 if (typeof result === 'function'){
-                    result = region.Call(result as () => any);
+                    result = region.Call(result as (...values: any) => any, ...args);
                 }
 
                 result = ((result instanceof Value) ? result.Get() : result);
@@ -2437,7 +2491,7 @@ namespace InlineJS{
             return result;
         }
 
-        public static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any){
+        public static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any, nonFunctionCallback?: (object: any) => boolean){
             if (!(target = target.trim())){
                 return;
             }
@@ -2455,7 +2509,7 @@ namespace InlineJS{
                 if (typeof targetObject === 'function'){
                     region.Call(targetObject as (arg: any) => any, callback());
                 }
-                else{
+                else if (!nonFunctionCallback || nonFunctionCallback(targetObject)){
                     Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
                 }
             }
@@ -2601,12 +2655,7 @@ namespace InlineJS{
 
             Processor.Pre(region, element);
             if (Processor.One(region, element) != DirectiveHandlerReturn.QuitAll && !isTemplate){//Process children
-                let children = new Array<HTMLElement>();
-                for (let i = 0; i < element.children.length; ++i){//Duplicate children
-                    children.push(element.children[i] as HTMLElement);
-                }
-
-                children.forEach(child => Processor.All(region, child));
+                Array.from(element.children).forEach(child => Processor.All(region, (child as HTMLElement)));
             }
 
             Processor.Post(region, element);
@@ -2688,15 +2737,7 @@ namespace InlineJS{
         }
         
         public static TraverseDirectives(element: HTMLElement, callback: (directive: Directive) => DirectiveHandlerReturn): DirectiveHandlerReturn{
-            let attributes = new Array<LiteAttr>();
-            for (let i = 0; i < element.attributes.length; ++i){//Duplicate attributes
-                attributes.push({
-                    name: element.attributes[i].name,
-                    value: element.attributes[i].value
-                });
-            }
-
-            let result = DirectiveHandlerReturn.Nil;
+            let result = DirectiveHandlerReturn.Nil, attributes = Array.from(element.attributes);
             for (let i = 0; i < attributes.length; ++i){//Traverse attributes
                 let directive = Processor.GetDirectiveWith(attributes[i].name, attributes[i].value);
                 if (directive){
@@ -2780,9 +2821,7 @@ namespace InlineJS{
         }
         
         public static GetCamelCaseDirectiveName(name: string): string{
-            return name.replace(/-([^-])/g, (...args) => {
-                return (args[1].charAt(0).toUpperCase() + args[1].slice(1));
-            });
+            return name.replace(/-([^-])/g, (...args) => (args[1].charAt(0).toUpperCase() + args[1].slice(1)));
         }
     }
 
