@@ -1,4 +1,4 @@
-export namespace InlineJS{
+namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -1913,7 +1913,7 @@ export namespace InlineJS{
                         myRegion.GetState().PushEventContext(e);
                     }
 
-                    CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value);
+                    CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value, false, e);
                 }
                 finally{
                     if (myRegion){
@@ -2491,40 +2491,9 @@ export namespace InlineJS{
             return result;
         }
 
-        public static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any, nonFunctionCallback?: (object: any) => boolean){
-            if (!(target = target.trim())){
-                return;
-            }
-
-            RegionMap.scopeRegionIds.Push(region.GetId());
-            region.GetState().PushElementContext(element);
-
-            let targetObject: any;
-            try{
-                targetObject = Evaluator.Evaluate(region.GetId(), element, target);
-            }
-            catch (err){}
-
-            try{
-                if (typeof targetObject === 'function'){
-                    region.Call(targetObject as (arg: any) => any, callback());
-                }
-                else if (!nonFunctionCallback || nonFunctionCallback(targetObject)){
-                    Evaluator.Evaluate(region.GetId(), element, `(${target})=${value}`);
-                }
-            }
-            catch (err){
-                region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.CoreDirectiveHandlers.Assign(${target}=${value})`);
-            }
-            finally{
-                region.GetState().PopElementContext();
-                RegionMap.scopeRegionIds.Pop();
-            }
-        }
-
         public static Call(regionId: string, callback: (...args: any) => any, ...args: any){
             try{
-                return callback(...args);
+                return Region.Get(regionId).Call(callback, ...args);
             }
             catch (err){
                 Region.Get(regionId).GetState().ReportError(err, 'CoreDirectiveHandlers.Call');

@@ -352,8 +352,7 @@ declare namespace InlineJS {
         static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo;
         static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)): {};
-        static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean): any;
-        static Assign(region: Region, element: HTMLElement, target: string, value: string, callback: () => any): void;
+        static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
         static Call(regionId: string, callback: (...args: any) => any, ...args: any): any;
         static ExtractDuration(value: string, defaultValue: number): number;
         static ToString(value: any): string;

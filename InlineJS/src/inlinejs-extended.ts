@@ -57,6 +57,12 @@ namespace InlineJS{
                 isTyping: 'stopped.typing',
                 isValid: 'invalid'
             };
+
+            const eventChangeKeys = {
+                isDirty: 'dirty.change',
+                isTyping: 'typing.change',
+                isValid: 'valid.change'
+            };
             
             let isText: boolean = false, isUnknown: boolean = false, regionId = region.GetId();
             if (element.tagName === 'INPUT'){
@@ -71,9 +77,11 @@ namespace InlineJS{
             }
 
             let elementScope = region.AddElement(element, true);
-            let scope = ExtendedDirectiveHandlers.AddScope('state', elementScope, ['isDirty', 'isTyping', 'isValid']);
-
-            let isRoot = false, forceSet = false;
+            if ('$state' in elementScope.locals){//Duplicate
+                return DirectiveHandlerReturn.Nil;
+            }
+            
+            let scope = ExtendedDirectiveHandlers.AddScope('state', elementScope, ['isDirty', 'isTyping', 'isValid']), isRoot = false, forceSet = false;
             if (!info){//Initialize info
                 isRoot = true;
                 info = {
@@ -95,12 +103,9 @@ namespace InlineJS{
                             info.alert(key);
         
                             (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, value));
-                            if (value){
-                                element.dispatchEvent(new CustomEvent(`state.${eventKeys[key]}`));
-                            }
-                            else{//Inverse
-                                element.dispatchEvent(new CustomEvent(`state.${inverseEventKeys[key]}`));
-                            }
+
+                            element.dispatchEvent(new CustomEvent(`state.${eventChangeKeys[key]}`, { detail: value }));
+                            element.dispatchEvent(new CustomEvent(`state.${(value ? eventKeys[key] : inverseEventKeys[key])}`));
                         }
                     },
                     alert: (key: string) => {
@@ -135,18 +140,18 @@ namespace InlineJS{
                         };
                     }
     
-                    if (prop === 'onDirty'){
+                    if (prop === 'onDirtyChange'){
                         return (callback: (state: boolean) => boolean) => (scope.callbacks['isDirty'] as Array<(value?: any) => boolean>).push(callback);
                     }
     
-                    if (prop === 'onTyping'){
+                    if (prop === 'onTypingChange'){
                         return (callback: (state: boolean) => boolean) => (scope.callbacks['isTyping'] as Array<(value?: any) => boolean>).push(callback);
                     }
 
-                    if (prop === 'onValid'){
+                    if (prop === 'onValidChange'){
                         return (callback: (state: boolean) => boolean) => (scope.callbacks['isValid'] as Array<(value?: any) => boolean>).push(callback);
                     }
-                }, [...Object.keys(info.value), 'reset', 'onDirty','onTyping','onValid']);
+                }, [...Object.keys(info.value), 'reset', 'onDirtyChange','onTypingChange','onValidChange']);
             }
 
             let finalize = () => {
@@ -165,10 +170,7 @@ namespace InlineJS{
             };
 
             if (isUnknown){//Pass to offspring
-                for (let i = 0; i < element.children.length; ++i){
-                    ExtendedDirectiveHandlers.ContextState(region, (element.children[i] as HTMLElement), lazy, delay, info);
-                }
-
+                Array.from(element.children).forEach(child => ExtendedDirectiveHandlers.ContextState(region, (child as HTMLElement), lazy, delay, info));
                 if (isRoot){//Done
                     if (info.activeCount == 0){
                         return DirectiveHandlerReturn.Nil;
@@ -271,6 +273,10 @@ namespace InlineJS{
                 value: 'N/A'
             };
 
+            let assign = () => {
+                Evaluator.Evaluate(regionId, element, `(${directive.value})={name: '${info.name}', value: '${info.value}'}`);
+            };
+            
             elementScope.attributeChangeCallbacks.push((name) => {
                 let myRegion = Region.Get(regionId), value = element.getAttribute(name);
                 info = {
@@ -278,8 +284,7 @@ namespace InlineJS{
                     value: value
                 };
                 
-                let key = myRegion.AddTemp(() => info);
-                CoreDirectiveHandlers.Assign(myRegion, element, directive.value, `$__InlineJS_CallTemp__('${key}')`, () => info);
+                assign();
                 
                 Object.keys(info).forEach((key) => {
                     myRegion.GetChanges().Add({
@@ -295,7 +300,7 @@ namespace InlineJS{
                     value: value
                 })));
 
-                element.dispatchEvent(new CustomEvent(`attr.change`));
+                element.dispatchEvent(new CustomEvent(`attr.change`, { detail: info }));
             });
 
             elementScope.locals['$attr'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
@@ -309,8 +314,7 @@ namespace InlineJS{
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
 
-            let key = region.AddTemp(() => info);
-            CoreDirectiveHandlers.Assign(region, element, directive.value, `$__InlineJS_CallTemp__('${key}')`, () => info);
+            assign();
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -458,13 +462,10 @@ namespace InlineJS{
                             origin: myRegion.GetChanges().GetOrigin()
                         });
 
-                        (scope.callbacks['onVisible'] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, info.visible));
-                        if (info.visible){
-                            element.dispatchEvent(new CustomEvent(`intersection.visible`));
-                        }
-                        else{
-                            element.dispatchEvent(new CustomEvent(`intersection.hidden`));
-                        }
+                        (scope.callbacks['onVisibilityChange'] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, info.visible));
+
+                        element.dispatchEvent(new CustomEvent(`intersection.visibility.change`, { detail: info.visible }));
+                        element.dispatchEvent(new CustomEvent(info.visible ? 'intersection.visible' : 'intersection.hidden'));
                     }
                     
                     if (entry.intersectionRatio != info.ratio){
@@ -476,8 +477,8 @@ namespace InlineJS{
                             origin: myRegion.GetChanges().GetOrigin()
                         });
 
-                        (scope.callbacks['onRatio'] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, info.ratio));
-                        element.dispatchEvent(new CustomEvent(`intersection.ratio`));
+                        (scope.callbacks['onRatioChange'] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, info.ratio));
+                        element.dispatchEvent(new CustomEvent(`intersection.ratio.change`, { detail: info.ratio }));
                     }
                 }
                 else{//Not supported
@@ -488,7 +489,7 @@ namespace InlineJS{
             });
 
             let elementScope = region.AddElement(element, true);
-            let scope = ExtendedDirectiveHandlers.AddScope('intersection', elementScope, ['onVisible', 'onRatio']);
+            let scope = ExtendedDirectiveHandlers.AddScope('intersection', elementScope, ['onVisibilityChange', 'onRatioChange']);
             
             elementScope.locals['$intersection'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                 if (prop in info){
