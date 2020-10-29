@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>InlineJS Test Page</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <style>
+        [x-cloak="hide"]{
+            display: none;
+        }
+    </style>
 </head>
 <body>
     <h1>InlineJS</h1>
@@ -97,15 +103,17 @@
             <hr>
         </div>
     </div>
-    <div x-data="{list: [], add(){if (!this.input){return} this.list.push({text:this.input, editing: false}); this.input = ''}, remove(index){this.list.splice(index, 1)}}">
+    <div x-data="{list: [], add(form){this.list.push({text:this.input, editing: false}); form.reset()}, remove(index){this.list.splice(index, 1)}}">
         <h2>TODO List</h2>
-        <input type="text" placeholder="Type here" x-model="input" x-on:keydown.enter="add()">
-        <button x-on:click="add()">Add</button>
+        <form action="" x-on:submit.prevent="add(this)">
+            <input type="text" placeholder="Type here" required x-model.out="input">
+            <button type="submit">Add</button>
+        </form>
         <hr>
-        <ul>
+        <ul style="transition: all 0.3s ease;">
             <li style="margin-top: 5px;" x-each="list">
                 <span style="text-transform: uppercase" x-text="$each.value.text" x-show="!$each.value.editing"></span>
-                <input type="text" x-model="$each.value.text" x-show="$each.value.editing" x-on:keydown.enter="$each.value.editing = false">
+                <input type="text" x-model="$each.value.text" x-animate:transition.width="$each.value.editing" x-on:keydown.enter="$each.value.editing = false">
                 <button style="background-color: transparent; color: gray; border: 1px solid gray" x-on:click="$each.value.editing = true" x-show="!$each.value.editing">...</button>
                 <button style="background-color: transparent; color: red; border: 1px solid red" x-on:click="remove($each.index)">x</button>
             </li>
@@ -169,6 +177,24 @@
             <span>Value (from '$attr'): </span><strong x-text="$attr.value"></strong>
         </div>
     </div>
+    <div x-component="animate" x-data="{ show: false }">
+        <h2 x-style:color="color" x-on:click="color = 'red'">Animate Component</h2>
+        <label><input type="checkbox" x-model.out="show"> Toggle form</label>
+        <div style="padding: 10px 0; border: 1px solid gray;" x-animate:transition.faster="show" x-cloak="hide">
+            <div>
+                <span>Name: </span>
+                <input type="text">
+            </div>
+            <div>
+                <span>Email: </span>
+                <input type="email">
+            </div>
+            <div>
+                <span>Password: </span>
+                <input type="password">
+            </div>
+        </div>
+    </div>
     <div x-data>
         <h2>Borrowed Component</h2>
         <div>
@@ -190,8 +216,8 @@
             <span>Global Attr Value (borrowed'): </span><strong x-text="$$attr($component('attr').$refs.root).value"></strong>
         </div>
     </div>
-    <script src="/dist/inlinejs.min.js"></script>
-    <script src="/dist/inlinejs-extended.min.js"></script>
+    <script src="/dist/inlinejs.js"></script>
+    <script src="/dist/inlinejs-extended.js"></script>
     <script>
         InlineJS.Region.enableOptimizedBinds = false;
         InlineJS.Bootstrap.Attach();

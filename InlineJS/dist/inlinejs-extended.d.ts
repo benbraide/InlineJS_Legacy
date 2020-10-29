@@ -32,6 +32,7 @@ declare namespace InlineJS {
         static XHRLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static LazyLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Intersection(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Animate(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
         static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean): boolean;
         static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void): void;

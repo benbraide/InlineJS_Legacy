@@ -507,6 +507,298 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Animate(region: Region, element: HTMLElement, directive: Directive){
+            let type = (directive.arg.key || 'transition'), target = '', duration = 300, style = getComputedStyle(element);
+            let extractDuration = (option: string) => {
+                if (option === 'slower'){
+                    return 1000;
+                }
+
+                if (option === 'slow'){
+                    return 750;
+                }
+
+                if (option === 'normal'){
+                    return 500;
+                }
+
+                if (option === 'fast'){
+                    return 300;
+                }
+
+                if (option === 'faster'){
+                    return 200;
+                }
+
+                return CoreDirectiveHandlers.ExtractDuration(option, null);
+            };
+            
+            let extractors = {
+                transition: (options: Array<string>) => {
+                    options.forEach((option) => {
+                        if ((duration = extractDuration(option)) === null){
+                            target = option;
+                        }
+                    });
+                },
+                unknown: (options: Array<string>) => {
+                    options.forEach(option => duration = extractDuration(option));
+                }
+            };
+
+            let animationMap = {
+                backUp: {
+                    in: 'backInUp',
+                    out: 'backOutUp',
+                },
+                backRight: {
+                    in: 'backInRight',
+                    out: 'backOutRight',
+                },
+                backDown: {
+                    in: 'backInDown',
+                    out: 'backOutDown',
+                },
+                backLeft: {
+                    in: 'backInLeft',
+                    out: 'backOutLeft',
+                },
+                bounce: {
+                    in: 'bounceIn',
+                    out: 'bounceOut',
+                },
+                bounceUp: {
+                    in: 'bounceInUp',
+                    out: 'bounceOutUp',
+                },
+                bounceRight: {
+                    in: 'bounceInRight',
+                    out: 'bounceOutRight',
+                },
+                bounceDown: {
+                    in: 'bounceInDown',
+                    out: 'bounceOutDown',
+                },
+                bounceLeft: {
+                    in: 'bounceInLeft',
+                    out: 'bounceOutLeft',
+                },
+                fade: {
+                    in: 'fadeIn',
+                    out: 'fadeOut',
+                },
+                fadeUp: {
+                    in: 'fadeInUp',
+                    out: 'fadeOutUp',
+                },
+                fadeRight: {
+                    in: 'fadeInRight',
+                    out: 'fadeOutRight',
+                },
+                fadeDown: {
+                    in: 'fadeInDown',
+                    out: 'fadeOutDown',
+                },
+                fadeLeft: {
+                    in: 'fadeInLeft',
+                    out: 'fadeOutLeft',
+                },
+                zoom: {
+                    in: 'zoomIn',
+                    out: 'zoomOut',
+                },
+                zoomUp: {
+                    in: 'zoomInUp',
+                    out: 'zoomOutUp',
+                },
+                zoomRight: {
+                    in: 'zoomInRight',
+                    out: 'zoomOutRight',
+                },
+                zoomDown: {
+                    in: 'zoomInDown',
+                    out: 'zoomOutDown',
+                },
+                zoomLeft: {
+                    in: 'zoomInLeft',
+                    out: 'zoomOutLeft',
+                },
+                slideUp: {
+                    in: 'slideInUp',
+                    out: 'slideOutUp',
+                },
+                slideRight: {
+                    in: 'slideInRight',
+                    out: 'slideOutRight',
+                },
+                slideDown: {
+                    in: 'slideInDown',
+                    out: 'slideOutDown',
+                },
+                slideLeft: {
+                    in: 'slideInLeft',
+                    out: 'slideOutLeft',
+                },
+                rotate: {
+                    in: 'rotateIn',
+                    out: 'rotateOut',
+                },
+                rotateUpRight: {
+                    in: 'rotateInUpRight',
+                    out: 'rotateOutUpRight',
+                },
+                rotateDownRight: {
+                    in: 'rotateInDownRight',
+                    out: 'rotateOutDownRight',
+                },
+                rotateDownLeft: {
+                    in: 'rotateInDownLeft',
+                    out: 'rotateOutDownLeft',
+                },
+                rotateUpLeft: {
+                    in: 'rotateInUpLeft',
+                    out: 'rotateOutUpLeft',
+                },
+                roll: {
+                    in: 'rollIn',
+                    out: 'rollOut',
+                },
+                flipX: {
+                    in: 'flipInX',
+                    out: 'flipOutX',
+                },
+                flipY: {
+                    in: 'flipInY',
+                    out: 'flipOutY',
+                },
+                lightSpeedLeft: {
+                    in: 'lightSpeedInLeft',
+                    out: 'lightSpeedOutLeft',
+                },
+                lightSpeedRight: {
+                    in: 'lightSpeedInRight',
+                    out: 'lightSpeedOutRight',
+                },
+            };
+            
+            if (type in extractors){
+                extractors[type](directive.arg.options);
+            }
+            else{
+                extractors.unknown(directive.arg.options);
+            }
+
+            let update: (show: boolean) => void;
+            let setTransitions = (list: Array<string>) => {
+                let reduced = list.reduce((previous, current) => (previous ? `${previous}, ${current} ${duration || 300}ms ease` : `${current} ${duration || 300}ms ease`), '');
+                if (element.style.transition){
+                    element.style.transition += `, ${reduced}`;
+                }
+                else{
+                    element.style.transition = reduced;
+                }
+            };
+            
+            let height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth, isShown = false;
+            if (type === 'transition'){
+                let updateSize = (show: boolean) => {
+                    element.style.padding = (show ? padding : '0');
+                    element.style.borderWidth = (show ? borderWidth : '0');
+                    if (target === 'height' || target !== 'width'){
+                        element.style.height = (show ? height : '0');
+                    }
+
+                    if (target === 'width' || target !== 'height'){
+                        element.style.width = (show ? width : '0');
+                    }
+                };
+
+                let shouldUpdateSize = true;
+                let updateOpacity = (show: boolean) => {
+                    isShown = show;
+                    if (show){
+                        element.style.opacity = '1';
+                        if (shouldUpdateSize){
+                            element.style.padding = padding;
+                            element.style.borderWidth = borderWidth;
+                            element.style.height = height;
+                        }
+                    }
+                    else{
+                        element.style.opacity = '0';
+                    }
+                };
+                
+                if (!target || target === 'all'){
+                    shouldUpdateSize = false;
+                    element.style.overflow = 'hidden';
+
+                    setTransitions(['height', 'width', 'padding', 'border', 'opacity']);
+                    update = (show: boolean) => {
+                        updateSize(show);
+                        updateOpacity(show);
+                    };
+                }
+                else if (target === 'height' || target === 'width' || target === 'size'){
+                    element.style.overflow = 'hidden';
+                    setTransitions(['height', 'width', 'padding', 'border']);
+                    update = updateSize;
+                }
+                else if (target === 'opacity'){
+                    setTransitions(['opacity']);
+                    update = updateOpacity;
+                    
+                    element.addEventListener('transitionend', () => {
+                        if (!isShown){
+                            element.style.padding = '0';
+                            element.style.borderWidth = '0';
+                            element.style.height = '0';
+                        }
+                    });
+                }
+            }
+            else if (type in animationMap){//Use Animate.css
+                let inTarget = `animate__${animationMap[type].in}`,  outTarget = `animate__${animationMap[type].out}`, lastTarget = '';
+                update = (show: boolean) => {
+                    isShown = show;
+                    element.style.padding = padding;
+                    element.style.borderWidth = borderWidth;
+                    element.style.height = height;
+                    
+                    if (element.classList.contains(lastTarget)){
+                        element.classList.remove(lastTarget);
+                    }
+
+                    element.classList.add('animate__animated');
+                    if (show){
+                        element.classList.add(lastTarget = inTarget);
+                    }
+                    else{//Hide
+                        element.classList.add(lastTarget = outTarget);
+                    }
+                };
+                
+                element.style.animationDuration = `${duration}ms`;
+                element.addEventListener('animationend', () => {
+                    if (!isShown){
+                        element.style.padding = '0';
+                        element.style.borderWidth = '0';
+                        element.style.height = '0';
+                    }
+                });
+            }
+            else{
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let regionId = region.GetId();
+            region.GetState().TrapGetAccess(() => {
+                update(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+            }, true);
+
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
             let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
@@ -671,6 +963,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
             DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
+            DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {
