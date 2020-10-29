@@ -19,21 +19,37 @@ There are a few configurations that can be set before initialization.
 - `InlineJS.Region.externalCallbacks.isEqual`. Used by some magic properties to test whether two arbitrary values are equal.
 - `InlineJS.Region.externalCallbacks.deepCopy`. Used by some magic properties to perform a deep copy of an object.
 
+You can use these configuration methods to update, add and remove configurations.
+
+ - `InlineJS.Config.SetDirectivePrefix([prefix]):` Set the prefix used for directives.
+ - `InlineJS.Config.SetExternalCallbacks([isEqual], [deepCopy]):` Set both external callbacks.
+ - `InlineJS.Config.SetIsEqualExternalCallback([callback]):` Set the `isEqual` callback.
+ - `InlineJS.Config.SetDeepCopyExternalCallback([callback]):` Set the `deepCopy` callback.
+ - `InlineJS.Config.AddEventKeyMap([key], [target]):` Add a key-target event map entry.
+ - `InlineJS.Config.RemoveEventKeyMap([key]):` Remove an existing event map entry.
+ - `InlineJS.Config.AddBooleanAttribute([name]):` Add name to the list of boolean attributes.
+ - `InlineJS.Config.RemoveBooleanAttribute([name]):` Remove a name from the boolean attribute list.
+ - `InlineJS.Config.SetOptimizedBindsState([enabled]):` Enable or disable the optimized binds option.
+ - `InlineJS.Config.AddDirective([name], [handler]):` Add a directive with an associated handler.
+ - `InlineJS.Config.RemoveDirective([name]):` Remove a directive and its associated handler.
+ - `InlineJS.Config.AddGlobalMagicProperty([name], [callback]):` Add a global magic property.
+ - `InlineJS.Config.RemoveGlobalMagicProperty([name]):` Remove a global magic property.
+
 ## Initialization
 ```js
 InlineJS.Bootstrap.Attach();
 ```
 >`Attach` takes an array of attributes to attach to. Defaults to `[``data-${InlineJS.Region.directivePrfix}-data`, `${InlineJS.Region.directivePrfix}-data``]`
 >>>>>>>>>
->**N/B** `$watch`, `$when`, and `$once` require `InlineJS.Region.externalCallbacks.isEqual` and `InlineJS.Region.externalCallbacks.deepCopy` to be initialized. Default behaviors are simple comparison and shallow copy. For example, you can initialize them with `undescore.js` utilities.
+>**N/B** `$watch`, `$when`, and `$once` require `InlineJS.Region.externalCallbacks.isEqual` and `InlineJS.Region.externalCallbacks.deepCopy` to be initialized. Default behaviors are limited comparisons and limited deep copy. For example, you can initialize them with `undescore.js` utilities.
 
 ## Use
 
 *Dropdown/Modal*
 ```html
 <div x-data="{ open: false }">
-    <button x-click="open = true">Open Dropdown</button>
-    <ul x-show="open" x-click.outside="open = false">
+    <button x-on:click="open = true">Open Dropdown</button>
+    <ul x-show="open" x-on:click.outside="open = false">
         Dropdown Body
     </ul>
 </div>
@@ -42,8 +58,8 @@ InlineJS.Bootstrap.Attach();
 *Tabs*
 ```html
 <div x-data="{ tab: 'foo' }">
-    <button x-class="{ active: tab === 'foo' }" x-click="tab = 'foo'">Foo</button>
-    <button x-class="{ active: tab === 'bar' }" x-click="tab = 'bar'">Bar</button>
+    <button x-class:active="tab === 'foo'" x-on:click="tab = 'foo'">Foo</button>
+    <button x-class:active="tab === 'bar'" x-on:click="tab = 'bar'">Bar</button>
 
     <div x-show="tab === 'foo'">Tab Foo</div>
     <div x-show="tab === 'bar'">Tab Bar</div>
@@ -55,15 +71,15 @@ You can even use it for non-trivial things:
 ```html
 <div x-data="{ open: false }">
     <button
-        x-once-mouseenter="
+        x-on:mouseenter.once="
             fetch('/dropdown-partial.html')
                 .then(response => response.text())
-                .then(html => { dropdown.innerHTML = html })
+                .then(html => { this.dropdown.innerHTML = html })
         "
-        x-click="open = true"
+        x-on:click="open = true"
     >Show Dropdown</button>
 
-    <div x-ref="dropdown" x-show="open" x-outside-click="open = false">
+    <div x-ref="dropdown" x-show="open" x-on:click.outside="open = false">
         Loading Spinner...
     </div>
 </div>
@@ -71,33 +87,31 @@ You can even use it for non-trivial things:
 
 ## Learn
 
-There are 21 directives available to you:
+There are 19 directives available to you:
 
 | Directive | Description |
 | --- | --- |
 | [`x-data`](#x-data) | Declares a new component scope. |
 | [`x-component`](#x-component) | Assigns a key to a component. |
-| [`x-post`](#x-post) | Runs an expression after all directives on element, and offspring directives, have been executed. |
+| [`x-post`](#x-post) | Runs an expression after all directives on element --- and offspring directives --- have been executed. |
 | [`x-init`](#x-init) | Runs an expression when an element is initialized. |
 | [`x-uninit`](#x-uninit) | Runs an expression when an element is removed from the DOM. |
 | [`x-ref`](#x-ref) | Stores a reference to the DOM element in the component using the specified key. |
 | [`x-bind`](#x-bind) | Evaluates an expression and keeps track of changes. |
-| [`x-attr-*`](#x-attr) | Sets the value of an attribute to the result of a JS expression. |
-| [`x-style-*`](#x-style) | Similar to `x-attr`, but will update the `style` attribute. |
+| [`x-attr`](#x-attr) | Sets the value of an attribute to the result of a JS expression. |
+| [`x-style`](#x-style) | Similar to `x-attr`, but will update the `style` attribute. |
 | [`x-class`](#x-class) | Set/Remove one or more classes based on the truth of the specified expression. |
 | [`x-text`](#x-text) | Works similarly to `x-attr`, but will update the `innerText` of an element. |
 | [`x-html`](#x-html) | Works similarly to `x-attr`, but will update the `innerHTML` of an element. |
-| [`x-input`](#x-input) | Updates a component data with the value of the `input`, `textarea`, or `select` element. |
-| [`x-lazy-input`](#x-input) | Similar to `x-input` but only performs updates on `change` events. |
 | [`x-model`](#x-model) | Adds "two-way data binding" to an element. Keeps input element in sync with component data. |
 | [`x-show`](#x-show) | Toggles `display: none;` on the element depending on expression (true or false). |
 | [`x-if`](#x-if) | Remove an element completely from the DOM. |
 | [`x-each`](#x-each) | Create new DOM nodes for each item in an array or associative map. |
-| [`x-on-*`](#x-on) | Attaches an event listener to the element. Executes JS expression when emitted. |
-| [`x-static-*`](#x-static) | Disables live updates inside specified directive. |
+| [`x-on`](#x-on) | Attaches an event listener to the element. Executes JS expression when emitted. |
+| [`x-static`](#x-static) | Disables live updates inside specified directive. |
 | [`x-cloak`](#x-cloak) | This attribute is removed when Alpine initializes. Useful for hiding pre-initialized DOM. |
 
-And 19 global magic properties:
+And 22 global magic properties:
 
 | Magic Properties | Description |
 | --- | --- |
@@ -108,10 +122,12 @@ And 19 global magic properties:
 | [`$event`](#event) | Retrieve the native browser "Event" object within an event listener.  |
 | [`$expandEvent`](#expandEvent) |  Expand an event type to the appropriate type. |
 | [`$dispatchEvent`](#dispatchEvent) |  Dispatch an event. |
+| [`$refs`](#refs) |  Retrieve DOM elements marked with `x-ref` inside the component. |
 | [`$self`](#self) |  Retrieve the DOM element that is currently the context. |
 | [`$root`](#root) |  Retrieve the root component DOM node. |
 | [`$parent`](#parent) |  Retrieve the parent of `$self`. |
 | [`$getAncestor`](#getAncestor) |  Retrieve an ancestor of `$self`. |
+| [`$componentKey`](#componentKey) |  Retrieve the key associated with the current component. |
 | [`$component`](#component) |  Retrieve the component with specified key. |
 | [`$locals`](#locals) | Retrieve an associative object local to `$self`. |
 | [`$getLocals`](#getLocals) | Retrieve an associative object local to specified DOM element. |
@@ -141,9 +157,9 @@ You can extract data (and behavior) into reusable functions:
 
 ```html
 <div x-data="dropdown">
-    <button x-click="open">Open</button>
+    <button x-on:click="open">Open</button>
 
-    <div x-show="isOpen()" x-outside-click="close">
+    <div x-show="isOpen()" x-on:click.outside="close">
         // Dropdown
     </div>
 </div>
@@ -209,7 +225,7 @@ You can also mix-in multiple data objects using object destructuring:
 
 **Structure:** `<div x-data="..." x-ref="[variable]"></div>`
 
-`x-ref` stores a reference to the DOM element in the component using the specified key.
+`x-ref` stores a reference to the DOM element in the component using the specified key. The key is added to the `$refs` global magic property.
 
 ---
 
@@ -222,37 +238,26 @@ You can also mix-in multiple data objects using object destructuring:
 
 ---
 
-### `x-bind`
+### `x-attr`
 
 > Note: You are free to use the shorter ":" syntax: `:type="..."`
 
-**Example:** `<input x-bind:type="inputType">`
+**Example:** `<input x-attr:type="inputType">`
 
-**Structure:** `<input x-bind:[attribute]="[expression]">`
+**Structure:** `<input x-attr:[attribute]="[expression]">`
 
-`x-bind` sets the value of an attribute to the result of a JavaScript expression. The expression has access to all the keys of the component's data object, and will update every-time its data is updated.
+`x-attr` sets the value of an attribute to the result of a JavaScript expression. The expression has access to all the keys of the component's data object, and will update every-time its data is updated.
 
 > Note: attribute bindings ONLY update when their dependencies update. The framework is smart enough to observe data changes and detect which bindings care about them.
 
-**`x-bind` for class attributes**
+**`x-attr` for boolean attributes**
 
-`x-bind` behaves a little differently when binding to the `class` attribute.
-
-For classes, you pass in an object whose keys are class names, and values are boolean expressions to determine if those class names are applied or not.
-
-For example:
-`<div x-bind:class="{ 'hidden': foo }"></div>`
-
-In this example, the "hidden" class will only be applied when the value of the `foo` data attribute is `true`.
-
-**`x-bind` for boolean attributes**
-
-`x-bind` supports boolean attributes in the same way as value attributes, using a variable as the condition or any JavaScript expression that resolves to `true` or `false`.
+`x-attr` supports boolean attributes in the same way as value attributes, using a variable as the condition or any JavaScript expression that resolves to `true` or `false`.
 
 For example:
 ```html
 <!-- Given: -->
-<button x-bind:disabled="myVar">Click me</button>
+<button x-attr:disabled="myVar">Click me</button>
 
 <!-- When myVar == true: -->
 <button disabled="disabled">Click me</button>
@@ -266,11 +271,6 @@ This will add or remove the `disabled` attribute when `myVar` is true or false r
 Boolean attributes are supported as per the [HTML specification](https://html.spec.whatwg.org/multipage/indices.html#attributes-3:boolean-attribute), for example `disabled`, `readonly`, `required`, `checked`, `hidden`, `selected`, `open`, etc.
 
 > Note: If you need a false state to show for your attribute, such as `aria-*`, chain `.toString()` to the value while binding to the attribute. For example: `:aria-expanded="isOpen.toString()"` would persist whether  `isOpen` was `true` or `false`.
-
-**`.camel` modifier**
-**Example:** `<svg x-bind:view-box.camel="viewBox">`
-
-The `camel` modifier will bind to the camel case equivalent of the attribute name. In the example above, the value of `viewBox` will be bound the `viewBox` attribute as opposed to the `view-box` attribute.
 
 ---
 
@@ -294,13 +294,14 @@ This is equivalent to: `<button x-on:click="myFunction($event)"></button>`
 
 **`keydown` modifiers**
 
-**Example:** `<input type="text" x-on:keydown.escape="open = false">`
+**Example:** `<input type="text" x-on:keydown.esc="open = false">`
 
 You can specify specific keys to listen for using keydown modifiers appended to the `x-on:keydown` directive. Note that the modifiers are kebab-cased versions of `Event.key` values.
 
 Examples: `enter`, `escape`, `arrow-up`, `arrow-down`
 
-> Note: You can also listen for system-modifier key combinations like: `x-on:keydown.cmd.enter="foo"`
+> Note: You can also listen for system-modifier key combinations like: `x-on:keydown.ctrl.enter="foo"`
+> Multiple keys can be combined for alternatives e.g. `x-on:keydown.enter.space`
 
 **`.away` modifier**
 
@@ -355,11 +356,6 @@ If you wish to customize this, you can specifiy a custom wait time like so:
 <input x-on:input.debounce.750="fetchSomething()">
 <input x-on:input.debounce.750ms="fetchSomething()">
 ```
-
-**`.camel` modifier**
-**Example:** `<input x-on:event-name.camel="doSomething()">`
-
-The `camel` modifier will attach an event listener for the camel case equivalent event name. In the example above, the expression will be evaluated when the `eventName` event is fired on the element.
 
 ---
 
