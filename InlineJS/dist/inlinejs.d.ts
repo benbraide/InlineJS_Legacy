@@ -108,7 +108,7 @@ declare namespace InlineJS {
         GetElement(element: HTMLElement | string): HTMLElement;
         GetState(): State;
         GetChanges(): Changes;
-        GeRootProxy(): RootProxy;
+        GetRootProxy(): RootProxy;
         FindProxy(path: string): Proxy;
         AddProxy(proxy: Proxy): void;
         RemoveProxy(path: string): void;

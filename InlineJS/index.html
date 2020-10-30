@@ -70,6 +70,7 @@
             <span>Value: </span><strong x-text="$each.value"></strong> | 
             <span>Count: </span><strong x-text="$each.count"></strong>
         </div>
+        <button x-on:click="range = 18">Change Range</button>
     </div>
     <div x-data="{list: {name: {first: 'Anon Legion', second:'Anon Legion2'}, email: {first:'anon.legion@crypt.co',second:'a@b.c'}, age: {first:27,second:45}, sex: {first:'MALE',second:'FEMALE'}}}">
         <h2>Map Loop</h2>

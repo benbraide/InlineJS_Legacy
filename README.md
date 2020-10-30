@@ -74,7 +74,7 @@ You can even use it for non-trivial things:
         x-on:mouseenter.once="
             fetch('/dropdown-partial.html')
                 .then(response => response.text())
-                .then(html => { this.dropdown.innerHTML = html })
+                .then(html => { $refs.dropdown.innerHTML = html })
         "
         x-on:click="open = true"
     >Show Dropdown</button>
@@ -394,7 +394,7 @@ If you wish to customize this, you can specifiy a custom wait time like so:
 
 **Structure:** `<span x-text="[expression]"`
 
-`x-text` works similarly to `x-bind`, except instead of updating the value of an attribute, it will update the `innerText` of an element.
+`x-text` works similarly to `x-attr`, except instead of updating the value of an attribute, it will update the `innerText` of an element.
 
 ---
 
@@ -403,7 +403,7 @@ If you wish to customize this, you can specifiy a custom wait time like so:
 
 **Structure:** `<span x-html="[expression]"`
 
-`x-html` works similarly to `x-bind`, except instead of updating the value of an attribute, it will update the `innerHTML` of an element.
+`x-html` works similarly to `x-attr`, except instead of updating the value of an attribute, it will update the `innerHTML` of an element.
 
 > :warning: **Only use on trusted content and never on user-provided content.** :warning:
 >
@@ -411,95 +411,79 @@ If you wish to customize this, you can specifiy a custom wait time like so:
 
 ---
 
-### `x-ref`
-**Example:** `<div x-ref="foo"></div><button x-on:click="$refs.foo.innerText = 'bar'"></button>`
-
-**Structure:** `<div x-ref="[ref name]"></div><button x-on:click="$refs.[ref name].innerText = 'bar'"></button>`
-
-`x-ref` provides a convenient way to retrieve raw DOM elements out of your component. By setting an `x-ref` attribute on an element, you are making it available to all event handlers inside an object called `$refs`.
-
-This is a helpful alternative to setting ids and using `document.querySelector` all over the place.
-
-> Note: you can also bind dynamic values for x-ref: `<span :x-ref="item.id"></span>` if you need to.
-
----
-
 ### `x-if`
-**Example:** `<template x-if="true"><div>Some Element</div></template>`
+**Example:** `<div x-if="true">Some Element</div>`
 
-**Structure:** `<template x-if="[expression]"><div>Some Element</div></template>`
+**Structure:** `<div x-if="[expression]">Some Element</div>`
 
 For cases where `x-show` isn't sufficient (`x-show` sets an element to `display: none` if it's false), `x-if` can be used to  actually remove an element completely from the DOM.
 
-It's important that `x-if` is used on a `<template></template>` tag because Alpine doesn't use a virtual DOM. This implementation allows Alpine to stay rugged and use the real DOM to work its magic.
-
-> Note: `x-if` must have a single element root inside the `<template></template>` tag.
-
-> Note: When using `template` in a `svg` tag, you need to add a [polyfill](https://github.com/alpinejs/alpine/issues/637#issuecomment-654856538) that should be run before Alpine.js is initialized.
-
 ---
 
-### `x-for`
+### `x-each`
 **Example:**
 ```html
-<template x-for="item in items" :key="item">
-    <div x-text="item"></div>
-</template>
+<div x-each="items" x-text="$each.value"></div>
 ```
 
-> Note: the `:key` binding is optional, but HIGHLY recommended.
+`x-each` is available for cases when you want to create new DOM nodes for each item in an array. This should appear similar to `x-for` in `Alpine.js`, with one exception of not needing to exist on a `template` tag.
 
-`x-for` is available for cases when you want to create new DOM nodes for each item in an array. This should appear similar to `v-for` in Vue, with one exception of needing to exist on a `template` tag, and not a regular DOM element.
+It exposes a `$each` local property with the following fields:
 
-If you want to access the current index of the iteration, use the following syntax:
+ - `count:` Retrieves the total count of the loop
+ - `index:` Retrieves the current index
+ - `value:` Retrieves the current value
+ - `collection:` Retrieves the collection that is being iterated
+ - `parent:` Retrieves the parent loop property, if any
+
+It can iterate over arrays and key-value associative objects.
+
+A name can be specified for `$each.value` using the following syntax:
 
 ```html
-<template x-for="(item, index) in items" :key="index">
-    <!-- You can also reference "index" inside the iteration if you need. -->
-    <div x-text="index"></div>
-</template>
+<div x-each="items as item" x-text="item"></div>
 ```
 
-If you want to access the array object (collection) of the iteration, use the following syntax:
+#### Nesting `x-each`s
+You can nest `x-each` loops. For example:
 
 ```html
-<template x-for="(item, index, collection) in items" :key="index">
-    <!-- You can also reference "collection" inside the iteration if you need. -->
-    <!-- Current item. -->
-    <div x-text="item"></div>
-    <!-- Same as above. -->
-    <div x-text="collection[index]"></div>
-    <!-- Previous item. -->
-    <div x-text="collection[index - 1]"></div>
-</template>
-```
-
-> Note: `x-for` must have a single element root inside of the `<template></template>` tag.
-
-> Note: When using `template` in a `svg` tag, you need to add a [polyfill](https://github.com/alpinejs/alpine/issues/637#issuecomment-654856538) that should be run before Alpine.js is initialized.
-
-#### Nesting `x-for`s
-You can nest `x-for` loops, but you MUST wrap each loop in an element. For example:
-
-```html
-<template x-for="item in items">
-    <div>
-        <template x-for="subItem in item.subItems">
-            <div x-text="subItem"></div>
-        </template>
-    </div>
-</template>
+<div x-each="items as item">
+    <div x-each="item.subItems as subItem" x-text="subItem"></div>
+</div>
 ```
 
 #### Iterating over a range
 
-Alpine supports the `i in n` syntax, where `n` is an integer, allowing you to iterate over a fixed range of elements.
+Iteration over integers are supported. Example:
 
 ```html
-<template x-for="i in 10">
-    <span x-text="i"></span>
-</template>
+<span x-each="10 as i" x-text="i"></span>
 ```
+
+> By default, the iteration range is from `0` to `value - 1`.
+
+Negative values can be specified. Example:
+
+```html
+<span x-each="-10 as i" x-text="i"></span>
+```
+
+> By default, the iteration range is from `0` to `value + 1`.
+
+**`.count` modifier**
+```html
+<span x-each.count="10 as i" x-text="i"></span>
+```
+
+The `count` modifier sets the first range value to `1`, or `-1` for negative value.
+
+**`.reverse` modifier**
+```html
+<span x-each.reverse="10 as i" x-text="i"></span>
+```
+
+The `reverse` modifier reverses the range values.
 
 ---
 

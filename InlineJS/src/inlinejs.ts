@@ -201,7 +201,7 @@ namespace InlineJS{
             return this.changes_;
         }
 
-        public GeRootProxy(){
+        public GetRootProxy(){
             return this.rootProxy_;
         }
 
@@ -1045,7 +1045,7 @@ namespace InlineJS{
                     with (${Evaluator.GetContextKey()}){
                         return (${expression});
                     };
-                `)).bind(state.GetElementContext())(useWindow ? window : region.GeRootProxy().GetNativeProxy());
+                `)).bind(state.GetElementContext())(useWindow ? window : region.GetRootProxy().GetNativeProxy());
             }
             catch (err){
                 result = null;
@@ -1384,15 +1384,15 @@ namespace InlineJS{
             Region.AddGlobal('$getLocals', (regionId: string) => (element: HTMLElement) => Region.Get(regionId).AddElement(element).locals);
 
             Region.AddGlobal('$watch', (regionId: string, contextElement: HTMLElement) => (expression: string, callback: (value: any) => boolean) => {
-                RootProxy.Watch(regionId, contextElement, expression, value => callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value), true);
+                RootProxy.Watch(regionId, contextElement, expression, value => callback.call(Region.Get(regionId).GetRootProxy().GetNativeProxy(), value), true);
             });
 
             Region.AddGlobal('$when', (regionId: string, contextElement: HTMLElement) => (expression: string, callback: (value: any) => boolean) => {
-                RootProxy.Watch(regionId, contextElement, expression, value => (!value || callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value)), false);
+                RootProxy.Watch(regionId, contextElement, expression, value => (!value || callback.call(Region.Get(regionId).GetRootProxy().GetNativeProxy(), value)), false);
             });
 
             Region.AddGlobal('$once', (regionId: string, contextElement: HTMLElement) => (expression: string, callback: (value: any) => boolean) => {
-                RootProxy.Watch(regionId, contextElement, expression, value => (!value || (callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value) && false)), false);
+                RootProxy.Watch(regionId, contextElement, expression, value => (!value || (callback.call(Region.Get(regionId).GetRootProxy().GetNativeProxy(), value) && false)), false);
             });
 
             Region.AddGlobal('$nextTick', (regionId: string) => (callback: () => void) => {
@@ -1614,7 +1614,7 @@ namespace InlineJS{
         }
 
         public static Data(region: Region, element: HTMLElement, directive: Directive){
-            let proxy = region.GeRootProxy().GetNativeProxy();
+            let proxy = region.GetRootProxy().GetNativeProxy();
             let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
             
             if (!Region.IsObject(data)){
@@ -2137,7 +2137,7 @@ namespace InlineJS{
         }
 
         public static Each(region: Region, element: HTMLElement, directive: Directive){
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false;
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false, isRange = false;
             if (directive.arg){
                 isCount = (directive.arg.options.indexOf('count') != -1);
                 isReverse = (directive.arg.options.indexOf('reverse') != -1);
@@ -2221,7 +2221,7 @@ namespace InlineJS{
                     }
 
                     return null;
-                }, ['count', 'index', 'value']));
+                }, ['count', 'index', 'value', 'collection', 'parent']));
 
                 if (valueKey){
                     myRegion.AddLocal(clone, valueKey, new Value(() => getValue(clone, key)));
@@ -2278,6 +2278,7 @@ namespace InlineJS{
                 if (typeof target === 'number' && Number.isInteger(target)){
                     let offset = (isCount ? 1 : 0);
 
+                    isRange = true;
                     if (target < 0){
                         return (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
                     }
@@ -2285,15 +2286,17 @@ namespace InlineJS{
                     return (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
                 }
 
-                return target;
+                return (isRange ? null : target);
             };
 
             let init = (myRegion: Region, refresh = false) => {
-                if (!refresh){//First initialization
+                if (!refresh){
                     empty();
                     
                     options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
-                    info.parent.removeChild(element);
+                    if (element.parentElement){
+                        element.parentElement.removeChild(element);
+                    }
                     
                     if (!options.target){
                         return false;
@@ -2326,7 +2329,7 @@ namespace InlineJS{
 
                 build(myRegion);
 
-                return !!options.path;
+                return true;
             };
 
             let addSizeChange = (myRegion: Region) => {
@@ -2343,6 +2346,10 @@ namespace InlineJS{
                 if (!ifConditionIsTrue){
                     return false;
                 }
+
+                if (isRange){
+                    return init(myRegion, false);
+                }
                 
                 changes.forEach((change) => {
                     if ('original' in change){//Bubbled
@@ -2356,7 +2363,7 @@ namespace InlineJS{
                     else if (change.type === 'set' && change.path === options.path){//Object replaced
                         empty();
                         
-                        let target = myRegion.GeRootProxy().GetNativeProxy(), parts = change.path.split('.');
+                        let target = myRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
                         for (let i = 1; i < parts.length; ++i){//Resolve target
                             if (!target || typeof target !== 'object' || !('__InlineJS_Target__' in target)){
                                 return false;
@@ -2390,7 +2397,7 @@ namespace InlineJS{
                 return true;
             };
             
-            region.GetState().TrapGetAccess(() => init(Region.Get(info.regionId)), (change) => onChange(Region.Get(info.regionId), change));
+            region.GetState().TrapGetAccess(() => init(Region.Get(info.regionId)), (changes) => onChange(Region.Get(info.regionId), changes));
             
             return DirectiveHandlerReturn.QuitAll;
         }

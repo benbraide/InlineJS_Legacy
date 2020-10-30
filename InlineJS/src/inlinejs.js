@@ -133,7 +133,7 @@ export var InlineJS;
         Region.prototype.GetChanges = function () {
             return this.changes_;
         };
-        Region.prototype.GeRootProxy = function () {
+        Region.prototype.GetRootProxy = function () {
             return this.rootProxy_;
         };
         Region.prototype.FindProxy = function (path) {
@@ -846,7 +846,7 @@ export var InlineJS;
             RegionMap.scopeRegionIds.Push(regionId);
             state.PushElementContext(region.GetElement(elementContext));
             try {
-                result = (new Function(Evaluator.GetContextKey(), "\n                    with (" + Evaluator.GetContextKey() + "){\n                        return (" + expression + ");\n                    };\n                ")).bind(state.GetElementContext())(useWindow ? window : region.GeRootProxy().GetNativeProxy());
+                result = (new Function(Evaluator.GetContextKey(), "\n                    with (" + Evaluator.GetContextKey() + "){\n                        return (" + expression + ");\n                    };\n                ")).bind(state.GetElementContext())(useWindow ? window : region.GetRootProxy().GetNativeProxy());
             }
             catch (err) {
                 result = null;
@@ -1113,13 +1113,13 @@ export var InlineJS;
             Region.AddGlobal('$locals', function (regionId) { return Region.Get(regionId).GetElementScope(true).locals; });
             Region.AddGlobal('$getLocals', function (regionId) { return function (element) { return Region.Get(regionId).AddElement(element).locals; }; });
             Region.AddGlobal('$watch', function (regionId, contextElement) { return function (expression, callback) {
-                RootProxy.Watch(regionId, contextElement, expression, function (value) { return callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value); }, true);
+                RootProxy.Watch(regionId, contextElement, expression, function (value) { return callback.call(Region.Get(regionId).GetRootProxy().GetNativeProxy(), value); }, true);
             }; });
             Region.AddGlobal('$when', function (regionId, contextElement) { return function (expression, callback) {
-                RootProxy.Watch(regionId, contextElement, expression, function (value) { return (!value || callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value)); }, false);
+                RootProxy.Watch(regionId, contextElement, expression, function (value) { return (!value || callback.call(Region.Get(regionId).GetRootProxy().GetNativeProxy(), value)); }, false);
             }; });
             Region.AddGlobal('$once', function (regionId, contextElement) { return function (expression, callback) {
-                RootProxy.Watch(regionId, contextElement, expression, function (value) { return (!value || (callback.call(Region.Get(regionId).GeRootProxy().GetNativeProxy(), value) && false)); }, false);
+                RootProxy.Watch(regionId, contextElement, expression, function (value) { return (!value || (callback.call(Region.Get(regionId).GetRootProxy().GetNativeProxy(), value) && false)); }, false);
             }; });
             Region.AddGlobal('$nextTick', function (regionId) { return function (callback) {
                 var region = Region.Get(regionId);
@@ -1282,7 +1282,7 @@ export var InlineJS;
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Data = function (region, element, directive) {
-            var proxy = region.GeRootProxy().GetNativeProxy();
+            var proxy = region.GetRootProxy().GetNativeProxy();
             var data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
             if (!Region.IsObject(data)) {
                 return DirectiveHandlerReturn.Handled;
@@ -1724,7 +1724,7 @@ export var InlineJS;
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.Each = function (region, element, directive) {
-            var info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false;
+            var info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false, isRange = false;
             if (directive.arg) {
                 isCount = (directive.arg.options.indexOf('count') != -1);
                 isReverse = (directive.arg.options.indexOf('reverse') != -1);
@@ -1793,7 +1793,7 @@ export var InlineJS;
                         return Region.Get(info.regionId).GetLocal(clone.parentElement, '$each', true);
                     }
                     return null;
-                }, ['count', 'index', 'value']));
+                }, ['count', 'index', 'value', 'collection', 'parent']));
                 if (valueKey) {
                     myRegion.AddLocal(clone, valueKey, new Value(function () { return getValue(clone, key); }));
                 }
@@ -1841,19 +1841,22 @@ export var InlineJS;
             var expandTarget = function (target) {
                 if (typeof target === 'number' && Number.isInteger(target)) {
                     var offset = (isCount ? 1 : 0);
+                    isRange = true;
                     if (target < 0) {
                         return (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
                     }
                     return (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
                 }
-                return target;
+                return (isRange ? null : target);
             };
             var init = function (myRegion, refresh) {
                 if (refresh === void 0) { refresh = false; }
-                if (!refresh) { //First initialization
+                if (!refresh) {
                     empty();
                     options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
-                    info.parent.removeChild(element);
+                    if (element.parentElement) {
+                        element.parentElement.removeChild(element);
+                    }
                     if (!options.target) {
                         return false;
                     }
@@ -1882,7 +1885,7 @@ export var InlineJS;
                     return false;
                 }
                 build(myRegion);
-                return !!options.path;
+                return true;
             };
             var addSizeChange = function (myRegion) {
                 myRegion.GetChanges().Add({
@@ -1897,6 +1900,9 @@ export var InlineJS;
                 if (!ifConditionIsTrue) {
                     return false;
                 }
+                if (isRange) {
+                    return init(myRegion, false);
+                }
                 changes.forEach(function (change) {
                     if ('original' in change) { //Bubbled
                         if (options.isArray || change.original.type !== 'set' || options.path + "." + change.original.prop !== change.original.path) {
@@ -1907,7 +1913,7 @@ export var InlineJS;
                     }
                     else if (change.type === 'set' && change.path === options.path) { //Object replaced
                         empty();
-                        var target = myRegion.GeRootProxy().GetNativeProxy(), parts = change.path.split('.');
+                        var target = myRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
                         for (var i = 1; i < parts.length; ++i) { //Resolve target
                             if (!target || typeof target !== 'object' || !('__InlineJS_Target__' in target)) {
                                 return false;
@@ -1937,7 +1943,7 @@ export var InlineJS;
                 });
                 return true;
             };
-            region.GetState().TrapGetAccess(function () { return init(Region.Get(info.regionId)); }, function (change) { return onChange(Region.Get(info.regionId), change); });
+            region.GetState().TrapGetAccess(function () { return init(Region.Get(info.regionId)); }, function (changes) { return onChange(Region.Get(info.regionId), changes); });
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {
