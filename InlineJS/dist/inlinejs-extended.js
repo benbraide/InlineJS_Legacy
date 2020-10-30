@@ -11,6 +11,35 @@ var InlineJS;
     var ExtendedDirectiveHandlers = /** @class */ (function () {
         function ExtendedDirectiveHandlers() {
         }
+        ExtendedDirectiveHandlers.Watch = function (region, element, directive) {
+            var previousValue;
+            region.GetState().TrapGetAccess(function () {
+                var value = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+                if (!InlineJS.Region.IsEqual(value, previousValue)) {
+                    previousValue = InlineJS.Region.DeepCopy(value);
+                    element.dispatchEvent(new CustomEvent('watch.change', { detail: value }));
+                }
+            }, true);
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.When = function (region, element, directive) {
+            region.GetState().TrapGetAccess(function () {
+                if (!!InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value)) {
+                    element.dispatchEvent(new CustomEvent('when.change'));
+                }
+            }, true);
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.Once = function (region, element, directive) {
+            region.GetState().TrapGetAccess(function () {
+                if (!!InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value)) {
+                    element.dispatchEvent(new CustomEvent('once.change'));
+                    return false;
+                }
+                return true;
+            }, true);
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.State = function (region, element, directive) {
             var delay = 750, lazy = false;
             for (var i = 0; i < directive.arg.options.length; ++i) {
@@ -817,6 +846,9 @@ var InlineJS;
             return ExtendedDirectiveHandlers.scopes_[id];
         };
         ExtendedDirectiveHandlers.AddAll = function () {
+            InlineJS.DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
+            InlineJS.DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
+            InlineJS.DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
             InlineJS.DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             InlineJS.DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
             InlineJS.DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);

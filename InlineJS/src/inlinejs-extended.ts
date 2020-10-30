@@ -30,6 +30,38 @@ namespace InlineJS{
     export class ExtendedDirectiveHandlers{
         private static scopeId_ = 0;
         private static scopes_ = new Map<string, ExtendedDirectiveHandlerScope>();
+
+        public static Watch(region: Region, element: HTMLElement, directive: Directive){
+            let previousValue: any;
+            region.GetState().TrapGetAccess(() => {
+                let value = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+                if (!Region.IsEqual(value, previousValue)){
+                    previousValue = Region.DeepCopy(value);
+                    element.dispatchEvent(new CustomEvent('watch.change', { detail: value }));
+                }
+            }, true);
+            return DirectiveHandlerReturn.Handled;
+        }
+        
+        public static When(region: Region, element: HTMLElement, directive: Directive){
+            region.GetState().TrapGetAccess(() => {
+                if (!! CoreDirectiveHandlers.Evaluate(region, element, directive.value)){
+                    element.dispatchEvent(new CustomEvent('when.change'));
+                }
+            }, true);
+            return DirectiveHandlerReturn.Handled;
+        }
+        
+        public static Once(region: Region, element: HTMLElement, directive: Directive){
+            region.GetState().TrapGetAccess(() => {
+                if (!! CoreDirectiveHandlers.Evaluate(region, element, directive.value)){
+                    element.dispatchEvent(new CustomEvent('once.change'));
+                    return false;
+                }
+                return true;
+            }, true);
+            return DirectiveHandlerReturn.Handled;
+        }
         
         public static State(region: Region, element: HTMLElement, directive: Directive){
             let delay = 750, lazy = false;
@@ -958,10 +990,16 @@ namespace InlineJS{
         }
 
         public static AddAll(){
+            DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
+            DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
+            DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
+
             DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
+            
             DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
             DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
+            
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
 
