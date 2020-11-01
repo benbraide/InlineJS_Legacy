@@ -41,13 +41,14 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Input = function (region, element, directive) {
-            var wrapper = document.createElement('div'), span = document.createElement('span');
+            var wrapper = document.createElement('div'), span = document.createElement('span'), style = getComputedStyle(element);
             element.parentElement.insertBefore(wrapper, element);
             wrapper.appendChild(element);
             wrapper.appendChild(span);
             wrapper.classList.add('inlinejs-input');
             directive.arg.options.forEach(function (key) { return wrapper.classList.add(key); });
-            span.style.top = "calc(" + element.offsetHeight + "px + 0.1rem)";
+            span.style.top = "calc(" + wrapper.offsetHeight + "px - 1rem - " + style.marginBottom + " - " + style.paddingBottom + ")";
+            span.style.left = "calc(" + style.paddingLeft + " + " + style.marginLeft + ")";
             span.textContent = element.placeholder;
             element.placeholder = ' ';
             var onBlur = function () {

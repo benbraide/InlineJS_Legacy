@@ -64,7 +64,7 @@ namespace InlineJS{
         }
 
         public static Input(region: Region, element: HTMLElement, directive: Directive){
-            let wrapper = document.createElement('div'), span = document.createElement('span');
+            let wrapper = document.createElement('div'), span = document.createElement('span'), style = getComputedStyle(element);
 
             element.parentElement.insertBefore(wrapper, element);
             wrapper.appendChild(element);
@@ -73,7 +73,9 @@ namespace InlineJS{
             wrapper.classList.add('inlinejs-input');
             directive.arg.options.forEach(key => wrapper.classList.add(key));
 
-            span.style.top = `calc(${element.offsetHeight}px + 0.1rem)`;
+            span.style.top = `calc(${wrapper.offsetHeight}px - 1rem - ${style.marginBottom} - ${style.paddingBottom})`;
+            span.style.left = `calc(${style.paddingLeft} + ${style.marginLeft})`;
+            
             span.textContent = (element as HTMLInputElement).placeholder;
             (element as HTMLInputElement).placeholder = ' ';
 
