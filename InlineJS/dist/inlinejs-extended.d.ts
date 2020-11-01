@@ -29,6 +29,7 @@ declare namespace InlineJS {
         static Watch(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static When(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Once(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Input(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static State(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, info: StateDirectiveInfo): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static AttrChange(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;

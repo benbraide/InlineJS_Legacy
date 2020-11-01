@@ -1,0 +1,56 @@
+:root {
+    --inlinejs-input-border-width: 1px;
+    --inlinejs-input-border-color: gray;
+    --inlinejs-input-border-color-valid: green;
+    --inlinejs-input-border-color-invalid: red;
+}
+
+.inlinejs-input{
+    display: inline-block;
+    position: relative;
+    padding-top: 1.1rem;
+    width: 12rem;
+}
+
+.inlinejs-input > span{
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 1rem;
+    transition: all 0.3s ease;
+    color: var(--inlinejs-input-border-color);
+}
+
+.inlinejs-input > input:focus + span, .inlinejs-input > input:not(:placeholder-shown) + span{
+    top: 0 !important;
+}
+
+.inlinejs-input.validate.blurred > input:valid + span, .inlinejs-input.validate > input:not(:placeholder-shown):valid + span{
+    color: var(--inlinejs-input-border-color-valid);
+}
+
+.inlinejs-input.validate.blurred > input:not(:valid) + span, .inlinejs-input.validate > input:not(:placeholder-shown):not(:valid) + span{
+    color: var(--inlinejs-input-border-color-invalid);
+}
+
+.inlinejs-input > input{
+    width: 100%;
+    padding: 0;
+    padding-bottom: var(--inlinejs-input-border-width);
+    border: none;
+    border-bottom: var(--inlinejs-input-border-width) solid var(--inlinejs-input-border-color);
+    transition: border-bottom 0.3s ease;
+}
+
+.inlinejs-input > input:focus{
+    outline: none;
+}
+
+.inlinejs-input.validate.blurred > input:valid, .inlinejs-input.validate > input:not(:placeholder-shown):valid{
+    border-bottom: var(--inlinejs-input-border-width) solid var(--inlinejs-input-border-color-valid);
+}
+
+.inlinejs-input.validate.blurred > input:not(:valid), .inlinejs-input.validate > input:not(:placeholder-shown):not(:valid){
+    border-bottom: var(--inlinejs-input-border-width) solid var(--inlinejs-input-border-color-invalid);
+}

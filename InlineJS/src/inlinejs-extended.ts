@@ -62,6 +62,36 @@ namespace InlineJS{
             }, true);
             return DirectiveHandlerReturn.Handled;
         }
+
+        public static Input(region: Region, element: HTMLElement, directive: Directive){
+            let wrapper = document.createElement('div'), span = document.createElement('span');
+
+            element.parentElement.insertBefore(wrapper, element);
+            wrapper.appendChild(element);
+            wrapper.appendChild(span);
+
+            wrapper.classList.add('inlinejs-input');
+            directive.arg.options.forEach(key => wrapper.classList.add(key));
+
+            span.style.top = `calc(${element.offsetHeight}px + 0.1rem)`;
+            span.textContent = (element as HTMLInputElement).placeholder;
+            (element as HTMLInputElement).placeholder = ' ';
+
+            let onBlur = () => {
+                wrapper.classList.add('blurred');
+                element.removeEventListener('blur', onBlur);
+            };
+
+            element.addEventListener('blur', onBlur);
+            span.addEventListener('click', () => { element.focus() });
+            span.addEventListener('keydown', (e) => {
+                if (e.key === ' '){
+                    element.focus();
+                }
+            });
+
+            return DirectiveHandlerReturn.Handled;
+        }
         
         public static State(region: Region, element: HTMLElement, directive: Directive){
             let delay = 750, lazy = false;
@@ -994,6 +1024,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
 
+            DirectiveHandlerManager.AddHandler('input', ExtendedDirectiveHandlers.Input);
             DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
             

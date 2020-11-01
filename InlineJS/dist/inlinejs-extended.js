@@ -40,6 +40,29 @@ var InlineJS;
             }, true);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Input = function (region, element, directive) {
+            var wrapper = document.createElement('div'), span = document.createElement('span');
+            element.parentElement.insertBefore(wrapper, element);
+            wrapper.appendChild(element);
+            wrapper.appendChild(span);
+            wrapper.classList.add('inlinejs-input');
+            directive.arg.options.forEach(function (key) { return wrapper.classList.add(key); });
+            span.style.top = "calc(" + element.offsetHeight + "px + 0.1rem)";
+            span.textContent = element.placeholder;
+            element.placeholder = ' ';
+            var onBlur = function () {
+                wrapper.classList.add('blurred');
+                element.removeEventListener('blur', onBlur);
+            };
+            element.addEventListener('blur', onBlur);
+            span.addEventListener('click', function () { element.focus(); });
+            span.addEventListener('keydown', function (e) {
+                if (e.key === ' ') {
+                    element.focus();
+                }
+            });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.State = function (region, element, directive) {
             var delay = 750, lazy = false;
             for (var i = 0; i < directive.arg.options.length; ++i) {
@@ -849,6 +872,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             InlineJS.DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             InlineJS.DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
+            InlineJS.DirectiveHandlerManager.AddHandler('input', ExtendedDirectiveHandlers.Input);
             InlineJS.DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             InlineJS.DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
             InlineJS.DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
