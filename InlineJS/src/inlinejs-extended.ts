@@ -26,6 +26,23 @@ namespace InlineJS{
         path: string;
         callbacks: Map<string, Array<(value?: any) => boolean>>;
     }
+
+    export interface RouterInfo{
+        currentPage: string;
+        targetComponent: string;
+        targetExit: string;
+        pages: Record<string,RouterPageInfo>;
+        url: string;
+    }
+
+    export interface RouterPageInfo{
+        path: string;
+        title: string;
+        component: string;
+        entry: string;
+        exit: string;
+        disabled: boolean;
+    }
     
     export class ExtendedDirectiveHandlers{
         private static scopeId_ = 0;
@@ -96,7 +113,7 @@ namespace InlineJS{
         }
         
         public static State(region: Region, element: HTMLElement, directive: Directive){
-            let delay = 750, lazy = false;
+            let delay = 750, lazy = false, submit = false;
             for (let i = 0; i < directive.arg.options.length; ++i){
                 if (directive.arg.options[i] === 'delay' && i < (directive.arg.options.length - 1)){
                     delay = CoreDirectiveHandlers.ExtractDuration(directive.arg.options[i + 1], delay);
@@ -104,12 +121,15 @@ namespace InlineJS{
                 else if (directive.arg.options[i] === 'lazy'){
                     lazy = true;
                 }
+                else if (directive.arg.options[i] === 'submit'){
+                    submit = true;
+                }
             }
             
-            return ExtendedDirectiveHandlers.ContextState(region, element, lazy, delay, null);
+            return ExtendedDirectiveHandlers.ContextState(region, element, lazy, delay, submit, null);
         }
 
-        public static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, info: StateDirectiveInfo){
+        public static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, submit: boolean, info: StateDirectiveInfo){
             const eventKeys = {
                 isDirty: 'dirty',
                 isTyping: 'typing',
@@ -145,7 +165,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
             
-            let scope = ExtendedDirectiveHandlers.AddScope('state', elementScope, ['isDirty', 'isTyping', 'isValid']), isRoot = false, forceSet = false;
+            let scope = ExtendedDirectiveHandlers.AddScope('state', elementScope, ['isDirty', 'isTyping', 'isValid']), isRoot = false, forceSet = false, form: HTMLElement = null;
             if (!info){//Initialize info
                 isRoot = true;
                 info = {
@@ -183,6 +203,10 @@ namespace InlineJS{
                     },
                     resetCallbacks: new Array<() => void>()
                 };
+
+                if (submit){
+                    form = region.GetElementWith(true, target => (target instanceof HTMLFormElement));
+                }
 
                 elementScope.locals['$state'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                     if (prop in info.value){
@@ -234,7 +258,7 @@ namespace InlineJS{
             };
 
             if (isUnknown){//Pass to offspring
-                Array.from(element.children).forEach(child => ExtendedDirectiveHandlers.ContextState(region, (child as HTMLElement), lazy, delay, info));
+                Array.from(element.children).forEach(child => ExtendedDirectiveHandlers.ContextState(region, (child as HTMLElement), lazy, delay, submit, info));
                 if (isRoot){//Done
                     if (info.activeCount == 0){
                         return DirectiveHandlerReturn.Nil;
@@ -269,6 +293,9 @@ namespace InlineJS{
                 if (isTyping){
                     isTyping = false;
                     updateCount('isTyping', -1, false);
+                    if (form){
+                        form.dispatchEvent(new CustomEvent('submit'));
+                    }
                 }
 
                 if (lazy && (element as HTMLInputElement).checkValidity() != isValid){
@@ -391,8 +418,8 @@ namespace InlineJS{
             
             let regionId = region.GetId(), info = {
                 url: '',
-                isAppend: false,
-                isOnce: false,
+                isAppend: (directive.arg.options.indexOf('append') != -1),
+                isOnce: (directive.arg.options.indexOf('once') != -1),
                 isLoaded: false,
                 append: append,
                 reload: () => load('::reload::'),
@@ -863,6 +890,299 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Router(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$router')){
+                return DirectiveHandlerReturn.Nil;
+            }
+            
+            let regionId = region.GetId(), prefix = directive.value, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage' ], info: RouterInfo = {
+                currentPage: null,
+                targetComponent: null,
+                targetExit: null,
+                pages: {},
+                url: null
+            }, methods = {
+                register: (data: Record<string, any>) => {
+                    let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
+                    if (innerRegion){
+                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'));
+                    }
+                },
+                unregister: (page: string) => {
+                    delete info.pages[page];
+                },
+                disable: (page: string, disabled = true) => {
+                    if (page in info.pages){
+                        info.pages[page].disabled = disabled;
+                    }
+                },
+                goto: (page: string, args?: Array<any> | any) => { goto(page, args) },
+                redirect: (page: string, args?: Array<any> | any) => { goto(page, args, true) },
+                back: () => { back() },
+                exit: (component?: string) => {
+                    if (!component){
+                        let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
+                        if (innerRegion){
+                            exit(innerRegion.GetComponentKey());
+                        }
+                    }
+                    else{
+                        exit(component);
+                    }
+                },
+            };
+
+            if (prefix){
+                prefix += '/';
+            }
+
+            let scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
+            let alert = (prop: string) => {
+                let myRegion = Region.Get(regionId);
+                myRegion.GetChanges().Add({
+                    type: 'set',
+                    path: `${scope.path}.${prop}`,
+                    prop: prop,
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
+            };
+            
+            let register = (page: string, path: string, title: string, component: string, entry: string, exit: string) => {
+                info.pages[page] = {
+                    path: path,
+                    title: title,
+                    component: component,
+                    entry: entry,
+                    exit: exit,
+                    disabled: false
+                };
+            };
+
+            let goto = (page: string, params?: Record<string, string>, replace = false) => {
+                if (page in info.pages && !info.pages[page].disabled){
+                    let query = '';
+                    for (let key in params){
+                        if (query){
+                            query += `&${key}=${params[key]}`;
+                        }
+                        else{
+                            query += `?${key}=${params[key]}`;
+                        }
+                    }
+                    
+                    if (`${prefix}${info.pages[page].path}${query}` === info.url){
+                        element.dispatchEvent(new CustomEvent('router.reload'));
+                        element.dispatchEvent(new CustomEvent('router.load'));
+                        return;
+                    }
+                    
+                    info.currentPage = page;
+                    if (replace){
+                        history.replaceState({
+                            page: page,
+                            params: params,
+                            query: query
+                        }, info.pages[page].title, `${page}${query}`);
+                    }
+                    else{
+                        history.pushState({
+                            page: page,
+                            params: params,
+                            query: query
+                        }, info.pages[page].title, `${page}${query}`);
+                    }
+                    
+                    load(page, params, query);
+                }
+                else{
+                    element.dispatchEvent(new CustomEvent('router.404', { detail: page }));
+                }
+            };
+            
+            let back = () => {
+                if (info.currentPage && info.currentPage !== '/'){
+                    history.back();
+                    return true;
+                }
+
+                return false;
+            };
+
+            let exit = (component: string) => {
+                if (!info.targetComponent && info.currentPage && info.currentPage !== '/' && info.pages[info.currentPage].component === component){
+                    info.targetComponent = component;
+                    info.targetExit = info.pages[info.currentPage].exit;
+                    history.back();
+                }
+            };
+
+            let load = (page: string, params: Record<string, string>, query: string) => {
+                let component = info.pages[page].component, handled: any;
+
+                info.currentPage = page;
+                alert('currentPage');
+
+                try{
+                    if (component){
+                        handled = (Region.Find(component, true)[info.pages[page].entry])(params);
+                    }
+                    else{
+                        handled = false;
+                    }
+                }
+                catch(err){
+                    handled = false;
+                }
+
+                if (handled === false){
+                    info.url = `${prefix}${info.pages[page].path}${query}`;
+                    alert('url');
+                }
+
+                element.dispatchEvent(new CustomEvent('router.load'));
+            };
+
+            let unload = (component: string, exit: string) => {
+                try{
+                    (Region.Find(component, true)[exit])();
+                }
+                catch (err){}
+
+                element.dispatchEvent(new CustomEvent('router.unload'));
+            };
+
+            let parseQuery = (query: string) => {
+                let params: Record<string, string> = {};
+                if (!query){
+                    return params;
+                }
+                
+                let match: RegExpExecArray, search = /([^&=]+)=?([^&]*)/g;
+                let decode = (value: string) => {
+                    return decodeURIComponent(value.replace(/\+/g, ' '));
+                };
+                
+                while (match = search.exec(query)){
+                    params[decode(match[1])] = decode(match[2]);
+                }
+
+                return params;
+            };
+            
+            window.addEventListener('popstate', (event) => {
+                if (!event.state){
+                    return;
+                }
+                
+                let page = event.state.page;
+                if (!page || !(page in info.pages)){
+                    return;
+                }
+
+                if (!info.targetComponent || info.pages[page].component !== info.targetComponent || !back()){
+                    if (info.targetComponent){
+                        unload(info.targetComponent, info.targetExit);
+                        info.targetComponent = null;
+                        info.targetExit = null;
+                    }
+                    else if (info.currentPage && info.currentPage !== '/'){
+                        unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
+                    }
+                    
+                    load(page, event.state.params, event.state.query);
+                }
+            });
+
+            DirectiveHandlerManager.AddHandler('routerRegister', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'));
+                return DirectiveHandlerReturn.Handled;
+            });
+
+            DirectiveHandlerManager.AddHandler('routerLink', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                if (innerElement instanceof HTMLFormElement){
+                    innerElement.addEventListener('submit', (e) => {
+                        e.preventDefault();
+                        
+                        let data = new FormData(innerElement), query: Record<string, string> = {};
+                        data.forEach((value, key) => {
+                            let stringValue = value.toString();
+                            if (stringValue){
+                                query[key] = stringValue;
+                            }
+                        });
+                        
+                        goto(innerDirective.value, query);
+                    });
+
+                    return DirectiveHandlerReturn.Handled;
+                }
+                
+                let path: string, query = '';
+                if (innerElement instanceof HTMLAnchorElement){
+                    query = innerElement.search.substr(1);
+                    path = innerElement.pathname;
+
+                    if (!path){
+                        path = innerDirective.value;
+                    }
+                    else if (path.length > 1 && path.startsWith('/')){
+                        path = path.substr(1);
+                    }
+                }
+                else{
+                    path = innerDirective.value;
+                }
+                
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    goto(path, parseQuery(query));
+                });
+                
+                return DirectiveHandlerReturn.Handled;
+            });
+
+            DirectiveHandlerManager.AddHandler('routerBack', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    back();
+                });
+                return DirectiveHandlerReturn.Handled;
+            });
+
+            DirectiveHandlerManager.AddHandler('routerExit', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    exit(innerRegion.GetComponentKey());
+                });
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            Config.AddGlobalMagicProperty('routerExit', (regionId) => {
+                return () => exit(Region.Get(regionId).GetComponentKey());
+            });
+            
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop in info){
+                    if (alertable.indexOf(prop) != -1){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    }
+                    return info[prop];
+                }
+
+                if (prop in methods){
+                    return methods[prop];
+                }
+            }, [...Object.keys(info), ...Object.keys(methods)]);
+            
+            Region.AddGlobal('$router', () => proxy);
+            Region.AddPostProcessCallback(() => {
+                goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1): pathname), parseQuery(query));
+            });
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
             let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
@@ -1035,6 +1355,7 @@ namespace InlineJS{
             
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
+            DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {

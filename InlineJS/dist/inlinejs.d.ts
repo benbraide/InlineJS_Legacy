@@ -103,6 +103,7 @@ declare namespace InlineJS {
         GetId(): string;
         GetComponentKey(): string;
         GetRootElement(): HTMLElement;
+        GetElementWith(target: HTMLElement | true, callback: (resolvedTarget: HTMLElement) => boolean): HTMLElement;
         GetElementAncestor(target: HTMLElement | true, index: number): HTMLElement;
         GetElementScope(element: HTMLElement | string | true | RootElement): ElementScope;
         GetElement(element: HTMLElement | string): HTMLElement;

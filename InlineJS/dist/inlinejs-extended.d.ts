@@ -23,6 +23,21 @@ declare namespace InlineJS {
         path: string;
         callbacks: Map<string, Array<(value?: any) => boolean>>;
     }
+    interface RouterInfo {
+        currentPage: string;
+        targetComponent: string;
+        targetExit: string;
+        pages: Record<string, RouterPageInfo>;
+        url: string;
+    }
+    interface RouterPageInfo {
+        path: string;
+        title: string;
+        component: string;
+        entry: string;
+        exit: string;
+        disabled: boolean;
+    }
     class ExtendedDirectiveHandlers {
         private static scopeId_;
         private static scopes_;
@@ -31,12 +46,13 @@ declare namespace InlineJS {
         static Once(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Input(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static State(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, info: StateDirectiveInfo): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, submit: boolean, info: StateDirectiveInfo): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static AttrChange(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static XHRLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static LazyLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Intersection(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Animate(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Router(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
         static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean): boolean;
         static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void): void;

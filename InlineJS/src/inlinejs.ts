@@ -152,6 +152,23 @@ namespace InlineJS{
             return this.rootElement_;
         }
 
+        public GetElementWith(target: HTMLElement | true, callback: (resolvedTarget: HTMLElement) => boolean): HTMLElement{
+            let resolvedTarget = ((target === true) ? this.state_.GetElementContext() : target);
+            while (resolvedTarget){
+                if (callback(resolvedTarget)){
+                    return resolvedTarget;
+                }
+
+                if (resolvedTarget === this.rootElement_){
+                    break;
+                }
+
+                resolvedTarget = resolvedTarget.parentElement;
+            }
+
+            return null;
+        }
+
         public GetElementAncestor(target: HTMLElement | true, index: number): HTMLElement{
             let resolvedTarget = ((target === true) ? this.state_.GetElementContext() : target);
             if (!resolvedTarget || resolvedTarget === this.rootElement_){
@@ -202,6 +219,10 @@ namespace InlineJS{
         }
 
         public GetRootProxy(){
+            if (this.componentKey_ && this.componentKey_ in Region.components_){
+                let targetRegion = Region.Get(Region.components_[this.componentKey_]);
+                return (targetRegion ? targetRegion.rootProxy_ : this.rootProxy_);
+            }
             return this.rootProxy_;
         }
 
@@ -495,12 +516,14 @@ namespace InlineJS{
         }
 
         public static AddComponent(region: Region, element: HTMLElement, key: string){
-            if (!key || region.rootElement_ !== element || region.componentKey_ || key in  Region.components_){
+            if (!key || region.rootElement_ !== element || region.componentKey_){
                 return false;
             }
 
             region.componentKey_ = key;
-            Region.components_[key] = region.GetId();
+            if (!(key in  Region.components_)){
+                Region.components_[key] = region.GetId();
+            }
             
             return true;
         }
@@ -1377,6 +1400,7 @@ namespace InlineJS{
 
             Region.AddGlobal('$parent', (regionId: string) => Region.Get(regionId).GetElementAncestor(true, 0));
             Region.AddGlobal('$getAncestor', (regionId: string) => (index: number) => Region.Get(regionId).GetElementAncestor(true, index));
+            Region.AddGlobal('$form', (regionId: string) => Region.Get(regionId).GetElementWith(true, resolvedTarget => (resolvedTarget instanceof HTMLFormElement)));
 
             Region.AddGlobal('$componentKey', (regionId: string) => Region.Get(regionId).GetComponentKey());
             Region.AddGlobal('$component', () => (id: string) => Region.Find(id, true));

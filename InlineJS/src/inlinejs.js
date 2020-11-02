@@ -93,6 +93,19 @@ export var InlineJS;
         Region.prototype.GetRootElement = function () {
             return this.rootElement_;
         };
+        Region.prototype.GetElementWith = function (target, callback) {
+            var resolvedTarget = ((target === true) ? this.state_.GetElementContext() : target);
+            while (resolvedTarget) {
+                if (callback(resolvedTarget)) {
+                    return resolvedTarget;
+                }
+                if (resolvedTarget === this.rootElement_) {
+                    break;
+                }
+                resolvedTarget = resolvedTarget.parentElement;
+            }
+            return null;
+        };
         Region.prototype.GetElementAncestor = function (target, index) {
             var resolvedTarget = ((target === true) ? this.state_.GetElementContext() : target);
             if (!resolvedTarget || resolvedTarget === this.rootElement_) {
@@ -134,6 +147,10 @@ export var InlineJS;
             return this.changes_;
         };
         Region.prototype.GetRootProxy = function () {
+            if (this.componentKey_ && this.componentKey_ in Region.components_) {
+                var targetRegion = Region.Get(Region.components_[this.componentKey_]);
+                return (targetRegion ? targetRegion.rootProxy_ : this.rootProxy_);
+            }
             return this.rootProxy_;
         };
         Region.prototype.FindProxy = function (path) {
@@ -385,11 +402,13 @@ export var InlineJS;
             return Region.Get(key.split('.')[0]);
         };
         Region.AddComponent = function (region, element, key) {
-            if (!key || region.rootElement_ !== element || region.componentKey_ || key in Region.components_) {
+            if (!key || region.rootElement_ !== element || region.componentKey_) {
                 return false;
             }
             region.componentKey_ = key;
-            Region.components_[key] = region.GetId();
+            if (!(key in Region.components_)) {
+                Region.components_[key] = region.GetId();
+            }
             return true;
         };
         Region.Find = function (key, getNativeProxy) {
@@ -1108,6 +1127,7 @@ export var InlineJS;
             Region.AddGlobal('$root', function (regionId) { return Region.Get(regionId).GetRootElement(); });
             Region.AddGlobal('$parent', function (regionId) { return Region.Get(regionId).GetElementAncestor(true, 0); });
             Region.AddGlobal('$getAncestor', function (regionId) { return function (index) { return Region.Get(regionId).GetElementAncestor(true, index); }; });
+            Region.AddGlobal('$form', function (regionId) { return Region.Get(regionId).GetElementWith(true, function (resolvedTarget) { return (resolvedTarget instanceof HTMLFormElement); }); });
             Region.AddGlobal('$componentKey', function (regionId) { return Region.Get(regionId).GetComponentKey(); });
             Region.AddGlobal('$component', function () { return function (id) { return Region.Find(id, true); }; });
             Region.AddGlobal('$locals', function (regionId) { return Region.Get(regionId).GetElementScope(true).locals; });
