@@ -753,7 +753,7 @@ var InlineJS;
                 register: function (data) {
                     var innerRegion = InlineJS.Region.Get(InlineJS.RegionMap.scopeRegionIds.Peek());
                     if (innerRegion) {
-                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'));
+                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled);
                     }
                 },
                 unregister: function (page) {
@@ -793,14 +793,14 @@ var InlineJS;
                     origin: myRegion.GetChanges().GetOrigin()
                 });
             };
-            var register = function (page, path, title, component, entry, exit) {
+            var register = function (page, path, title, component, entry, exit, disabled) {
                 info.pages[page] = {
                     path: path,
                     title: title,
                     component: component,
                     entry: entry,
                     exit: exit,
-                    disabled: false
+                    disabled: disabled
                 };
             };
             var goto = function (page, params, replace) {
@@ -919,7 +919,7 @@ var InlineJS;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {
                 var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'));
+                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled);
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerLink', function (innerRegion, innerElement, innerDirective) {

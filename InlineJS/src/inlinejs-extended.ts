@@ -905,7 +905,7 @@ namespace InlineJS{
                 register: (data: Record<string, any>) => {
                     let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
                     if (innerRegion){
-                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'));
+                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled);
                     }
                 },
                 unregister: (page: string) => {
@@ -947,14 +947,14 @@ namespace InlineJS{
                 });
             };
             
-            let register = (page: string, path: string, title: string, component: string, entry: string, exit: string) => {
+            let register = (page: string, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean) => {
                 info.pages[page] = {
                     path: path,
                     title: title,
                     component: component,
                     entry: entry,
                     exit: exit,
-                    disabled: false
+                    disabled: disabled
                 };
             };
 
@@ -1095,7 +1095,7 @@ namespace InlineJS{
 
             DirectiveHandlerManager.AddHandler('routerRegister', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'));
+                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled);
                 return DirectiveHandlerReturn.Handled;
             });
 
