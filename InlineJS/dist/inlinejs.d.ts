@@ -20,16 +20,16 @@ declare namespace InlineJS {
     interface ElementScope {
         key: string;
         element: HTMLElement;
-        locals: Map<string, any>;
+        locals: Record<string, any>;
         uninitCallbacks: Array<() => void>;
         changeRefs: Array<ChangeRefInfo>;
-        directiveHandlers: Map<string, DirectiveHandlerType>;
+        directiveHandlers: Record<string, DirectiveHandlerType>;
         preProcessCallbacks: Array<() => void>;
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
-        outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
+        outsideEventCallbacks: Record<string, Array<(event: Event) => void>>;
         attributeChangeCallbacks: Array<(name: string) => void>;
-        intersectionObservers: Map<string, IntersectionObserver>;
+        intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
         preserve: boolean;
         paused: boolean;
@@ -39,7 +39,7 @@ declare namespace InlineJS {
         deepCopy: (target: any) => any;
     }
     class RegionMap {
-        static entries: Map<string, Region>;
+        static entries: Record<string, Region>;
         static scopeRegionIds: Stack<string>;
     }
     type GlobalCallbackType = (regionId?: string, contextElement?: HTMLElement) => any;
@@ -114,7 +114,7 @@ declare namespace InlineJS {
         AddProxy(proxy: Proxy): void;
         RemoveProxy(path: string): void;
         AddRef(key: string, element: HTMLElement): void;
-        GetRefs(): Map<string, HTMLElement>;
+        GetRefs(): Record<string, HTMLElement>;
         AddElement(element: HTMLElement, check?: boolean): ElementScope;
         RemoveElement(element: HTMLElement | string, preserve?: boolean): void;
         AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
@@ -222,7 +222,7 @@ declare namespace InlineJS {
         PushEventContext(Value: Event): void;
         PopEventContext(): Event;
         GetEventContext(): Event;
-        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, staticCallback?: () => void): Map<string, Array<number>>;
+        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, staticCallback?: () => void): Record<string, Array<number>>;
         ReportError(value: any, ref?: any): void;
         Warn(value: any, ref?: any): void;
         Log(value: any, ref?: any): void;
@@ -241,7 +241,7 @@ declare namespace InlineJS {
         GetParentPath: () => string;
         AddChild: (child: ChildProxy) => void;
         RemoveChild: (name: string) => void;
-        GetProxies: () => Map<string, ChildProxy>;
+        GetProxies: () => Record<string, ChildProxy>;
     }
     class RootProxy implements Proxy {
         private regionId_;
@@ -258,7 +258,7 @@ declare namespace InlineJS {
         GetParentPath(): string;
         AddChild(child: ChildProxy): void;
         RemoveChild(name: string): void;
-        GetProxies(): Map<string, ChildProxy>;
+        GetProxies(): Record<string, ChildProxy>;
         static Watch(regionId: string, elementContext: HTMLElement | string, expression: string, callback: (value: any) => boolean, skipFirst: boolean): void;
         static AddGlobalCallbacks(): void;
     }
@@ -279,7 +279,7 @@ declare namespace InlineJS {
         GetParentPath(): string;
         AddChild(child: ChildProxy): void;
         RemoveChild(name: string): void;
-        GetProxies(): Map<string, ChildProxy>;
+        GetProxies(): Record<string, ChildProxy>;
     }
     enum DirectiveHandlerReturn {
         Nil = 0,
@@ -323,8 +323,8 @@ declare namespace InlineJS {
     }
     interface EachOptions {
         isArray: boolean;
-        list: Array<HTMLElement> | Map<string, HTMLElement>;
-        target: Array<any> | Map<string, any> | number;
+        list: Array<HTMLElement> | Record<string, HTMLElement>;
+        target: Array<any> | Record<string, any> | number;
         count: number;
         path: string;
     }

@@ -37,16 +37,16 @@ namespace InlineJS{
     export interface ElementScope{
         key: string;
         element: HTMLElement;
-        locals: Map<string, any>;
+        locals: Record<string, any>;
         uninitCallbacks: Array<() => void>;
         changeRefs: Array<ChangeRefInfo>;
-        directiveHandlers: Map<string, DirectiveHandlerType>;
+        directiveHandlers: Record<string, DirectiveHandlerType>;
         preProcessCallbacks: Array<() => void>;
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
-        outsideEventCallbacks: Map<string, Array<(event: Event) => void>>;
+        outsideEventCallbacks: Record<string, Array<(event: Event) => void>>;
         attributeChangeCallbacks: Array<(name: string) => void>;
-        intersectionObservers: Map<string, IntersectionObserver>;
+        intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
         preserve: boolean;
         paused: boolean;
@@ -58,7 +58,7 @@ namespace InlineJS{
     }
 
     export class RegionMap{
-        public static entries = new Map<string, Region>();
+        public static entries: Record<string, Region> = {};
         public static scopeRegionIds = new Stack<string>();
     }
     
@@ -66,8 +66,8 @@ namespace InlineJS{
     export class RootElement{};
     
     export class Region{
-        private static components_ = new Map<string, string>();
-        private static globals_ = new Map<string, GlobalCallbackType>();
+        private static components_: Record<string, string> = {};
+        private static globals_: Record<string, GlobalCallbackType> = {};
         private static postProcessCallbacks_ = new Array<() => void>();
 
         public static enableOptimizedBinds = true;
@@ -113,16 +113,16 @@ namespace InlineJS{
         
         private componentKey_ = '';
         private doneInit_ = false;
-        private elementScopes_ = new Map<string, ElementScope>();
+        private elementScopes_: Record<string, ElementScope> = {};
         private lastElementId_: number = null;
         private state_: State;
         private changes_: Changes;
-        private proxies_ = new Map<string, Proxy>();
-        private refs_ = new Map<string, HTMLElement>();
+        private proxies_: Record<string, Proxy> = {};
+        private refs_: Record<string, HTMLElement> = {};
         private observer_: MutationObserver = null;
         private outsideEvents_ = new Array<string>();
         private nextTickCallbacks_ = new Array<() => void>();
-        private tempCallbacks_ = new Map<string, () => any>();
+        private tempCallbacks_: Record<string, () => any> = {};
         private tempCallbacksId_ = 0;
         private enableOptimizedBinds_ = true;
 
@@ -274,16 +274,16 @@ namespace InlineJS{
             (this.elementScopes_[key] as ElementScope) = {
                 key: key,
                 element: element,
-                locals: new Map<string, any>(),
+                locals: {},
                 uninitCallbacks: new Array<() => void>(),
                 changeRefs: new Array<ChangeRefInfo>(),
-                directiveHandlers: new Map<string, DirectiveHandlerType>(),
+                directiveHandlers: {},
                 preProcessCallbacks: new Array<() => void>(),
                 postProcessCallbacks: new Array<() => void>(),
                 eventExpansionCallbacks: new Array<(event: string) => string | null>(),
-                outsideEventCallbacks: new Map<string, Array<(event: Event) => void>>(),
+                outsideEventCallbacks: {},
                 attributeChangeCallbacks: new Array<(name: string) => void>(),
-                intersectionObservers: new Map<string, IntersectionObserver>(),
+                intersectionObservers: {},
                 falseIfCondition: null,
                 preserve: false,
                 paused: false
@@ -415,7 +415,7 @@ namespace InlineJS{
         public AddLocal(element: HTMLElement | string, key: string, value: any){
             let scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true));
             if (scope){
-                scope.locals = (scope.locals || new Map<string, any>());
+                scope.locals = (scope.locals || {});
                 scope.locals[key] = value;
             }
         }
@@ -715,7 +715,7 @@ namespace InlineJS{
         private list_ = new Array<Change | BubbledChange>();
         
         private subscriberId_: number = null;
-        private subscribers_ = new Map<string, Array<SubscriberInfo>>();
+        private subscribers_: Record<string, Array<SubscriberInfo>> = {};
 
         private getAccessStorages_ = new Stack<GetAccessStorageInfo>();
         private getAccessHooks_ = new Stack<GetAccessHookType>();
@@ -962,10 +962,10 @@ namespace InlineJS{
             return this.eventContext_.Peek();
         }
 
-        public TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, staticCallback?: () => void): Map<string, Array<number>>{
+        public TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, staticCallback?: () => void): Record<string, Array<number>>{
             let region = Region.Get(this.regionId_), stopped: boolean;
             if (!region){
-                return new Map<string, Array<number>>();
+                return {};
             }
 
             try{
@@ -981,10 +981,10 @@ namespace InlineJS{
                 if (staticCallback){
                     staticCallback();
                 }
-                return new Map<string, Array<number>>();
+                return {};
             }
 
-            let ids = new Map<string, Array<number>>();
+            let ids: Record<string, Array<number>> = {};
             let onChange = (changes: Array<Change | BubbledChange>) => {
                 let myRegion = Region.Get(this.regionId_);
                 if (myRegion){//Mark changes
@@ -1020,7 +1020,7 @@ namespace InlineJS{
                 }
             };
 
-            let uniqueEntries = new Map<string, string>();
+            let uniqueEntries: Record<string, string> = {};
             storage.forEach(info => uniqueEntries[info.path] = info.regionId);
 
             for (let path in uniqueEntries){
@@ -1100,7 +1100,7 @@ namespace InlineJS{
         GetParentPath: () => string;
         AddChild: (child: ChildProxy) => void;
         RemoveChild: (name: string) => void;
-        GetProxies: () => Map<string, ChildProxy>;
+        GetProxies: () => Record<string, ChildProxy>;
     }
 
     function CreateChildProxy(owner: Proxy, name: string, target: any): ChildProxy{
@@ -1241,7 +1241,7 @@ namespace InlineJS{
     
     export class RootProxy implements Proxy{
         private nativeProxy_: object;
-        private proxies_ = new Map<string, ChildProxy>();
+        private proxies_: Record<string, ChildProxy> = {};
         
         public constructor (private regionId_: string, private target_: object){
             let regionId = this.regionId_, name = this.GetPath();
@@ -1448,7 +1448,7 @@ namespace InlineJS{
 
     export class ChildProxy implements Proxy{
         private nativeProxy_: object;
-        private proxies_ = new Map<string, ChildProxy>();
+        private proxies_: Record<string, ChildProxy> = {};
         
         public constructor (private regionId_: string, private parentPath_: string, private name_: string, private target_: object){
             let regionId = this.regionId_, parentPath = this.parentPath_, name = this.name_;
@@ -1561,7 +1561,7 @@ namespace InlineJS{
     export type DirectiveHandlerType = (region: Region, element: HTMLElement, directive: Directive) => DirectiveHandlerReturn;
 
     export class DirectiveHandlerManager{
-        private static directiveHandlers_ = new Map<string, DirectiveHandlerType>();
+        private static directiveHandlers_: Record<string, DirectiveHandlerType> = {};
         private static bulkDirectiveHandlers_ = new Array<DirectiveHandlerType>();
 
         public static AddHandler(key: string, handler: DirectiveHandlerType){
@@ -1626,8 +1626,8 @@ namespace InlineJS{
 
     export interface EachOptions{
         isArray: boolean;
-        list: Array<HTMLElement> | Map<string, HTMLElement>;
-        target: Array<any> | Map<string, any> | number;
+        list: Array<HTMLElement> | Record<string, HTMLElement>;
+        target: Array<any> | Record<string, any> | number;
         count: number;
         path: string;
     }
@@ -2212,7 +2212,7 @@ namespace InlineJS{
             }
 
             let getIndex = (clone: HTMLElement, key?: string) => (options.isArray ? (options.list as Array<HTMLElement>).indexOf(clone) : key);
-            let getValue = (clone: HTMLElement, key?: string) => (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Map<string, any>)[key]);
+            let getValue = (clone: HTMLElement, key?: string) => (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Record<string, any>)[key]);
             
             let initLocals = (myRegion: Region, clone: HTMLElement, key?: string) => {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
@@ -2255,11 +2255,11 @@ namespace InlineJS{
             let insert = (myRegion: Region, key?: string) => {
                 let clone = (element.cloneNode(true) as HTMLElement), offset: number;
                 if (!options.isArray){
-                    offset = Object.keys(options.list as Map<string, HTMLElement>).length;
-                    if (key in (options.list as Map<string, HTMLElement>)){//Remove existing
-                        info.parent.removeChild((options.list as Map<string, HTMLElement>)[key]);
+                    offset = Object.keys(options.list as Record<string, HTMLElement>).length;
+                    if (key in (options.list as Record<string, HTMLElement>)){//Remove existing
+                        info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]);
                     }
-                    (options.list as Map<string, HTMLElement>)[key] = clone;
+                    (options.list as Record<string, HTMLElement>)[key] = clone;
                 }
                 else{//Append to array
                     offset = (options.list as Array<HTMLElement>).length;
@@ -2285,7 +2285,7 @@ namespace InlineJS{
                     (options.list as Array<HTMLElement>).forEach(clone => info.parent.removeChild(clone));
                 }
                 else if (options.list){//Key-value pairs
-                    Object.keys((options.list as Map<string, HTMLElement>)).forEach(key => info.parent.removeChild((options.list as Map<string, HTMLElement>)[key]));
+                    Object.keys((options.list as Record<string, HTMLElement>)).forEach(key => info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]));
                 }
 
                 options.list = null;
@@ -2336,7 +2336,7 @@ namespace InlineJS{
                     }
                 }
                 else if (Region.IsObject(options.target)){
-                    options.list = new Map<string, HTMLElement>();
+                    options.list = {};
                     if ('__InlineJS_Target__' in (options.target as Record<string, any>)){
                         if (!refresh){
                             options.path = options.target['__InlineJS_Path__'];
@@ -2411,10 +2411,10 @@ namespace InlineJS{
                         }
                         options.count = count;
                     }
-                    else if (!options.isArray && change.type === 'delete' && change.prop in (options.list as Map<string, HTMLElement>)){
-                        info.parent.removeChild((options.list as Map<string, HTMLElement>)[change.prop]);
+                    else if (!options.isArray && change.type === 'delete' && change.prop in (options.list as Record<string, HTMLElement>)){
+                        info.parent.removeChild((options.list as Record<string, HTMLElement>)[change.prop]);
                         addSizeChange(Region.Get(info.regionId));
-                        delete (options.list as Map<string, HTMLElement>)[change.prop];
+                        delete (options.list as Record<string, HTMLElement>)[change.prop];
                     }
                 });
 

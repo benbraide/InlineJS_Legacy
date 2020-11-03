@@ -46,7 +46,7 @@ var InlineJS;
     var RegionMap = /** @class */ (function () {
         function RegionMap() {
         }
-        RegionMap.entries = new Map();
+        RegionMap.entries = {};
         RegionMap.scopeRegionIds = new Stack();
         return RegionMap;
     }());
@@ -65,14 +65,14 @@ var InlineJS;
             this.rootProxy_ = rootProxy_;
             this.componentKey_ = '';
             this.doneInit_ = false;
-            this.elementScopes_ = new Map();
+            this.elementScopes_ = {};
             this.lastElementId_ = null;
-            this.proxies_ = new Map();
-            this.refs_ = new Map();
+            this.proxies_ = {};
+            this.refs_ = {};
             this.observer_ = null;
             this.outsideEvents_ = new Array();
             this.nextTickCallbacks_ = new Array();
-            this.tempCallbacks_ = new Map();
+            this.tempCallbacks_ = {};
             this.tempCallbacksId_ = 0;
             this.enableOptimizedBinds_ = true;
             this.state_ = new State(this.id_);
@@ -194,16 +194,16 @@ var InlineJS;
             this.elementScopes_[key] = {
                 key: key,
                 element: element,
-                locals: new Map(),
+                locals: {},
                 uninitCallbacks: new Array(),
                 changeRefs: new Array(),
-                directiveHandlers: new Map(),
+                directiveHandlers: {},
                 preProcessCallbacks: new Array(),
                 postProcessCallbacks: new Array(),
                 eventExpansionCallbacks: new Array(),
-                outsideEventCallbacks: new Map(),
+                outsideEventCallbacks: {},
                 attributeChangeCallbacks: new Array(),
-                intersectionObservers: new Map(),
+                intersectionObservers: {},
                 falseIfCondition: null,
                 preserve: false,
                 paused: false
@@ -319,7 +319,7 @@ var InlineJS;
         Region.prototype.AddLocal = function (element, key, value) {
             var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true));
             if (scope) {
-                scope.locals = (scope.locals || new Map());
+                scope.locals = (scope.locals || {});
                 scope.locals[key] = value;
             }
         };
@@ -521,8 +521,8 @@ var InlineJS;
         Region.IsObject = function (target) {
             return (target !== null && typeof target === 'object' && (('__InlineJS_Target__' in target) || target.__proto__.constructor.name === 'Object'));
         };
-        Region.components_ = new Map();
-        Region.globals_ = new Map();
+        Region.components_ = {};
+        Region.globals_ = {};
         Region.postProcessCallbacks_ = new Array();
         Region.enableOptimizedBinds = true;
         Region.directivePrfix = 'x';
@@ -567,7 +567,7 @@ var InlineJS;
             this.isScheduled_ = false;
             this.list_ = new Array();
             this.subscriberId_ = null;
-            this.subscribers_ = new Map();
+            this.subscribers_ = {};
             this.getAccessStorages_ = new Stack();
             this.getAccessHooks_ = new Stack();
             this.origins_ = new Stack();
@@ -777,7 +777,7 @@ var InlineJS;
             var _this = this;
             var region = Region.Get(this.regionId_), stopped;
             if (!region) {
-                return new Map();
+                return {};
             }
             try {
                 region.GetChanges().PushGetAccessStorage(null);
@@ -791,9 +791,9 @@ var InlineJS;
                 if (staticCallback) {
                     staticCallback();
                 }
-                return new Map();
+                return {};
             }
-            var ids = new Map();
+            var ids = {};
             var onChange = function (changes) {
                 var myRegion = Region.Get(_this.regionId_);
                 if (myRegion) { //Mark changes
@@ -827,7 +827,7 @@ var InlineJS;
                     }
                 }
             };
-            var uniqueEntries = new Map();
+            var uniqueEntries = {};
             storage.forEach(function (info) { return uniqueEntries[info.path] = info.regionId; });
             for (var path in uniqueEntries) {
                 var targetRegion = Region.Get(uniqueEntries[path]);
@@ -997,7 +997,7 @@ var InlineJS;
         function RootProxy(regionId_, target_) {
             this.regionId_ = regionId_;
             this.target_ = target_;
-            this.proxies_ = new Map();
+            this.proxies_ = {};
             var regionId = this.regionId_, name = this.GetPath();
             var handler = {
                 get: function (target, prop) {
@@ -1172,7 +1172,7 @@ var InlineJS;
             this.parentPath_ = parentPath_;
             this.name_ = name_;
             this.target_ = target_;
-            this.proxies_ = new Map();
+            this.proxies_ = {};
             var regionId = this.regionId_, parentPath = this.parentPath_, name = this.name_;
             var handler = {
                 get: function (target, prop) {
@@ -1291,7 +1291,7 @@ var InlineJS;
             }
             return DirectiveHandlerReturn.Nil;
         };
-        DirectiveHandlerManager.directiveHandlers_ = new Map();
+        DirectiveHandlerManager.directiveHandlers_ = {};
         DirectiveHandlerManager.bulkDirectiveHandlers_ = new Array();
         return DirectiveHandlerManager;
     }());
@@ -1891,7 +1891,7 @@ var InlineJS;
                     }
                 }
                 else if (Region.IsObject(options.target)) {
-                    options.list = new Map();
+                    options.list = {};
                     if ('__InlineJS_Target__' in options.target) {
                         if (!refresh) {
                             options.path = options.target['__InlineJS_Path__'];

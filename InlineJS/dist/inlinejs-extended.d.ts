@@ -21,7 +21,7 @@ declare namespace InlineJS {
     interface ExtendedDirectiveHandlerScope {
         id: string;
         path: string;
-        callbacks: Map<string, Array<(value?: any) => boolean>>;
+        callbacks: Record<string, Array<(value?: any) => boolean>>;
     }
     interface RouterInfo {
         currentPage: string;

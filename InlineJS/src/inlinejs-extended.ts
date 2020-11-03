@@ -24,7 +24,7 @@ namespace InlineJS{
     export interface ExtendedDirectiveHandlerScope{
         id: string;
         path: string;
-        callbacks: Map<string, Array<(value?: any) => boolean>>;
+        callbacks: Record<string, Array<(value?: any) => boolean>>;
     }
 
     export interface RouterInfo{
@@ -46,7 +46,7 @@ namespace InlineJS{
     
     export class ExtendedDirectiveHandlers{
         private static scopeId_ = 0;
-        private static scopes_ = new Map<string, ExtendedDirectiveHandlerScope>();
+        private static scopes_: Record<string, ExtendedDirectiveHandlerScope> = {};
 
         public static Watch(region: Region, element: HTMLElement, directive: Directive){
             let previousValue: any;
@@ -1334,7 +1334,7 @@ namespace InlineJS{
             ExtendedDirectiveHandlers.scopes_[id] = {
                 id: id,
                 path: `${elementScope.key}.$${id}`,
-                callbacks: new Map<string, Array<(value?: any) => boolean>>()
+                callbacks: {}
             };
 
             (callbacks || []).forEach(key => (ExtendedDirectiveHandlers.scopes_[id] as ExtendedDirectiveHandlerScope).callbacks[key] = new Array<(value?: any) => boolean>());

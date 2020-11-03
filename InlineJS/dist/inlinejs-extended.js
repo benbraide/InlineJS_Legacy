@@ -1125,7 +1125,7 @@ var InlineJS;
             ExtendedDirectiveHandlers.scopes_[id] = {
                 id: id,
                 path: elementScope.key + ".$" + id,
-                callbacks: new Map()
+                callbacks: {}
             };
             (callbacks || []).forEach(function (key) { return ExtendedDirectiveHandlers.scopes_[id].callbacks[key] = new Array(); });
             return ExtendedDirectiveHandlers.scopes_[id];
@@ -1157,7 +1157,7 @@ var InlineJS;
             buildGlobal('intersection');
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;
-        ExtendedDirectiveHandlers.scopes_ = new Map();
+        ExtendedDirectiveHandlers.scopes_ = {};
         return ExtendedDirectiveHandlers;
     }());
     InlineJS.ExtendedDirectiveHandlers = ExtendedDirectiveHandlers;
