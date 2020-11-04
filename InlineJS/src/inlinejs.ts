@@ -48,6 +48,7 @@ namespace InlineJS{
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
+        removed: boolean;
         preserve: boolean;
         paused: boolean;
     }
@@ -285,6 +286,7 @@ namespace InlineJS{
                 attributeChangeCallbacks: new Array<(name: string) => void>(),
                 intersectionObservers: {},
                 falseIfCondition: null,
+                removed: false,
                 preserve: false,
                 paused: false
             };
@@ -344,6 +346,18 @@ namespace InlineJS{
                     delete RegionMap.entries[this.id_];
                 });
             }
+        }
+
+        public MarkElementAsRemoved(element: HTMLElement | string): void{
+            let scope = this.GetElementScope(element);
+            if (scope){
+                scope.removed = true;
+            }
+        }
+
+        public ElementIsRemoved(element: HTMLElement | string): boolean{
+            let scope = this.GetElementScope(element);
+            return (scope && scope.removed);
         }
 
         public AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void){
@@ -1047,7 +1061,7 @@ namespace InlineJS{
     }
 
     export class Evaluator{
-        public static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow = false): any{
+        public static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow = false, ignoreRemoved = true): any{
             if (!(expression = expression.trim())){
                 return null;
             }
@@ -1057,6 +1071,10 @@ namespace InlineJS{
                 return null;
             }
 
+            if (ignoreRemoved && region.ElementIsRemoved(elementContext)){
+                return null;
+            }
+            
             let result: any;
             let state = region.GetState();
 
@@ -1706,7 +1724,7 @@ namespace InlineJS{
 
         public static Uninit(region: Region, element: HTMLElement, directive: Directive){
             let regionId = region.GetId();
-            region.AddElement(element, true).uninitCallbacks.push(() => CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+            region.AddElement(element, true).uninitCallbacks.push(() => CoreDirectiveHandlers.EvaluateAlways(Region.Get(regionId), element, directive.value));
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -2122,6 +2140,7 @@ namespace InlineJS{
                     scope.paused = true;//Pause removal
                     if (!element.parentElement){
                         CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker);//Temporarily insert element into DOM
+                        scope.removed = false;
                     }
 
                     if (CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)){
@@ -2131,6 +2150,7 @@ namespace InlineJS{
                     }
                     else{//Remove from DOM
                         info.parent.removeChild(element);
+                        scope.removed = true;
                     }
                 }
                 else if (!CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)){
@@ -2144,6 +2164,7 @@ namespace InlineJS{
 
                     if (element.parentElement){
                         element.parentElement.removeChild(element);
+                        scope.removed = true;
                     }
                 }
                 else if (ifFirstEntry){//Execute directives
@@ -2168,10 +2189,11 @@ namespace InlineJS{
             }
 
             let scope = region.GetElementScope(info.scopeKey), ifConditionIsTrue = true, falseIfCondition = () => {
-                ifConditionIsTrue = false;
-                empty();
-
                 let myRegion = Region.Get(info.regionId);
+                
+                ifConditionIsTrue = false;
+                empty(myRegion);
+
                 if (options.path){
                     myRegion.GetChanges().Add({
                         type: 'set',
@@ -2280,12 +2302,18 @@ namespace InlineJS{
                 }
             };
 
-            let empty = () => {
+            let empty = (myRegion: Region) => {
                 if (options.isArray && options.list){
-                    (options.list as Array<HTMLElement>).forEach(clone => info.parent.removeChild(clone));
+                    (options.list as Array<HTMLElement>).forEach((clone) => {
+                        info.parent.removeChild(clone);
+                        myRegion.MarkElementAsRemoved(clone);
+                    });
                 }
                 else if (options.list){//Key-value pairs
-                    Object.keys((options.list as Record<string, HTMLElement>)).forEach(key => info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]));
+                    Object.keys((options.list as Record<string, HTMLElement>)).forEach((key) => {
+                        info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]);
+                        myRegion.MarkElementAsRemoved((options.list as Record<string, HTMLElement>)[key]);
+                    });
                 }
 
                 options.list = null;
@@ -2315,7 +2343,7 @@ namespace InlineJS{
 
             let init = (myRegion: Region, refresh = false) => {
                 if (!refresh){
-                    empty();
+                    empty(myRegion);
                     
                     options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
                     if (element.parentElement){
@@ -2385,7 +2413,7 @@ namespace InlineJS{
                         insert(myRegion, change.original.prop);
                     }
                     else if (change.type === 'set' && change.path === options.path){//Object replaced
-                        empty();
+                        empty(myRegion);
                         
                         let target = myRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
                         for (let i = 1; i < parts.length; ++i){//Resolve target
@@ -2402,7 +2430,10 @@ namespace InlineJS{
                     else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`){
                         let count = (options.target as Array<any>).length;
                         if (count < options.count){//Item(s) removed
-                            (options.list as Array<HTMLElement>).splice(count).forEach(clone => info.parent.removeChild(clone));
+                            (options.list as Array<HTMLElement>).splice(count).forEach((clone) => {
+                                info.parent.removeChild(clone);
+                                myRegion.MarkElementAsRemoved(clone);
+                            });
                         }
                         else if (options.count < count){//Item(s) added
                             for (let diff = (count - options.count); 0 < diff; --diff){
@@ -2411,8 +2442,10 @@ namespace InlineJS{
                         }
                         options.count = count;
                     }
-                    else if (!options.isArray && change.type === 'delete' && change.prop in (options.list as Record<string, HTMLElement>)){
+                    else if (!options.isArray && change.type === 'delete' && change.prop in (options.list as Record<string, HTMLElement>)){//Key deleted
                         info.parent.removeChild((options.list as Record<string, HTMLElement>)[change.prop]);
+                        myRegion.MarkElementAsRemoved((options.list as Record<string, HTMLElement>)[change.prop]);
+
                         addSizeChange(Region.Get(info.regionId));
                         delete (options.list as Record<string, HTMLElement>)[change.prop];
                     }
@@ -2495,6 +2528,14 @@ namespace InlineJS{
         }
         
         public static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{
+            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, true, ...args);
+        }
+
+        public static EvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{
+            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, false, ...args);
+        }
+        
+        public static DoEvaluation(region: Region, element: HTMLElement, expression: string, useWindow: boolean, ignoreRemoved: boolean, ...args: any): any{
             if (!region){
                 return null;
             }
@@ -2504,7 +2545,7 @@ namespace InlineJS{
 
             let result: any;
             try{
-                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow);
+                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow, ignoreRemoved);
                 if (typeof result === 'function'){
                     result = region.Call(result as (...values: any) => any, ...args);
                 }

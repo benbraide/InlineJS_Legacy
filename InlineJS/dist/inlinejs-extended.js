@@ -917,6 +917,18 @@ var InlineJS;
                     load(page, event.state.params, event.state.query);
                 }
             });
+            InlineJS.DirectiveHandlerManager.AddHandler('routerMount', function (innerRegion, innerElement, innerDirective) {
+                var mount = document.createElement('div');
+                innerElement.parentElement.insertBefore(mount, innerElement);
+                var innerRegionId = innerRegion.GetId();
+                innerRegion.GetState().TrapGetAccess(function () {
+                    var url = InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(innerRegionId), innerElement, '$router.url');
+                    ExtendedDirectiveHandlers.FetchLoad(mount, url, false, function () {
+                        innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
+                    });
+                }, true);
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {
                 var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled);

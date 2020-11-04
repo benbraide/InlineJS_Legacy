@@ -204,6 +204,7 @@ export var InlineJS;
                 attributeChangeCallbacks: new Array(),
                 intersectionObservers: {},
                 falseIfCondition: null,
+                removed: false,
                 preserve: false,
                 paused: false
             };
@@ -256,6 +257,16 @@ export var InlineJS;
                     delete RegionMap.entries[_this.id_];
                 });
             }
+        };
+        Region.prototype.MarkElementAsRemoved = function (element) {
+            var scope = this.GetElementScope(element);
+            if (scope) {
+                scope.removed = true;
+            }
+        };
+        Region.prototype.ElementIsRemoved = function (element) {
+            var scope = this.GetElementScope(element);
+            return (scope && scope.removed);
         };
         Region.prototype.AddOutsideEventCallback = function (element, event, callback) {
             var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
@@ -851,13 +862,17 @@ export var InlineJS;
     var Evaluator = /** @class */ (function () {
         function Evaluator() {
         }
-        Evaluator.Evaluate = function (regionId, elementContext, expression, useWindow) {
+        Evaluator.Evaluate = function (regionId, elementContext, expression, useWindow, ignoreRemoved) {
             if (useWindow === void 0) { useWindow = false; }
+            if (ignoreRemoved === void 0) { ignoreRemoved = true; }
             if (!(expression = expression.trim())) {
                 return null;
             }
             var region = Region.Get(regionId);
             if (!region) {
+                return null;
+            }
+            if (ignoreRemoved && region.ElementIsRemoved(elementContext)) {
                 return null;
             }
             var result;
@@ -1357,7 +1372,7 @@ export var InlineJS;
         };
         CoreDirectiveHandlers.Uninit = function (region, element, directive) {
             var regionId = region.GetId();
-            region.AddElement(element, true).uninitCallbacks.push(function () { return CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value); });
+            region.AddElement(element, true).uninitCallbacks.push(function () { return CoreDirectiveHandlers.EvaluateAlways(Region.Get(regionId), element, directive.value); });
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Ref = function (region, element, directive) {
@@ -1712,6 +1727,7 @@ export var InlineJS;
                     scope.paused = true; //Pause removal
                     if (!element.parentElement) {
                         CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker); //Temporarily insert element into DOM
+                        scope.removed = false;
                     }
                     if (CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)) {
                         isInserted = true;
@@ -1720,6 +1736,7 @@ export var InlineJS;
                     }
                     else { //Remove from DOM
                         info.parent.removeChild(element);
+                        scope.removed = true;
                     }
                 }
                 else if (!CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)) {
@@ -1731,6 +1748,7 @@ export var InlineJS;
                     }
                     if (element.parentElement) {
                         element.parentElement.removeChild(element);
+                        scope.removed = true;
                     }
                 }
                 else if (ifFirstEntry) { //Execute directives
@@ -1750,9 +1768,9 @@ export var InlineJS;
                 isReverse = (directive.arg.options.indexOf('reverse') != -1);
             }
             var scope = region.GetElementScope(info.scopeKey), ifConditionIsTrue = true, falseIfCondition = function () {
-                ifConditionIsTrue = false;
-                empty();
                 var myRegion = Region.Get(info.regionId);
+                ifConditionIsTrue = false;
+                empty(myRegion);
                 if (options.path) {
                     myRegion.GetChanges().Add({
                         type: 'set',
@@ -1843,12 +1861,18 @@ export var InlineJS;
                     Object.keys(options.target).forEach(function (key) { return insert(myRegion, key); });
                 }
             };
-            var empty = function () {
+            var empty = function (myRegion) {
                 if (options.isArray && options.list) {
-                    options.list.forEach(function (clone) { return info.parent.removeChild(clone); });
+                    options.list.forEach(function (clone) {
+                        info.parent.removeChild(clone);
+                        myRegion.MarkElementAsRemoved(clone);
+                    });
                 }
                 else if (options.list) { //Key-value pairs
-                    Object.keys(options.list).forEach(function (key) { return info.parent.removeChild(options.list[key]); });
+                    Object.keys(options.list).forEach(function (key) {
+                        info.parent.removeChild(options.list[key]);
+                        myRegion.MarkElementAsRemoved(options.list[key]);
+                    });
                 }
                 options.list = null;
             };
@@ -1872,7 +1896,7 @@ export var InlineJS;
             var init = function (myRegion, refresh) {
                 if (refresh === void 0) { refresh = false; }
                 if (!refresh) {
-                    empty();
+                    empty(myRegion);
                     options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
                     if (element.parentElement) {
                         element.parentElement.removeChild(element);
@@ -1932,7 +1956,7 @@ export var InlineJS;
                         insert(myRegion, change.original.prop);
                     }
                     else if (change.type === 'set' && change.path === options.path) { //Object replaced
-                        empty();
+                        empty(myRegion);
                         var target = myRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
                         for (var i = 1; i < parts.length; ++i) { //Resolve target
                             if (!target || typeof target !== 'object' || !('__InlineJS_Target__' in target)) {
@@ -1946,7 +1970,10 @@ export var InlineJS;
                     else if (options.isArray && change.type === 'set' && change.path === options.path + ".length") {
                         var count = options.target.length;
                         if (count < options.count) { //Item(s) removed
-                            options.list.splice(count).forEach(function (clone) { return info.parent.removeChild(clone); });
+                            options.list.splice(count).forEach(function (clone) {
+                                info.parent.removeChild(clone);
+                                myRegion.MarkElementAsRemoved(clone);
+                            });
                         }
                         else if (options.count < count) { //Item(s) added
                             for (var diff = (count - options.count); 0 < diff; --diff) {
@@ -1955,8 +1982,9 @@ export var InlineJS;
                         }
                         options.count = count;
                     }
-                    else if (!options.isArray && change.type === 'delete' && change.prop in options.list) {
+                    else if (!options.isArray && change.type === 'delete' && change.prop in options.list) { //Key deleted
                         info.parent.removeChild(options.list[change.prop]);
+                        myRegion.MarkElementAsRemoved(options.list[change.prop]);
                         addSizeChange(Region.Get(info.regionId));
                         delete options.list[change.prop];
                     }
@@ -2030,6 +2058,21 @@ export var InlineJS;
             for (var _i = 4; _i < arguments.length; _i++) {
                 args[_i - 4] = arguments[_i];
             }
+            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, true], args));
+        };
+        CoreDirectiveHandlers.EvaluateAlways = function (region, element, expression, useWindow) {
+            if (useWindow === void 0) { useWindow = false; }
+            var args = [];
+            for (var _i = 4; _i < arguments.length; _i++) {
+                args[_i - 4] = arguments[_i];
+            }
+            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, false], args));
+        };
+        CoreDirectiveHandlers.DoEvaluation = function (region, element, expression, useWindow, ignoreRemoved) {
+            var args = [];
+            for (var _i = 5; _i < arguments.length; _i++) {
+                args[_i - 5] = arguments[_i];
+            }
             if (!region) {
                 return null;
             }
@@ -2037,7 +2080,7 @@ export var InlineJS;
             region.GetState().PushElementContext(element);
             var result;
             try {
-                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow);
+                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow, ignoreRemoved);
                 if (typeof result === 'function') {
                     result = region.Call.apply(region, __spreadArrays([result], args));
                 }

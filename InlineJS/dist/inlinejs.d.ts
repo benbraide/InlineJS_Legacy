@@ -31,6 +31,7 @@ declare namespace InlineJS {
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
+        removed: boolean;
         preserve: boolean;
         paused: boolean;
     }
@@ -117,6 +118,8 @@ declare namespace InlineJS {
         GetRefs(): Record<string, HTMLElement>;
         AddElement(element: HTMLElement, check?: boolean): ElementScope;
         RemoveElement(element: HTMLElement | string, preserve?: boolean): void;
+        MarkElementAsRemoved(element: HTMLElement | string): void;
+        ElementIsRemoved(element: HTMLElement | string): boolean;
         AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         AddNextTickCallback(callback: () => void): void;
@@ -228,7 +231,7 @@ declare namespace InlineJS {
         Log(value: any, ref?: any): void;
     }
     class Evaluator {
-        static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow?: boolean): any;
+        static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow?: boolean, ignoreRemoved?: boolean): any;
         static GetContextKey(): string;
     }
     interface Proxy {
@@ -354,6 +357,8 @@ declare namespace InlineJS {
         static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)): {};
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
+        static EvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
+        static DoEvaluation(region: Region, element: HTMLElement, expression: string, useWindow: boolean, ignoreRemoved: boolean, ...args: any): any;
         static Call(regionId: string, callback: (...args: any) => any, ...args: any): any;
         static ExtractDuration(value: string, defaultValue: number): number;
         static ToString(value: any): string;

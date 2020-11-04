@@ -1093,6 +1093,21 @@ namespace InlineJS{
                 }
             });
 
+            DirectiveHandlerManager.AddHandler('routerMount', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let mount = document.createElement('div');
+                innerElement.parentElement.insertBefore(mount, innerElement);
+
+                let innerRegionId = innerRegion.GetId();
+                innerRegion.GetState().TrapGetAccess(() => {
+                    let url = CoreDirectiveHandlers.Evaluate(Region.Get(innerRegionId), innerElement, '$router.url');
+                    ExtendedDirectiveHandlers.FetchLoad(mount, url, false, () => {
+                        innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
+                    });
+                }, true);
+                
+                return DirectiveHandlerReturn.Handled;
+            });
+            
             DirectiveHandlerManager.AddHandler('routerRegister', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled);
