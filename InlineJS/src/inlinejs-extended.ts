@@ -33,6 +33,7 @@ namespace InlineJS{
         targetExit: string;
         pages: Record<string,RouterPageInfo>;
         url: string;
+        mount: HTMLElement;
     }
 
     export interface RouterPageInfo{
@@ -56,7 +57,7 @@ namespace InlineJS{
                     previousValue = Region.DeepCopy(value);
                     element.dispatchEvent(new CustomEvent('watch.change', { detail: value }));
                 }
-            }, true);
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         }
         
@@ -65,7 +66,7 @@ namespace InlineJS{
                 if (!! CoreDirectiveHandlers.Evaluate(region, element, directive.value)){
                     element.dispatchEvent(new CustomEvent('when.change'));
                 }
-            }, true);
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         }
         
@@ -76,7 +77,7 @@ namespace InlineJS{
                     return false;
                 }
                 return true;
-            }, true);
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -454,7 +455,7 @@ namespace InlineJS{
                     load(url);
                     info.url = url;
                 }
-            }, true);
+            }, true, element);
 
             let elementScope = region.AddElement(element, true);
             let scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
@@ -599,7 +600,7 @@ namespace InlineJS{
         }
 
         public static Animate(region: Region, element: HTMLElement, directive: Directive){
-            let type = (directive.arg.key || 'transition'), target = '', duration = 300, style = getComputedStyle(element);
+            let type = (directive.arg.key || 'transition'), showOnly = false, target = '', duration = 300, style = getComputedStyle(element);
             let extractDuration = (option: string) => {
                 if (option === 'slower'){
                     return 1000;
@@ -628,7 +629,12 @@ namespace InlineJS{
                 transition: (options: Array<string>) => {
                     options.forEach((option) => {
                         if ((duration = extractDuration(option)) === null){
-                            target = option;
+                            if (option === 'show'){
+                                showOnly = true;
+                            }
+                            else{
+                                target = option;
+                            }
                         }
                     });
                 },
@@ -780,6 +786,47 @@ namespace InlineJS{
             }
 
             let update: (show: boolean) => void;
+            let isShown = false, isTransitioning = false, checkpoint = 0;
+            
+            let endTransition = () => {
+                if (!isTransitioning){
+                    return;
+                }
+                
+                isTransitioning = false;
+                if (!isShown){
+                    element.style.display = 'none';
+                    element.dispatchEvent(new CustomEvent('animate.hide'));
+                }
+                else{
+                    element.dispatchEvent(new CustomEvent('animate.show'));
+                }
+            };
+
+            let preUpdate = (show: boolean) => {
+                isShown = show;
+                isTransitioning = true;
+                
+                if (show){
+                    element.style.display = showValue;
+                    element.dispatchEvent(new CustomEvent('animate.showing'));
+                }
+                else{
+                    element.dispatchEvent(new CustomEvent('animate.hiding'));
+                }
+
+                if (showOnly && !isShown){
+                    return;
+                }
+
+                let thisCheckpoint = ++checkpoint;
+                setTimeout(() => {
+                    if (thisCheckpoint == checkpoint){
+                        endTransition();
+                    }
+                }, (duration || 300));
+            };
+            
             let setTransitions = (list: Array<string>) => {
                 let reduced = list.reduce((previous, current) => (previous ? `${previous}, ${current} ${duration || 300}ms ease` : `${current} ${duration || 300}ms ease`), '');
                 if (element.style.transition){
@@ -788,9 +835,17 @@ namespace InlineJS{
                 else{
                     element.style.transition = reduced;
                 }
+
+                element.addEventListener('transitionend', () => {
+                    endTransition();
+                });
             };
             
-            let height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth, isShown = false;
+            let height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth, showValue = style.getPropertyValue('display');
+            if (showValue === 'none'){
+                showValue = 'block';
+            }
+            
             if (type === 'transition'){
                 let updateSize = (show: boolean) => {
                     element.style.padding = (show ? padding : '0');
@@ -804,58 +859,48 @@ namespace InlineJS{
                     }
                 };
 
-                let shouldUpdateSize = true;
                 let updateOpacity = (show: boolean) => {
-                    isShown = show;
-                    if (show){
-                        element.style.opacity = '1';
-                        if (shouldUpdateSize){
-                            element.style.padding = padding;
-                            element.style.borderWidth = borderWidth;
-                            element.style.height = height;
-                        }
-                    }
-                    else{
-                        element.style.opacity = '0';
-                    }
+                    element.style.opacity = (show ? '1' : '0');
                 };
                 
                 if (!target || target === 'all'){
-                    shouldUpdateSize = false;
                     element.style.overflow = 'hidden';
-
                     setTransitions(['height', 'width', 'padding', 'border', 'opacity']);
                     update = (show: boolean) => {
+                        preUpdate(show);
                         updateSize(show);
                         updateOpacity(show);
+                        if (showOnly && !isShown){
+                            endTransition();
+                        }
                     };
                 }
                 else if (target === 'height' || target === 'width' || target === 'size'){
                     element.style.overflow = 'hidden';
                     setTransitions(['height', 'width', 'padding', 'border']);
-                    update = updateSize;
+                    update = (show: boolean) => {
+                        preUpdate(show);
+                        updateSize(show);
+                        if (showOnly && !isShown){
+                            endTransition();
+                        }
+                    };
                 }
                 else if (target === 'opacity'){
                     setTransitions(['opacity']);
-                    update = updateOpacity;
-                    
-                    element.addEventListener('transitionend', () => {
-                        if (!isShown){
-                            element.style.padding = '0';
-                            element.style.borderWidth = '0';
-                            element.style.height = '0';
+                    update = (show: boolean) => {
+                        preUpdate(show);
+                        updateOpacity(show);
+                        if (showOnly && !isShown){
+                            endTransition();
                         }
-                    });
+                    };
                 }
             }
             else if (type in animationMap){//Use Animate.css
                 let inTarget = `animate__${animationMap[type].in}`,  outTarget = `animate__${animationMap[type].out}`, lastTarget = '';
                 update = (show: boolean) => {
-                    isShown = show;
-                    element.style.padding = padding;
-                    element.style.borderWidth = borderWidth;
-                    element.style.height = height;
-                    
+                    preUpdate(show);
                     if (element.classList.contains(lastTarget)){
                         element.classList.remove(lastTarget);
                     }
@@ -869,13 +914,9 @@ namespace InlineJS{
                     }
                 };
                 
-                element.style.animationDuration = `${duration}ms`;
+                element.style.animationDuration = `${duration || 300}ms`;
                 element.addEventListener('animationend', () => {
-                    if (!isShown){
-                        element.style.padding = '0';
-                        element.style.borderWidth = '0';
-                        element.style.height = '0';
-                    }
+                    endTransition();
                 });
             }
             else{
@@ -885,7 +926,7 @@ namespace InlineJS{
             let regionId = region.GetId();
             region.GetState().TrapGetAccess(() => {
                 update(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
-            }, true);
+            }, true, element);
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -900,7 +941,8 @@ namespace InlineJS{
                 targetComponent: null,
                 targetExit: null,
                 pages: {},
-                url: null
+                url: null,
+                mount: null
             }, methods = {
                 register: (data: Record<string, any>) => {
                     let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
@@ -1094,16 +1136,22 @@ namespace InlineJS{
             });
 
             DirectiveHandlerManager.AddHandler('routerMount', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                let mount = document.createElement('div');
-                innerElement.parentElement.insertBefore(mount, innerElement);
-
                 let innerRegionId = innerRegion.GetId();
+                if (info.mount){
+                    return DirectiveHandlerReturn.Nil;
+                }
+                
+                info.mount = document.createElement('div');
+                innerElement.parentElement.insertBefore(info.mount, innerElement);
+                info.mount.classList.add('router-mount');
+
                 innerRegion.GetState().TrapGetAccess(() => {
                     let url = CoreDirectiveHandlers.Evaluate(Region.Get(innerRegionId), innerElement, '$router.url');
-                    ExtendedDirectiveHandlers.FetchLoad(mount, url, false, () => {
+                    ExtendedDirectiveHandlers.FetchLoad(info.mount, url, false, () => {
                         innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
+                        Bootstrap.Reattach();
                     });
-                }, true);
+                }, true, element);
                 
                 return DirectiveHandlerReturn.Handled;
             });
@@ -1252,7 +1300,7 @@ namespace InlineJS{
         }
 
         public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void){
-            if (!(url = url.trim())){
+            if (!url || !(url = url.trim())){
                 return;
             }
 

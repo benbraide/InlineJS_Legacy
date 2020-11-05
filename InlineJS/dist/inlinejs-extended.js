@@ -19,7 +19,7 @@ var InlineJS;
                     previousValue = InlineJS.Region.DeepCopy(value);
                     element.dispatchEvent(new CustomEvent('watch.change', { detail: value }));
                 }
-            }, true);
+            }, true, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.When = function (region, element, directive) {
@@ -27,7 +27,7 @@ var InlineJS;
                 if (!!InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value)) {
                     element.dispatchEvent(new CustomEvent('when.change'));
                 }
-            }, true);
+            }, true, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Once = function (region, element, directive) {
@@ -37,7 +37,7 @@ var InlineJS;
                     return false;
                 }
                 return true;
-            }, true);
+            }, true, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Input = function (region, element, directive) {
@@ -353,7 +353,7 @@ var InlineJS;
                     load(url);
                     info.url = url;
                 }
-            }, true);
+            }, true, element);
             var elementScope = region.AddElement(element, true);
             var scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
             elementScope.locals['$xhr'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
@@ -469,7 +469,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Animate = function (region, element, directive) {
-            var type = (directive.arg.key || 'transition'), target = '', duration = 300, style = getComputedStyle(element);
+            var type = (directive.arg.key || 'transition'), showOnly = false, target = '', duration = 300, style = getComputedStyle(element);
             var extractDuration = function (option) {
                 if (option === 'slower') {
                     return 1000;
@@ -492,7 +492,12 @@ var InlineJS;
                 transition: function (options) {
                     options.forEach(function (option) {
                         if ((duration = extractDuration(option)) === null) {
-                            target = option;
+                            if (option === 'show') {
+                                showOnly = true;
+                            }
+                            else {
+                                target = option;
+                            }
                         }
                     });
                 },
@@ -641,6 +646,40 @@ var InlineJS;
                 extractors.unknown(directive.arg.options);
             }
             var update;
+            var isShown = false, isTransitioning = false, checkpoint = 0;
+            var endTransition = function () {
+                if (!isTransitioning) {
+                    return;
+                }
+                isTransitioning = false;
+                if (!isShown) {
+                    element.style.display = 'none';
+                    element.dispatchEvent(new CustomEvent('animate.hide'));
+                }
+                else {
+                    element.dispatchEvent(new CustomEvent('animate.show'));
+                }
+            };
+            var preUpdate = function (show) {
+                isShown = show;
+                isTransitioning = true;
+                if (show) {
+                    element.style.display = showValue;
+                    element.dispatchEvent(new CustomEvent('animate.showing'));
+                }
+                else {
+                    element.dispatchEvent(new CustomEvent('animate.hiding'));
+                }
+                if (showOnly && !isShown) {
+                    return;
+                }
+                var thisCheckpoint = ++checkpoint;
+                setTimeout(function () {
+                    if (thisCheckpoint == checkpoint) {
+                        endTransition();
+                    }
+                }, (duration || 300));
+            };
             var setTransitions = function (list) {
                 var reduced = list.reduce(function (previous, current) { return (previous ? previous + ", " + current + " " + (duration || 300) + "ms ease" : current + " " + (duration || 300) + "ms ease"); }, '');
                 if (element.style.transition) {
@@ -649,8 +688,14 @@ var InlineJS;
                 else {
                     element.style.transition = reduced;
                 }
+                element.addEventListener('transitionend', function () {
+                    endTransition();
+                });
             };
-            var height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth, isShown = false;
+            var height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth, showValue = style.getPropertyValue('display');
+            if (showValue === 'none') {
+                showValue = 'block';
+            }
             if (type === 'transition') {
                 var updateSize_1 = function (show) {
                     element.style.padding = (show ? padding : '0');
@@ -662,54 +707,47 @@ var InlineJS;
                         element.style.width = (show ? width : '0');
                     }
                 };
-                var shouldUpdateSize_1 = true;
                 var updateOpacity_1 = function (show) {
-                    isShown = show;
-                    if (show) {
-                        element.style.opacity = '1';
-                        if (shouldUpdateSize_1) {
-                            element.style.padding = padding;
-                            element.style.borderWidth = borderWidth;
-                            element.style.height = height;
-                        }
-                    }
-                    else {
-                        element.style.opacity = '0';
-                    }
+                    element.style.opacity = (show ? '1' : '0');
                 };
                 if (!target || target === 'all') {
-                    shouldUpdateSize_1 = false;
                     element.style.overflow = 'hidden';
                     setTransitions(['height', 'width', 'padding', 'border', 'opacity']);
                     update = function (show) {
+                        preUpdate(show);
                         updateSize_1(show);
                         updateOpacity_1(show);
+                        if (showOnly && !isShown) {
+                            endTransition();
+                        }
                     };
                 }
                 else if (target === 'height' || target === 'width' || target === 'size') {
                     element.style.overflow = 'hidden';
                     setTransitions(['height', 'width', 'padding', 'border']);
-                    update = updateSize_1;
+                    update = function (show) {
+                        preUpdate(show);
+                        updateSize_1(show);
+                        if (showOnly && !isShown) {
+                            endTransition();
+                        }
+                    };
                 }
                 else if (target === 'opacity') {
                     setTransitions(['opacity']);
-                    update = updateOpacity_1;
-                    element.addEventListener('transitionend', function () {
-                        if (!isShown) {
-                            element.style.padding = '0';
-                            element.style.borderWidth = '0';
-                            element.style.height = '0';
+                    update = function (show) {
+                        preUpdate(show);
+                        updateOpacity_1(show);
+                        if (showOnly && !isShown) {
+                            endTransition();
                         }
-                    });
+                    };
                 }
             }
             else if (type in animationMap) { //Use Animate.css
                 var inTarget_1 = "animate__" + animationMap[type]["in"], outTarget_1 = "animate__" + animationMap[type].out, lastTarget_1 = '';
                 update = function (show) {
-                    isShown = show;
-                    element.style.padding = padding;
-                    element.style.borderWidth = borderWidth;
-                    element.style.height = height;
+                    preUpdate(show);
                     if (element.classList.contains(lastTarget_1)) {
                         element.classList.remove(lastTarget_1);
                     }
@@ -721,13 +759,9 @@ var InlineJS;
                         element.classList.add(lastTarget_1 = outTarget_1);
                     }
                 };
-                element.style.animationDuration = duration + "ms";
+                element.style.animationDuration = (duration || 300) + "ms";
                 element.addEventListener('animationend', function () {
-                    if (!isShown) {
-                        element.style.padding = '0';
-                        element.style.borderWidth = '0';
-                        element.style.height = '0';
-                    }
+                    endTransition();
                 });
             }
             else {
@@ -736,7 +770,7 @@ var InlineJS;
             var regionId = region.GetId();
             region.GetState().TrapGetAccess(function () {
                 update(!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value));
-            }, true);
+            }, true, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Router = function (region, element, directive) {
@@ -748,7 +782,8 @@ var InlineJS;
                 targetComponent: null,
                 targetExit: null,
                 pages: {},
-                url: null
+                url: null,
+                mount: null
             }, methods = {
                 register: function (data) {
                     var innerRegion = InlineJS.Region.Get(InlineJS.RegionMap.scopeRegionIds.Peek());
@@ -918,15 +953,20 @@ var InlineJS;
                 }
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerMount', function (innerRegion, innerElement, innerDirective) {
-                var mount = document.createElement('div');
-                innerElement.parentElement.insertBefore(mount, innerElement);
                 var innerRegionId = innerRegion.GetId();
+                if (info.mount) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                info.mount = document.createElement('div');
+                innerElement.parentElement.insertBefore(info.mount, innerElement);
+                info.mount.classList.add('router-mount');
                 innerRegion.GetState().TrapGetAccess(function () {
                     var url = InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(innerRegionId), innerElement, '$router.url');
-                    ExtendedDirectiveHandlers.FetchLoad(mount, url, false, function () {
+                    ExtendedDirectiveHandlers.FetchLoad(info.mount, url, false, function () {
                         innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
+                        InlineJS.Bootstrap.Reattach();
                     });
-                }, true);
+                }, true, element);
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {
@@ -1048,7 +1088,7 @@ var InlineJS;
             observer.observe(element);
         };
         ExtendedDirectiveHandlers.FetchLoad = function (element, url, append, onLoad) {
-            if (!(url = url.trim())) {
+            if (!url || !(url = url.trim())) {
                 return;
             }
             var removeAll = function (force) {

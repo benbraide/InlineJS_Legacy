@@ -204,6 +204,7 @@ export var InlineJS;
                 attributeChangeCallbacks: new Array(),
                 intersectionObservers: {},
                 falseIfCondition: null,
+                trapInfoList: new Array(),
                 removed: false,
                 preserve: false,
                 paused: false
@@ -243,6 +244,12 @@ export var InlineJS;
                 }
                 Array.from(scope.element.children).forEach(function (child) { return _this.RemoveElement(child, preserve); });
                 if (!preserve) { //Delete scope
+                    scope.trapInfoList.forEach(function (info) {
+                        if (!info.stopped) {
+                            info.stopped = true;
+                            info.callback([]);
+                        }
+                    });
                     delete this.elementScopes_[scope.key];
                 }
             }
@@ -267,6 +274,10 @@ export var InlineJS;
         Region.prototype.ElementIsRemoved = function (element) {
             var scope = this.GetElementScope(element);
             return (scope && scope.removed);
+        };
+        Region.prototype.ElementExists = function (element) {
+            var scope = this.GetElementScope(element);
+            return (scope && !scope.removed);
         };
         Region.prototype.AddOutsideEventCallback = function (element, event, callback) {
             var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
@@ -783,25 +794,38 @@ export var InlineJS;
         State.prototype.GetEventContext = function () {
             return this.eventContext_.Peek();
         };
-        State.prototype.TrapGetAccess = function (callback, changeCallback, staticCallback) {
+        State.prototype.TrapGetAccess = function (callback, changeCallback, elementContext, staticCallback) {
             var _this = this;
-            var region = Region.Get(this.regionId_), stopped;
+            var region = Region.Get(this.regionId_);
             if (!region) {
                 return {};
             }
+            var info = {
+                stopped: false,
+                callback: null
+            };
             try {
                 region.GetChanges().PushGetAccessStorage(null);
-                stopped = (callback(null) === false);
+                info.stopped = (callback(null) === false);
             }
             catch (err) {
                 this.ReportError(err, "InlineJs.Region<" + this.regionId_ + ">.State.TrapAccess");
             }
             var storage = region.GetChanges().PopGetAccessStorage(true);
-            if (stopped || !changeCallback || storage.length == 0) { //Not reactive
+            if (info.stopped || !changeCallback || storage.length == 0) { //Not reactive
                 if (staticCallback) {
                     staticCallback();
                 }
                 return {};
+            }
+            if (elementContext) {
+                var scope = region.GetElementScope(elementContext);
+                if (!scope && typeof elementContext !== 'string') {
+                    scope = region.AddElement(elementContext, false);
+                }
+                if (scope) { //Add info
+                    scope.trapInfoList.push(info);
+                }
             }
             var ids = {};
             var onChange = function (changes) {
@@ -810,11 +834,11 @@ export var InlineJS;
                     myRegion.GetChanges().PushOrigin(onChange);
                 }
                 try {
-                    if (changeCallback === true) {
-                        stopped = (callback(changes) === false);
+                    if (!info.stopped && changeCallback === true) {
+                        info.stopped = (callback(changes) === false);
                     }
-                    else {
-                        stopped = (changeCallback(changes) === false);
+                    else if (!info.stopped && changeCallback !== true) {
+                        info.stopped = (changeCallback(changes) === false);
                     }
                 }
                 catch (err) {
@@ -823,7 +847,7 @@ export var InlineJS;
                 if (myRegion) {
                     myRegion.GetChanges().PopOrigin();
                 }
-                if (stopped) { //Unsubscribe all subscribed
+                if (info.stopped) { //Unsubscribe all subscribed
                     var _loop_1 = function (regionId) {
                         var myRegion_1 = Region.Get(regionId);
                         if (!myRegion_1) {
@@ -839,6 +863,7 @@ export var InlineJS;
             };
             var uniqueEntries = {};
             storage.forEach(function (info) { return uniqueEntries[info.path] = info.regionId; });
+            info.callback = onChange;
             for (var path in uniqueEntries) {
                 var targetRegion = Region.Get(uniqueEntries[path]);
                 if (targetRegion) {
@@ -872,7 +897,7 @@ export var InlineJS;
             if (!region) {
                 return null;
             }
-            if (ignoreRemoved && region.ElementIsRemoved(elementContext)) {
+            if (ignoreRemoved && !region.ElementExists(elementContext)) {
                 return null;
             }
             var result;
@@ -1117,7 +1142,7 @@ export var InlineJS;
                 var value = Evaluator.Evaluate(regionId, elementContext, expression);
                 previousValue = Region.DeepCopy(value);
                 return (skipFirst || callback(value));
-            }, onChange);
+            }, onChange, elementContext);
         };
         RootProxy.AddGlobalCallbacks = function () {
             Region.AddGlobal('$window', function () { return window; });
@@ -1352,7 +1377,7 @@ export var InlineJS;
             region.GetState().TrapGetAccess(function () {
                 CoreDirectiveHandlers.Evaluate(region, element, directive.value);
                 return true;
-            }, true);
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Static = function (region, element, directive) {
@@ -1427,7 +1452,7 @@ export var InlineJS;
                     else if (isList_1 && entries) {
                         (list_1 = CoreDirectiveHandlers.ToString(entries).trim().replace(/\s\s+/g, ' ').split(' ')).forEach(function (entry) { return callback(entry, true); });
                     }
-                }, true);
+                }, true, element);
                 return DirectiveHandlerReturn.Handled;
             }
             if (validator && !validator(directive.arg.key)) {
@@ -1435,7 +1460,7 @@ export var InlineJS;
             }
             region.GetState().TrapGetAccess(function () {
                 callback(directive.arg.key, CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
-            }, true);
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Text = function (region, element, directive) {
@@ -1481,7 +1506,7 @@ export var InlineJS;
                 if (!callback || callback()) {
                     onChange();
                 }
-            }, true);
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.On = function (region, element, directive) {
@@ -1707,13 +1732,8 @@ export var InlineJS;
             }
             var regionId = region.GetId();
             region.GetState().TrapGetAccess(function () {
-                if (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)) {
-                    element.style.display = showValue;
-                }
-                else { //Hide
-                    element.style.display = 'none';
-                }
-            }, true);
+                element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.If = function (region, element, directive) {
@@ -1755,7 +1775,7 @@ export var InlineJS;
                     CoreDirectiveHandlers.InsertIfOrEach(region, element, info);
                 }
                 ifFirstEntry = false;
-            }, true, function () { region.GetElementScope(element).preserve = false; });
+            }, true, null, function () { region.GetElementScope(element).preserve = false; });
             if (!isInserted) { //Initial evaluation result is false
                 region.RemoveElement(element);
             }
@@ -1991,7 +2011,7 @@ export var InlineJS;
                 });
                 return true;
             };
-            region.GetState().TrapGetAccess(function () { return init(Region.Get(info.regionId)); }, function (changes) { return onChange(Region.Get(info.regionId), changes); });
+            region.GetState().TrapGetAccess(function () { return init(Region.Get(info.regionId)); }, function (changes) { return onChange(Region.Get(info.regionId), changes); }, null);
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {
@@ -2412,10 +2432,14 @@ export var InlineJS;
         function Bootstrap() {
         }
         Bootstrap.Attach = function (anchors) {
-            if (!anchors) {
-                anchors = ["data-" + Region.directivePrfix + "-data", Region.directivePrfix + "-data"];
-            }
-            anchors.forEach(function (anchor) {
+            Bootstrap.anchors_ = anchors;
+            Bootstrap.Attach_();
+        };
+        Bootstrap.Reattach = function () {
+            Bootstrap.Attach_();
+        };
+        Bootstrap.Attach_ = function () {
+            (Bootstrap.anchors_ || ["data-" + Region.directivePrfix + "-data", Region.directivePrfix + "-data"]).forEach(function (anchor) {
                 document.querySelectorAll("[" + anchor + "]").forEach(function (element) {
                     if (!element.hasAttribute(anchor)) { //Probably contained inside another region
                         return;
@@ -2473,6 +2497,7 @@ export var InlineJS;
             Region.ExecutePostProcessCallbacks();
         };
         Bootstrap.lastRegionId_ = null;
+        Bootstrap.anchors_ = null;
         return Bootstrap;
     }());
     InlineJS.Bootstrap = Bootstrap;

@@ -17,6 +17,10 @@ declare namespace InlineJS {
         regionId: string;
         subscriptionId: number;
     }
+    interface TrapInfo {
+        stopped: boolean;
+        callback: ChangeCallbackType;
+    }
     interface ElementScope {
         key: string;
         element: HTMLElement;
@@ -31,6 +35,7 @@ declare namespace InlineJS {
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
+        trapInfoList: Array<TrapInfo>;
         removed: boolean;
         preserve: boolean;
         paused: boolean;
@@ -120,6 +125,7 @@ declare namespace InlineJS {
         RemoveElement(element: HTMLElement | string, preserve?: boolean): void;
         MarkElementAsRemoved(element: HTMLElement | string): void;
         ElementIsRemoved(element: HTMLElement | string): boolean;
+        ElementExists(element: HTMLElement | string): boolean;
         AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         AddNextTickCallback(callback: () => void): void;
@@ -225,7 +231,7 @@ declare namespace InlineJS {
         PushEventContext(Value: Event): void;
         PopEventContext(): Event;
         GetEventContext(): Event;
-        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, staticCallback?: () => void): Record<string, Array<number>>;
+        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, elementContext: HTMLElement | string, staticCallback?: () => void): Record<string, Array<number>>;
         ReportError(value: any, ref?: any): void;
         Warn(value: any, ref?: any): void;
         Log(value: any, ref?: any): void;
@@ -401,6 +407,9 @@ declare namespace InlineJS {
     }
     class Bootstrap {
         private static lastRegionId_;
+        private static anchors_;
         static Attach(anchors?: Array<string>): void;
+        static Reattach(): void;
+        static Attach_(): void;
     }
 }

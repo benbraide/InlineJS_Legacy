@@ -34,6 +34,11 @@ namespace InlineJS{
         subscriptionId: number;
     }
     
+    export interface TrapInfo{
+        stopped: boolean;
+        callback: ChangeCallbackType;
+    }
+
     export interface ElementScope{
         key: string;
         element: HTMLElement;
@@ -48,6 +53,7 @@ namespace InlineJS{
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
+        trapInfoList: Array<TrapInfo>;
         removed: boolean;
         preserve: boolean;
         paused: boolean;
@@ -286,6 +292,7 @@ namespace InlineJS{
                 attributeChangeCallbacks: new Array<(name: string) => void>(),
                 intersectionObservers: {},
                 falseIfCondition: null,
+                trapInfoList: new Array<TrapInfo>(),
                 removed: false,
                 preserve: false,
                 paused: false
@@ -328,8 +335,14 @@ namespace InlineJS{
                 }
                 
                 Array.from(scope.element.children).forEach(child => this.RemoveElement((child as HTMLElement), preserve));
-                
                 if (!preserve){//Delete scope
+                    scope.trapInfoList.forEach((info) => {
+                        if (!info.stopped){
+                            info.stopped = true;
+                            info.callback([]);
+                        }
+                    });
+
                     delete this.elementScopes_[scope.key];
                 }
             }
@@ -358,6 +371,11 @@ namespace InlineJS{
         public ElementIsRemoved(element: HTMLElement | string): boolean{
             let scope = this.GetElementScope(element);
             return (scope && scope.removed);
+        }
+
+        public ElementExists(element: HTMLElement | string): boolean{
+            let scope = this.GetElementScope(element);
+            return (scope && !scope.removed);
         }
 
         public AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void){
@@ -976,26 +994,42 @@ namespace InlineJS{
             return this.eventContext_.Peek();
         }
 
-        public TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, staticCallback?: () => void): Record<string, Array<number>>{
-            let region = Region.Get(this.regionId_), stopped: boolean;
+        public TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, elementContext: HTMLElement | string, staticCallback?: () => void): Record<string, Array<number>>{
+            let region = Region.Get(this.regionId_);
             if (!region){
                 return {};
             }
+ 
+            let info: TrapInfo = {
+                stopped: false,
+                callback: null
+            };
 
             try{
                 region.GetChanges().PushGetAccessStorage(null);
-                stopped = (callback(null) === false);
+                info.stopped = (callback(null) === false);
             }
             catch (err){
                this.ReportError(err, `InlineJs.Region<${this.regionId_}>.State.TrapAccess`);
             }
 
             let storage = region.GetChanges().PopGetAccessStorage(true);
-            if (stopped || !changeCallback || storage.length == 0){//Not reactive
+            if (info.stopped || !changeCallback || storage.length == 0){//Not reactive
                 if (staticCallback){
                     staticCallback();
                 }
                 return {};
+            }
+
+            if (elementContext){
+                let scope = region.GetElementScope(elementContext);
+                if (!scope && typeof elementContext !== 'string'){
+                    scope = region.AddElement(elementContext, false);
+                }
+
+                if (scope){//Add info
+                    scope.trapInfoList.push(info);
+                }
             }
 
             let ids: Record<string, Array<number>> = {};
@@ -1006,11 +1040,11 @@ namespace InlineJS{
                 }
                 
                 try{
-                    if (changeCallback === true){
-                        stopped = (callback(changes) === false);
+                    if (!info.stopped && changeCallback === true){
+                        info.stopped = (callback(changes) === false);
                     }
-                    else{
-                        stopped = (changeCallback(changes) === false);
+                    else if (!info.stopped && changeCallback !== true){
+                        info.stopped = (changeCallback(changes) === false);
                     }
                 }
                 catch (err){
@@ -1021,7 +1055,7 @@ namespace InlineJS{
                     myRegion.GetChanges().PopOrigin();
                 }
                 
-                if (stopped){//Unsubscribe all subscribed
+                if (info.stopped){//Unsubscribe all subscribed
                     for (let regionId in ids){
                         let myRegion = Region.Get(regionId);
                         if (!myRegion){
@@ -1037,6 +1071,7 @@ namespace InlineJS{
             let uniqueEntries: Record<string, string> = {};
             storage.forEach(info => uniqueEntries[info.path] = info.regionId);
 
+            info.callback = onChange;
             for (let path in uniqueEntries){
                 let targetRegion = Region.Get(uniqueEntries[path]);
                 if (targetRegion){
@@ -1071,7 +1106,7 @@ namespace InlineJS{
                 return null;
             }
 
-            if (ignoreRemoved && region.ElementIsRemoved(elementContext)){
+            if (ignoreRemoved && !region.ElementExists(elementContext)){
                 return null;
             }
             
@@ -1389,7 +1424,7 @@ namespace InlineJS{
                 let value = Evaluator.Evaluate(regionId, elementContext, expression);
                 previousValue = Region.DeepCopy(value);
                 return (skipFirst || callback(value));
-            }, onChange);
+            }, onChange, elementContext);
         }
 
         public static AddGlobalCallbacks(){
@@ -1698,7 +1733,7 @@ namespace InlineJS{
             region.GetState().TrapGetAccess(() => {
                 CoreDirectiveHandlers.Evaluate(region, element, directive.value);
                 return true;
-            }, true);
+            }, true, element);
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -1784,7 +1819,7 @@ namespace InlineJS{
                     else if (isList && entries){
                         (list = CoreDirectiveHandlers.ToString(entries).trim().replace(/\s\s+/g, ' ').split(' ')).forEach(entry => callback(entry, true));
                     }
-                }, true);
+                }, true, element);
 
                 return DirectiveHandlerReturn.Handled;
             }
@@ -1795,7 +1830,7 @@ namespace InlineJS{
 
             region.GetState().TrapGetAccess(() => {
                 callback(directive.arg.key, CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
-            }, true);
+            }, true, element);
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -1847,7 +1882,7 @@ namespace InlineJS{
                 if (!callback || callback()){
                     onChange();
                 }
-            }, true);
+            }, true, element);
             
             return DirectiveHandlerReturn.Handled;
         }
@@ -2117,13 +2152,8 @@ namespace InlineJS{
 
             let regionId = region.GetId();
             region.GetState().TrapGetAccess(() => {
-                if (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)){
-                    element.style.display = showValue;
-                }
-                else{//Hide
-                    element.style.display = 'none';
-                }
-            }, true);
+                element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
+            }, true, element);
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -2172,7 +2202,7 @@ namespace InlineJS{
                 }
 
                 ifFirstEntry = false;
-            }, true, () => { region.GetElementScope(element).preserve = false });
+            }, true, null, () => { region.GetElementScope(element).preserve = false });
 
             if (!isInserted){//Initial evaluation result is false
                 region.RemoveElement(element);
@@ -2454,7 +2484,7 @@ namespace InlineJS{
                 return true;
             };
             
-            region.GetState().TrapGetAccess(() => init(Region.Get(info.regionId)), (changes) => onChange(Region.Get(info.regionId), changes));
+            region.GetState().TrapGetAccess(() => init(Region.Get(info.regionId)), (changes) => onChange(Region.Get(info.regionId), changes), null);
             
             return DirectiveHandlerReturn.QuitAll;
         }
@@ -2926,13 +2956,19 @@ namespace InlineJS{
 
     export class Bootstrap{
         private static lastRegionId_: number = null;
+        private static anchors_: Array<string> = null;
         
         public static Attach(anchors?: Array<string>){
-            if (!anchors){
-                anchors = [`data-${Region.directivePrfix}-data`, `${Region.directivePrfix}-data`];
-            }
-            
-            anchors.forEach((anchor) => {//Traverse anchors
+            Bootstrap.anchors_ = anchors;
+            Bootstrap.Attach_();
+        }
+
+        public static Reattach(){
+            Bootstrap.Attach_();
+        }
+
+        public static Attach_(){
+            (Bootstrap.anchors_ || [`data-${Region.directivePrfix}-data`, `${Region.directivePrfix}-data`]).forEach((anchor) => {//Traverse anchors
                 document.querySelectorAll(`[${anchor}]`).forEach((element) => {//Traverse elements
                     if (!element.hasAttribute(anchor)){//Probably contained inside another region
                         return;

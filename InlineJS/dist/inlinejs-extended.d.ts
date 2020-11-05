@@ -29,6 +29,7 @@ declare namespace InlineJS {
         targetExit: string;
         pages: Record<string, RouterPageInfo>;
         url: string;
+        mount: HTMLElement;
     }
     interface RouterPageInfo {
         path: string;
