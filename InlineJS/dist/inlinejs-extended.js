@@ -653,7 +653,9 @@ var InlineJS;
                 }
                 isTransitioning = false;
                 if (!isShown) {
-                    element.style.display = 'none';
+                    if (showValue) {
+                        element.style.display = 'none';
+                    }
                     element.dispatchEvent(new CustomEvent('animate.hide'));
                 }
                 else {
@@ -664,7 +666,9 @@ var InlineJS;
                 isShown = show;
                 isTransitioning = true;
                 if (show) {
-                    element.style.display = showValue;
+                    if (showValue) {
+                        element.style.display = showValue;
+                    }
                     element.dispatchEvent(new CustomEvent('animate.showing'));
                 }
                 else {
@@ -673,12 +677,14 @@ var InlineJS;
                 if (showOnly && !isShown) {
                     return;
                 }
-                var thisCheckpoint = ++checkpoint;
-                setTimeout(function () {
-                    if (thisCheckpoint == checkpoint) {
-                        endTransition();
-                    }
-                }, (duration || 300));
+                if (showValue) {
+                    var thisCheckpoint_1 = ++checkpoint;
+                    setTimeout(function () {
+                        if (thisCheckpoint_1 == checkpoint) {
+                            endTransition();
+                        }
+                    }, (duration || 300));
+                }
             };
             var setTransitions = function (list) {
                 var reduced = list.reduce(function (previous, current) { return (previous ? previous + ", " + current + " " + (duration || 300) + "ms ease" : current + " " + (duration || 300) + "ms ease"); }, '');
@@ -711,6 +717,7 @@ var InlineJS;
                     element.style.opacity = (show ? '1' : '0');
                 };
                 if (!target || target === 'all') {
+                    showValue = null;
                     element.style.overflow = 'hidden';
                     setTransitions(['height', 'width', 'padding', 'border', 'opacity']);
                     update = function (show) {
@@ -723,6 +730,7 @@ var InlineJS;
                     };
                 }
                 else if (target === 'height' || target === 'width' || target === 'size') {
+                    showValue = null;
                     element.style.overflow = 'hidden';
                     setTransitions(['height', 'width', 'padding', 'border']);
                     update = function (show) {
@@ -771,6 +779,112 @@ var InlineJS;
             region.GetState().TrapGetAccess(function () {
                 update(!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value));
             }, true, element);
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.Typewriter = function (region, element, directive) {
+            var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (!data) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var info = {
+                list: new Array(),
+                delay: 100,
+                interval: 250,
+                iterations: -1,
+                showDelete: false,
+                useRandom: false,
+                showCursor: false
+            };
+            if (typeof data === 'string') {
+                info.list.push(data);
+            }
+            else if (Array.isArray(data)) {
+                data.forEach(function (item) { return info.list.push(item); });
+            }
+            else {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var nextDuration = '', iterationsIsNext = false;
+            directive.arg.options.forEach(function (option) {
+                if (nextDuration) {
+                    var duration_1 = InlineJS.CoreDirectiveHandlers.ExtractDuration(option, null);
+                    if (duration_1 !== null) {
+                        info[nextDuration] = duration_1;
+                        nextDuration = '';
+                        return;
+                    }
+                    nextDuration = '';
+                }
+                else if (iterationsIsNext) {
+                    iterationsIsNext = false;
+                    if (option === 'inf' || option === 'infinite') {
+                        info.iterations = -1;
+                    }
+                    else {
+                        info.iterations = (parseInt(option) || -1);
+                    }
+                    return;
+                }
+                if (option === 'delay' || option === 'interval') {
+                    nextDuration = option;
+                    info[nextDuration] = (info[nextDuration] || 250);
+                }
+                else if (option === 'iterations') {
+                    iterationsIsNext = true;
+                }
+                else if (option === 'delete') {
+                    info.showDelete = true;
+                }
+                else if (option === 'random') {
+                    info.useRandom = true;
+                }
+                else if (option === 'cursor') {
+                    info.showCursor = true;
+                }
+            });
+            var lineIndex = -1, index = 0, line, isDeleting = false, span = document.createElement('span'), duration, startTimestamp = null;
+            var pass = function (timestamp) {
+                if (lineIndex == -1 || line.length <= index) {
+                    index = 0;
+                    if (isDeleting || lineIndex == -1 || !info.showDelete) {
+                        lineIndex = (info.useRandom ? Math.floor(Math.random() * info.list.length) : ++lineIndex);
+                        if (info.list.length <= lineIndex) { //Move to front of list
+                            lineIndex = 0;
+                        }
+                        line = info.list[lineIndex];
+                        isDeleting = false;
+                    }
+                    else {
+                        isDeleting = true;
+                    }
+                    duration = info.interval;
+                }
+                if (startTimestamp === null) {
+                    startTimestamp = timestamp;
+                }
+                if ((timestamp - startTimestamp) < duration) { //Duration not met
+                    requestAnimationFrame(pass);
+                    return;
+                }
+                startTimestamp = timestamp;
+                if (isDeleting) {
+                    ++index;
+                    span.innerText = line.substr(0, (line.length - index));
+                    duration = info.delay;
+                }
+                else { //Append
+                    ++index;
+                    span.innerText = line.substring(0, index);
+                    duration = info.delay;
+                }
+                requestAnimationFrame(pass);
+            };
+            span.classList.add('typewriter-text');
+            if (info.showCursor) {
+                span.style.borderRight = '1px solid #333333';
+            }
+            element.appendChild(span);
+            requestAnimationFrame(pass);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Router = function (region, element, directive) {
@@ -851,8 +965,8 @@ var InlineJS;
                         }
                     }
                     if ("" + prefix + info.pages[page].path + query_1 === info.url) {
-                        element.dispatchEvent(new CustomEvent('router.reload'));
-                        element.dispatchEvent(new CustomEvent('router.load'));
+                        window.dispatchEvent(new CustomEvent('router.reload'));
+                        window.dispatchEvent(new CustomEvent('router.load'));
                         return;
                     }
                     info.currentPage = page;
@@ -873,7 +987,7 @@ var InlineJS;
                     load(page, params, query_1);
                 }
                 else {
-                    element.dispatchEvent(new CustomEvent('router.404', { detail: page }));
+                    window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
                 }
             };
             var back = function () {
@@ -909,14 +1023,14 @@ var InlineJS;
                     info.url = "" + prefix + info.pages[page].path + query;
                     alert('url');
                 }
-                element.dispatchEvent(new CustomEvent('router.load'));
+                window.dispatchEvent(new CustomEvent('router.load'));
             };
             var unload = function (component, exit) {
                 try {
                     (InlineJS.Region.Find(component, true)[exit])();
                 }
                 catch (err) { }
-                element.dispatchEvent(new CustomEvent('router.unload'));
+                window.dispatchEvent(new CustomEvent('router.unload'));
             };
             var parseQuery = function (query) {
                 var params = {};
@@ -966,7 +1080,7 @@ var InlineJS;
                         innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
                         InlineJS.Bootstrap.Reattach();
                     });
-                }, true, element);
+                }, true, innerElement);
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {
@@ -1041,6 +1155,187 @@ var InlineJS;
             InlineJS.Region.AddPostProcessCallback(function () {
                 goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1) : pathname), parseQuery(query));
             });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.Screen = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal('$screen')) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var computeBreakpoint = function (width) {
+                if (width < 576) { //Extra small
+                    return 'xs';
+                }
+                if (width < 768) { //Small
+                    return 'sm';
+                }
+                if (width < 992) { //Medium
+                    return 'md';
+                }
+                if (width < 1200) { //Large
+                    return 'lg';
+                }
+                if (width < 1400) { //Extra large
+                    return 'xl';
+                }
+                return 'xxl'; //Extra extra large
+            };
+            var size = {
+                width: screen.width,
+                height: screen.height
+            }, breakpoint = computeBreakpoint(screen.width), regionId = region.GetId();
+            var alert = function (prop) {
+                var myRegion = InlineJS.Region.Get(regionId);
+                myRegion.GetChanges().Add({
+                    type: 'set',
+                    path: scope.path + "." + prop,
+                    prop: prop,
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
+            };
+            window.addEventListener('resize', function () {
+                size.width = screen.width;
+                size.height = screen.height;
+                alert('size');
+                var thisBreakpoint = computeBreakpoint(screen.width);
+                if (thisBreakpoint !== breakpoint) {
+                    breakpoint = thisBreakpoint;
+                    window.dispatchEvent(new CustomEvent('screen.breakpoint'));
+                    alert('breakpoint');
+                }
+            });
+            var scope = ExtendedDirectiveHandlers.AddScope('screen', region.AddElement(element, true), []);
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'size') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return size;
+                }
+                if (prop === 'breakpoint') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return breakpoint;
+                }
+            }, ['size', 'breakpoint']);
+            InlineJS.Region.AddGlobal('$screen', function () { return proxy; });
+        };
+        ExtendedDirectiveHandlers.DB = function (region, element, directive) {
+            var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (typeof options === 'string') {
+                options = {
+                    name: options
+                };
+            }
+            if (!InlineJS.Region.IsObject(options) || !options.name) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var opened = false, openRequest = null, handle = null, queuedRequests = new Array(), regionId = region.GetId();
+            var open = function (myRegion) {
+                if (options.drop) {
+                    window.indexedDB.deleteDatabase(options.name);
+                }
+                openRequest = window.indexedDB.open(options.name);
+                openRequest.addEventListener('error', function (e) {
+                    myRegion.GetState().ReportError("Failed to open database '" + options.name + "'", e);
+                    opened = true;
+                });
+                openRequest.addEventListener('success', function () {
+                    handle = openRequest.result;
+                    opened = true;
+                    queuedRequests.forEach(function (callback) {
+                        try {
+                            callback();
+                        }
+                        catch (err) { }
+                    });
+                    queuedRequests = new Array();
+                });
+                openRequest.addEventListener('upgradeneeded', function () {
+                    var db = openRequest.result, store = db.createObjectStore(options.name);
+                    db.addEventListener('error', function (e) {
+                        myRegion.GetState().ReportError("Failed to open database '" + options.name + "'", e);
+                        opened = true;
+                    });
+                    if (InlineJS.Region.IsObject(options.fields)) {
+                        Object.keys(options.fields).forEach(function (key) {
+                            store.createIndex(key, key, {
+                                unique: !!options.fields[key]
+                            });
+                        });
+                    }
+                });
+            };
+            var close = function () {
+                if (handle) {
+                    handle.close();
+                }
+                else if (!opened) { //Queue
+                    queuedRequests.push(close);
+                }
+            };
+            var read = function (key, callback) {
+                if (!handle) {
+                    if (opened) {
+                        callback(null);
+                    }
+                    else { //Queue
+                        queuedRequests.push(function () { read(key, callback); });
+                    }
+                    return;
+                }
+                var transaction = handle.transaction(options.name, 'readonly');
+                var store = transaction.objectStore(options.name);
+                var request = store.get(key);
+                request.addEventListener('success', function () {
+                    callback(request.result);
+                });
+                request.addEventListener('error', function (e) {
+                    callback(null);
+                    InlineJS.Region.Get(regionId).GetState().ReportError("Failed to read from database '" + options.name + "'", e);
+                });
+            };
+            var write = function (value, key, callback) {
+                if (!handle) {
+                    if (!opened) {
+                        queuedRequests.push(function () { write(value, key, callback); });
+                    }
+                    else if (callback) {
+                        callback(false);
+                    }
+                    return;
+                }
+                var transaction = handle.transaction(options.name, 'readwrite');
+                var store = transaction.objectStore(options.name);
+                var request = store.put(value, key);
+                request.addEventListener('success', function () {
+                    if (callback) {
+                        callback(true);
+                    }
+                });
+                request.addEventListener('error', function (e) {
+                    if (callback) {
+                        callback(false);
+                    }
+                    InlineJS.Region.Get(regionId).GetState().ReportError("Failed to write to database '" + options.name + "'", e);
+                });
+            };
+            var elementScope = region.AddElement(element, true);
+            var scope = ExtendedDirectiveHandlers.AddScope('db', elementScope, []);
+            elementScope.locals['$db'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop in options) {
+                    return options[prop];
+                }
+                if (prop === 'close') {
+                    return close;
+                }
+                if (prop === 'read') {
+                    return read;
+                }
+                if (prop === 'write') {
+                    return write;
+                }
+                if (prop in scope.callbacks) {
+                    return function (callback) { return scope.callbacks[prop].push(callback); };
+                }
+            }, __spreadArrays(Object.keys(options), Object.keys(scope.callbacks)));
+            open(region);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
@@ -1193,7 +1488,10 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
             InlineJS.DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             InlineJS.DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
+            InlineJS.DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
             InlineJS.DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
+            InlineJS.DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
+            InlineJS.DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
                     return function (target) {
@@ -1207,6 +1505,7 @@ var InlineJS;
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
+            buildGlobal('db');
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;
         ExtendedDirectiveHandlers.scopes_ = {};

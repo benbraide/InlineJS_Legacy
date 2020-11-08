@@ -21,7 +21,7 @@ describe('x-data directive', () => {
 
         expect(document.querySelector('span').textContent).toEqual('bar');
 
-        InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo'] = 'baz';
+        InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo'] = 'baz';
 
         await waitFor(() => { expect(document.querySelector('span').textContent).toEqual('baz') });
     });

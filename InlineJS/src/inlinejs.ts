@@ -1312,7 +1312,7 @@ namespace InlineJS{
                         }
 
                         let contextElement = region.GetState().GetElementContext();
-                        let local = region.GetLocal(contextElement, stringProp);
+                        let local = region.GetLocal((contextElement || region.GetRootElement()), stringProp);
                         
                         if (!(local instanceof NoResult)){//Local found
                             return ((local instanceof Value) ? local.Get() : local);
@@ -1709,6 +1709,10 @@ namespace InlineJS{
                 else if (key !== '$component'){
                     target[key] = data[key];
                 }
+            }
+
+            if ('$init' in target && typeof target.$init === 'function'){
+                (proxy['$init'] as () => void)();
             }
 
             return DirectiveHandlerReturn.Handled;
@@ -2956,6 +2960,7 @@ namespace InlineJS{
 
     export class Bootstrap{
         private static lastRegionId_: number = null;
+        private static lastRegionSubId_: number = null;
         private static anchors_: Array<string> = null;
         
         public static Attach(anchors?: Array<string>){
@@ -2974,15 +2979,19 @@ namespace InlineJS{
                         return;
                     }
 
-                    let regionId: number;
-                    if (Bootstrap.lastRegionId_ === null){
-                        regionId = (Bootstrap.lastRegionId_ = 0);
+                    let regionId = (Bootstrap.lastRegionId_ = (Bootstrap.lastRegionId_ || 0)), regionSubId: number;
+                    if (Bootstrap.lastRegionSubId_ === null){
+                        regionSubId = (Bootstrap.lastRegionSubId_ = 0);
+                    }
+                    else if (Bootstrap.lastRegionSubId_ == (Number.MAX_SAFE_INTEGER || 9007199254740991)){//Roll over
+                        regionId = ++Bootstrap.lastRegionId_;
+                        regionSubId = 0;
                     }
                     else{
-                        regionId = ++Bootstrap.lastRegionId_;
+                        regionSubId = ++Bootstrap.lastRegionSubId_;
                     }
 
-                    let stringRegionId = `rgn_${regionId}`;
+                    let stringRegionId = `rgn__${regionId}_${regionSubId}`;
                     let region = new Region(stringRegionId, (element as HTMLElement), new RootProxy(stringRegionId, {}));
 
                     let observer = new MutationObserver((mutations) => {

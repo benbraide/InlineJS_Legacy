@@ -39,6 +39,15 @@ declare namespace InlineJS {
         exit: string;
         disabled: boolean;
     }
+    interface TypewriterInfo {
+        list: Array<string>;
+        delay: number;
+        interval: number;
+        iterations: number;
+        showDelete: boolean;
+        useRandom: boolean;
+        showCursor: boolean;
+    }
     class ExtendedDirectiveHandlers {
         private static scopeId_;
         private static scopes_;
@@ -53,7 +62,10 @@ declare namespace InlineJS {
         static LazyLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Intersection(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Animate(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Typewriter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Router(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Screen(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static DB(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
         static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean): boolean;
         static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void): void;

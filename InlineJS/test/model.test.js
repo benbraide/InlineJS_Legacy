@@ -137,7 +137,7 @@ describe('x-model directive', () => {
     
         fireEvent.input(document.querySelector('input'), { target: { value: '123' } });
         
-        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(123) });
+        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(123) });
     });
 
     it('should cast to null if empty, original value if casting fails, numeric value if casting passes', async () => {
@@ -152,27 +152,27 @@ describe('x-model directive', () => {
     
         fireEvent.input(document.querySelectorAll('input')[0], { target: { value: '' } });
     
-        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(null) });
+        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(null) });
     
         fireEvent.input(document.querySelectorAll('input')[0], { target: { value: '-' } });
     
-        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(null) });
+        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(null) });
         
         fireEvent.input(document.querySelectorAll('input')[0], { target: { value: '-123' } });
     
-        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(-123) });
+        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['foo']).toEqual(-123) });
     
         fireEvent.input(document.querySelectorAll('input')[1], { target: { value: '' } });
     
-        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['bar']).toEqual(null) });
+        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['bar']).toEqual(null) });
         
         fireEvent.input(document.querySelectorAll('input')[1], { target: { value: '-' } });
     
-        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['bar']).toEqual('-') });
+        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['bar']).toEqual('-') });
     
         fireEvent.input(document.querySelectorAll('input')[1], { target: { value: '-123' } });
     
-        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['bar']).toEqual(-123) });
+        await waitFor(() => { expect(InlineJS.RegionMap.entries[`rgn__0_${Object.keys(InlineJS.RegionMap.entries).length - 1}`].rootProxy_.nativeProxy_['bar']).toEqual(-123) });
     });
 
     it('should trim value if .trim modifier is present', async () => {

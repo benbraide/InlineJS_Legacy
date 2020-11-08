@@ -1050,7 +1050,7 @@ export var InlineJS;
                             return new NoResult();
                         }
                         var contextElement = region.GetState().GetElementContext();
-                        var local = region.GetLocal(contextElement, stringProp);
+                        var local = region.GetLocal((contextElement || region.GetRootElement()), stringProp);
                         if (!(local instanceof NoResult)) { //Local found
                             return ((local instanceof Value) ? local.Get() : local);
                         }
@@ -1358,6 +1358,9 @@ export var InlineJS;
                 else if (key !== '$component') {
                     target[key] = data[key];
                 }
+            }
+            if ('$init' in target && typeof target.$init === 'function') {
+                proxy['$init']();
             }
             return DirectiveHandlerReturn.Handled;
         };
@@ -2444,14 +2447,18 @@ export var InlineJS;
                     if (!element.hasAttribute(anchor)) { //Probably contained inside another region
                         return;
                     }
-                    var regionId;
-                    if (Bootstrap.lastRegionId_ === null) {
-                        regionId = (Bootstrap.lastRegionId_ = 0);
+                    var regionId = (Bootstrap.lastRegionId_ = (Bootstrap.lastRegionId_ || 0)), regionSubId;
+                    if (Bootstrap.lastRegionSubId_ === null) {
+                        regionSubId = (Bootstrap.lastRegionSubId_ = 0);
+                    }
+                    else if (Bootstrap.lastRegionSubId_ == (Number.MAX_SAFE_INTEGER || 9007199254740991)) { //Roll over
+                        regionId = ++Bootstrap.lastRegionId_;
+                        regionSubId = 0;
                     }
                     else {
-                        regionId = ++Bootstrap.lastRegionId_;
+                        regionSubId = ++Bootstrap.lastRegionSubId_;
                     }
-                    var stringRegionId = "rgn_" + regionId;
+                    var stringRegionId = "rgn__" + regionId + "_" + regionSubId;
                     var region = new Region(stringRegionId, element, new RootProxy(stringRegionId, {}));
                     var observer = new MutationObserver(function (mutations) {
                         mutations.forEach(function (mutation) {
@@ -2497,6 +2504,7 @@ export var InlineJS;
             Region.ExecutePostProcessCallbacks();
         };
         Bootstrap.lastRegionId_ = null;
+        Bootstrap.lastRegionSubId_ = null;
         Bootstrap.anchors_ = null;
         return Bootstrap;
     }());

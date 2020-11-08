@@ -44,6 +44,16 @@ namespace InlineJS{
         exit: string;
         disabled: boolean;
     }
+
+    export interface TypewriterInfo{
+        list: Array<string>;
+        delay: number;
+        interval: number;
+        iterations: number;
+        showDelete: boolean;
+        useRandom: boolean;
+        showCursor: boolean;
+    }
     
     export class ExtendedDirectiveHandlers{
         private static scopeId_ = 0;
@@ -795,7 +805,9 @@ namespace InlineJS{
                 
                 isTransitioning = false;
                 if (!isShown){
-                    element.style.display = 'none';
+                    if (showValue){
+                        element.style.display = 'none';
+                    }
                     element.dispatchEvent(new CustomEvent('animate.hide'));
                 }
                 else{
@@ -808,7 +820,9 @@ namespace InlineJS{
                 isTransitioning = true;
                 
                 if (show){
-                    element.style.display = showValue;
+                    if (showValue){
+                        element.style.display = showValue;
+                    }
                     element.dispatchEvent(new CustomEvent('animate.showing'));
                 }
                 else{
@@ -819,12 +833,14 @@ namespace InlineJS{
                     return;
                 }
 
-                let thisCheckpoint = ++checkpoint;
-                setTimeout(() => {
-                    if (thisCheckpoint == checkpoint){
-                        endTransition();
-                    }
-                }, (duration || 300));
+                if (showValue){
+                    let thisCheckpoint = ++checkpoint;
+                    setTimeout(() => {
+                        if (thisCheckpoint == checkpoint){
+                            endTransition();
+                        }
+                    }, (duration || 300));
+                }
             };
             
             let setTransitions = (list: Array<string>) => {
@@ -864,6 +880,7 @@ namespace InlineJS{
                 };
                 
                 if (!target || target === 'all'){
+                    showValue = null;
                     element.style.overflow = 'hidden';
                     setTransitions(['height', 'width', 'padding', 'border', 'opacity']);
                     update = (show: boolean) => {
@@ -876,6 +893,7 @@ namespace InlineJS{
                     };
                 }
                 else if (target === 'height' || target === 'width' || target === 'size'){
+                    showValue = null;
                     element.style.overflow = 'hidden';
                     setTransitions(['height', 'width', 'padding', 'border']);
                     update = (show: boolean) => {
@@ -928,6 +946,129 @@ namespace InlineJS{
                 update(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
             }, true, element);
 
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Typewriter(region: Region, element: HTMLElement, directive: Directive){
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (!data){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let info: TypewriterInfo = {
+                list: new Array<string>(),
+                delay: 100,
+                interval: 250,
+                iterations: -1,
+                showDelete: false,
+                useRandom: false,
+                showCursor: false
+            };
+            
+            if (typeof data === 'string'){
+                info.list.push(data);
+            }
+            else if (Array.isArray(data)){
+                data.forEach(item => info.list.push(item));
+            }
+            else{
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let nextDuration = '', iterationsIsNext = false;
+            directive.arg.options.forEach((option) => {//Parse options
+                if (nextDuration){
+                    let duration = CoreDirectiveHandlers.ExtractDuration(option, null);
+                    if (duration !== null){
+                        info[nextDuration] = duration;
+                        nextDuration = '';
+                        return;
+                    }
+
+                    nextDuration = '';
+                }
+                else if (iterationsIsNext){
+                    iterationsIsNext = false;
+                    if (option === 'inf' || option === 'infinite'){
+                        info.iterations = -1;
+                    }
+                    else{
+                        info.iterations = (parseInt(option) || -1);
+                    }
+
+                    return;
+                }
+                
+                if (option === 'delay' || option === 'interval'){
+                    nextDuration = option;
+                    info[nextDuration] = (info[nextDuration] || 250);
+                }
+                else if (option === 'iterations'){
+                    iterationsIsNext = true;
+                }
+                else if (option === 'delete'){
+                    info.showDelete = true;
+                }
+                else if (option === 'random'){
+                    info.useRandom = true;
+                }
+                else if (option === 'cursor'){
+                    info.showCursor = true;
+                }
+            });
+            
+            let lineIndex = -1, index = 0, line: string, isDeleting = false, span = document.createElement('span'), duration: number, startTimestamp: DOMHighResTimeStamp = null;
+            let pass = (timestamp: DOMHighResTimeStamp) => {
+                if (lineIndex == -1 || line.length <= index){
+                    index = 0;
+                    if (isDeleting || lineIndex == -1 || !info.showDelete){
+                        lineIndex = (info.useRandom ? Math.floor(Math.random() * info.list.length) : ++lineIndex);
+                        if (info.list.length <= lineIndex){//Move to front of list
+                            lineIndex = 0;
+                        }
+
+                        line = info.list[lineIndex];
+                        isDeleting = false;
+                    }
+                    else{
+                        isDeleting = true;
+                    }
+
+                    duration = info.interval;
+                }
+                
+                if (startTimestamp === null){
+                    startTimestamp = timestamp;
+                }
+
+                if ((timestamp - startTimestamp) < duration){//Duration not met
+                    requestAnimationFrame(pass);
+                    return;
+                }
+                
+                startTimestamp = timestamp;
+                if (isDeleting){
+                    ++index;
+                    span.innerText = line.substr(0, (line.length - index));
+                    duration = info.delay;
+                }
+                else{//Append
+                    ++index;
+                    span.innerText = line.substring(0, index);
+                    duration = info.delay;
+                }
+
+                requestAnimationFrame(pass);
+            };
+
+            span.classList.add('typewriter-text');
+            if (info.showCursor){
+                span.style.borderRight = '1px solid #333333';
+            }
+            
+            element.appendChild(span);
+            requestAnimationFrame(pass);
+            
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -1013,8 +1154,8 @@ namespace InlineJS{
                     }
                     
                     if (`${prefix}${info.pages[page].path}${query}` === info.url){
-                        element.dispatchEvent(new CustomEvent('router.reload'));
-                        element.dispatchEvent(new CustomEvent('router.load'));
+                        window.dispatchEvent(new CustomEvent('router.reload'));
+                        window.dispatchEvent(new CustomEvent('router.load'));
                         return;
                     }
                     
@@ -1037,7 +1178,7 @@ namespace InlineJS{
                     load(page, params, query);
                 }
                 else{
-                    element.dispatchEvent(new CustomEvent('router.404', { detail: page }));
+                    window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
                 }
             };
             
@@ -1081,7 +1222,7 @@ namespace InlineJS{
                     alert('url');
                 }
 
-                element.dispatchEvent(new CustomEvent('router.load'));
+                window.dispatchEvent(new CustomEvent('router.load'));
             };
 
             let unload = (component: string, exit: string) => {
@@ -1090,7 +1231,7 @@ namespace InlineJS{
                 }
                 catch (err){}
 
-                element.dispatchEvent(new CustomEvent('router.unload'));
+                window.dispatchEvent(new CustomEvent('router.unload'));
             };
 
             let parseQuery = (query: string) => {
@@ -1151,7 +1292,7 @@ namespace InlineJS{
                         innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
                         Bootstrap.Reattach();
                     });
-                }, true, element);
+                }, true, innerElement);
                 
                 return DirectiveHandlerReturn.Handled;
             });
@@ -1242,6 +1383,229 @@ namespace InlineJS{
             Region.AddPostProcessCallback(() => {
                 goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1): pathname), parseQuery(query));
             });
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Screen(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$screen')){
+                return DirectiveHandlerReturn.Nil;
+            }
+            
+            let computeBreakpoint = (width: number) => {
+                if (width < 576){//Extra small
+                    return 'xs';
+                }
+
+                if (width < 768){//Small
+                    return 'sm';
+                }
+
+                if (width < 992){//Medium
+                    return 'md';
+                }
+
+                if (width < 1200){//Large
+                    return 'lg';
+                }
+
+                if (width < 1400){//Extra large
+                    return 'xl';
+                }
+
+                return 'xxl';//Extra extra large
+            };
+            
+            let size = {
+                width: screen.width,
+                height: screen.height
+            }, breakpoint = computeBreakpoint(screen.width), regionId = region.GetId();
+
+            let alert = (prop: string) => {
+                let myRegion = Region.Get(regionId);
+                myRegion.GetChanges().Add({
+                    type: 'set',
+                    path: `${scope.path}.${prop}`,
+                    prop: prop,
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
+            };
+
+            window.addEventListener('resize', () => {
+                size.width = screen.width;
+                size.height = screen.height;
+                alert('size');
+
+                let thisBreakpoint = computeBreakpoint(screen.width);
+                if (thisBreakpoint !== breakpoint){
+                    breakpoint = thisBreakpoint;
+                    window.dispatchEvent(new CustomEvent('screen.breakpoint'));
+                    alert('breakpoint');
+                }
+            });
+
+            let scope = ExtendedDirectiveHandlers.AddScope('screen', region.AddElement(element, true), []);
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'size'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return size;
+                }
+
+                if (prop === 'breakpoint'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return breakpoint;
+                }
+            }, ['size', 'breakpoint']);
+            
+            Region.AddGlobal('$screen', () => proxy);
+        }
+
+        public static DB(region: Region, element: HTMLElement, directive: Directive){
+            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (typeof options === 'string'){
+                options = {
+                    name: options
+                };
+            }
+
+            if (!Region.IsObject(options) || !options.name){
+                return DirectiveHandlerReturn.Nil;
+            }
+            
+            let opened = false, openRequest: IDBOpenDBRequest = null, handle: IDBDatabase = null, queuedRequests = new Array<() => void>(), regionId = region.GetId();
+            let open = (myRegion: Region) => {
+                if (options.drop){
+                    window.indexedDB.deleteDatabase(options.name);
+                }
+                
+                openRequest = window.indexedDB.open(options.name);
+                openRequest.addEventListener('error', (e) => {
+                    myRegion.GetState().ReportError(`Failed to open database '${options.name}'`, e);
+                    opened = true;
+                });
+
+                openRequest.addEventListener('success', () => {
+                    handle = openRequest.result;
+                    opened = true;
+
+                    queuedRequests.forEach((callback) => {
+                        try{
+                            callback();
+                        }
+                        catch (err){}
+                    });
+
+                    queuedRequests = new Array<() => void>();
+                });
+
+                openRequest.addEventListener('upgradeneeded', () => {
+                    let db = openRequest.result, store = db.createObjectStore(options.name);
+                    db.addEventListener('error', (e) => {
+                        myRegion.GetState().ReportError(`Failed to open database '${options.name}'`, e);
+                        opened = true;
+                    });
+
+                    if (Region.IsObject(options.fields)){
+                        Object.keys(options.fields).forEach((key) => {
+                            store.createIndex(key, key, {
+                                unique: !! options.fields[key]
+                            });
+                        });
+                    }
+                });
+            };
+
+            let close = () => {
+                if (handle){
+                    handle.close();
+                }
+                else if (!opened){//Queue
+                    queuedRequests.push(close);
+                }
+            };
+
+            let read = (key: string, callback: (value: any) => void) => {
+                if (!handle){
+                    if (opened){
+                        callback(null);
+                    }
+                    else{//Queue
+                        queuedRequests.push(() => { read(key, callback) });
+                    }
+                    
+                    return;
+                }
+                
+                let transaction = handle.transaction(options.name, 'readonly');
+                let store = transaction.objectStore(options.name);
+
+                let request = store.get(key);
+                request.addEventListener('success', () => {
+                    callback(request.result);
+                });
+
+                request.addEventListener('error', (e) => {
+                    callback(null);
+                    Region.Get(regionId).GetState().ReportError(`Failed to read from database '${options.name}'`, e);
+                });
+            };
+
+            let write = (value: any, key?: string, callback?: (value: boolean) => void) => {
+                if (!handle){
+                    if (!opened){
+                        queuedRequests.push(() => { write(value, key, callback) });
+                    }
+                    else if (callback){
+                        callback(false);
+                    }
+                    
+                    return;
+                }
+
+                let transaction = handle.transaction(options.name, 'readwrite');
+                let store = transaction.objectStore(options.name);
+
+                let request = store.put(value, key);
+                request.addEventListener('success', () => {
+                    if (callback){
+                        callback(true);
+                    }
+                });
+
+                request.addEventListener('error', (e) => {
+                    if (callback){
+                        callback(false);
+                    }
+                    Region.Get(regionId).GetState().ReportError(`Failed to write to database '${options.name}'`, e);
+                });
+            };
+
+            let elementScope = region.AddElement(element, true);
+            let scope = ExtendedDirectiveHandlers.AddScope('db', elementScope, []);
+
+            elementScope.locals['$db'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop in options){
+                    return options[prop];
+                }
+
+                if (prop === 'close'){
+                    return close;
+                }
+
+                if (prop === 'read'){
+                    return read;
+                }
+
+                if (prop === 'write'){
+                    return write;
+                }
+
+                if (prop in scope.callbacks){
+                    return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                }
+            }, [...Object.keys(options), ...Object.keys(scope.callbacks)]);
+
+            open(region);
             
             return DirectiveHandlerReturn.Handled;
         }
@@ -1418,7 +1782,11 @@ namespace InlineJS{
             
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
+            DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
+
             DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
+            DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
+            DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {
@@ -1434,6 +1802,7 @@ namespace InlineJS{
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
+            buildGlobal('db');
         }
     }
 

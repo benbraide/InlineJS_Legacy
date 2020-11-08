@@ -407,6 +407,7 @@ declare namespace InlineJS {
     }
     class Bootstrap {
         private static lastRegionId_;
+        private static lastRegionSubId_;
         private static anchors_;
         static Attach(anchors?: Array<string>): void;
         static Reattach(): void;
