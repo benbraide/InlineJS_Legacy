@@ -1219,7 +1219,7 @@ namespace InlineJS{
             
             let value = CreateChildProxy(region.FindProxy(path), prop, actualValue);
             if (value){
-                return value.GetNativeProxy();
+                return ((value instanceof ChildProxy) ? value.GetNativeProxy() : value);
             }
         }
 
@@ -1490,6 +1490,10 @@ namespace InlineJS{
                 }
 
                 return value;
+            });
+
+            Region.AddGlobal('$raw', () => (value: any) => {
+                return ((Region.IsObject(value) && '__InlineJS_Target__' in value) ? value.__InlineJS_Target__ : value);
             });
 
             Region.AddGlobal('$__InlineJS_CallTemp__', (regionId: string) => (key: string) => {
@@ -2640,17 +2644,8 @@ namespace InlineJS{
                 return CoreDirectiveHandlers.ToString(value['__InlineJS_Target__']);
             }
 
-            if (Region.IsObject(value)){
-                let combined = '';
-                for (let key in value){
-                    if (combined.length == 0){
-                        combined = `${key}:${CoreDirectiveHandlers.ToString(value[key])}`;
-                    }
-                    else{
-                        combined += `,${key}:${CoreDirectiveHandlers.ToString(value[key])}`;
-                    }
-                }
-                return `{${combined}}`;
+            if (Region.IsObject(value) || Array.isArray(value)){
+                return JSON.stringify(value);
             }
 
             return value.toString();

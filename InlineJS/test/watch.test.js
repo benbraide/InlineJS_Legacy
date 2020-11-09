@@ -72,56 +72,56 @@ describe('$watch global magic property', () => {
         InlineJS.Region.enableOptimizedBinds = false;
         InlineJS.Bootstrap.Attach();
     
-        expect(document.querySelector('h1').textContent).toEqual('one');
+        expect(document.querySelector('h1').textContent).toEqual('["one"]');
         expect(document.querySelector('h2').textContent).toEqual('lob');
         
         userEvent.click(document.querySelector('#push'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('one,two')
-            expect(document.querySelector('h2').textContent).toEqual('one,two');
+            expect(document.querySelector('h1').textContent).toEqual('["one","two"]')
+            expect(document.querySelector('h2').textContent).toEqual('["one","two"]');
         });
     
         userEvent.click(document.querySelector('#pop'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('one')
-            expect(document.querySelector('h2').textContent).toEqual('one');
+            expect(document.querySelector('h1').textContent).toEqual('["one"]')
+            expect(document.querySelector('h2').textContent).toEqual('["one"]');
         });
     
         userEvent.click(document.querySelector('#unshift'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('zero,one')
-            expect(document.querySelector('h2').textContent).toEqual('zero,one');
+            expect(document.querySelector('h1').textContent).toEqual('["zero","one"]')
+            expect(document.querySelector('h2').textContent).toEqual('["zero","one"]');
         });
     
         userEvent.click(document.querySelector('#shift'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('one')
-            expect(document.querySelector('h2').textContent).toEqual('one');
+            expect(document.querySelector('h1').textContent).toEqual('["one"]')
+            expect(document.querySelector('h2').textContent).toEqual('["one"]');
         });
     
         userEvent.click(document.querySelector('#assign'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('2,1,3');
-            expect(document.querySelector('h2').textContent).toEqual('2,1,3');
+            expect(document.querySelector('h1').textContent).toEqual('[2,1,3]');
+            expect(document.querySelector('h2').textContent).toEqual('[2,1,3]');
         });
     
         userEvent.click(document.querySelector('#sort'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('1,2,3');
-            expect(document.querySelector('h2').textContent).toEqual('1,2,3');
+            expect(document.querySelector('h1').textContent).toEqual('[1,2,3]');
+            expect(document.querySelector('h2').textContent).toEqual('[1,2,3]');
         });
     
         userEvent.click(document.querySelector('#reverse'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('3,2,1');
-            expect(document.querySelector('h2').textContent).toEqual('3,2,1');
+            expect(document.querySelector('h1').textContent).toEqual('[3,2,1]');
+            expect(document.querySelector('h2').textContent).toEqual('[3,2,1]');
         });
     });
 
@@ -137,14 +137,14 @@ describe('$watch global magic property', () => {
         InlineJS.Region.enableOptimizedBinds = false;
         InlineJS.Bootstrap.Attach();
     
-        expect(document.querySelector('h1').textContent).toEqual('one');
+        expect(document.querySelector('h1').textContent).toEqual('["one"]');
         expect(document.querySelector('h2').textContent).toEqual('lob');
     
         userEvent.click(document.querySelector('#push'));
     
         await waitFor(() => {
-            expect(document.querySelector('h1').textContent).toEqual('one,two');
-            expect(document.querySelector('h2').textContent).toEqual('one,two');
+            expect(document.querySelector('h1').textContent).toEqual('["one","two"]');
+            expect(document.querySelector('h2').textContent).toEqual('["one","two"]');
         });
     });
 

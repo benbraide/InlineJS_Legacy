@@ -973,7 +973,7 @@ export var InlineJS;
             }
             var value = CreateChildProxy(region.FindProxy(path), prop, actualValue);
             if (value) {
-                return value.GetNativeProxy();
+                return ((value instanceof ChildProxy) ? value.GetNativeProxy() : value);
             }
         }
         return actualValue;
@@ -1196,6 +1196,9 @@ export var InlineJS;
                     region.GetChanges().ReplaceOptimizedGetAccesses();
                 }
                 return value;
+            }; });
+            Region.AddGlobal('$raw', function () { return function (value) {
+                return ((Region.IsObject(value) && '__InlineJS_Target__' in value) ? value.__InlineJS_Target__ : value);
             }; });
             Region.AddGlobal('$__InlineJS_CallTemp__', function (regionId) { return function (key) {
                 var region = Region.Get(regionId);
@@ -2157,17 +2160,8 @@ export var InlineJS;
             if (typeof value === 'object' && '__InlineJS_Target__' in value) {
                 return CoreDirectiveHandlers.ToString(value['__InlineJS_Target__']);
             }
-            if (Region.IsObject(value)) {
-                var combined = '';
-                for (var key in value) {
-                    if (combined.length == 0) {
-                        combined = key + ":" + CoreDirectiveHandlers.ToString(value[key]);
-                    }
-                    else {
-                        combined += "," + key + ":" + CoreDirectiveHandlers.ToString(value[key]);
-                    }
-                }
-                return "{" + combined + "}";
+            if (Region.IsObject(value) || Array.isArray(value)) {
+                return JSON.stringify(value);
             }
             return value.toString();
         };

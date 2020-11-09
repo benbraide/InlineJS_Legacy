@@ -40,17 +40,17 @@ describe('data binding', () => {
         InlineJS.Bootstrap.Attach();
     
         expect(document.querySelectorAll('span')[0].textContent).toEqual('bar');
-        expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:bar}');
+        expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"bar"}');
 
         userEvent.click(document.querySelectorAll('button')[0]);
 
         await waitFor(() => { expect(document.querySelectorAll('span')[0].textContent).toEqual('baz') });
-        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:baz}') });
+        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"baz"}') });
 
         userEvent.click(document.querySelectorAll('button')[1]);
 
         await waitFor(() => { expect(document.querySelector('span').textContent).toEqual('baz') });
-        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:unoptimized}') });
+        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"unoptimized"}') });
     });
 
     it('should obey global optimized setting', async () => {
@@ -67,17 +67,17 @@ describe('data binding', () => {
         InlineJS.Bootstrap.Attach();
     
         expect(document.querySelectorAll('span')[0].textContent).toEqual('bar');
-        expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:bar}');
+        expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"bar"}');
 
         userEvent.click(document.querySelectorAll('button')[0]);
 
         await waitFor(() => { expect(document.querySelectorAll('span')[0].textContent).toEqual('baz') });
-        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:baz}') });
+        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"baz"}') });
 
         userEvent.click(document.querySelectorAll('button')[1]);
 
         await waitFor(() => { expect(document.querySelector('span').textContent).toEqual('unoptimized') });
-        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:unoptimized}') });
+        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"unoptimized"}') });
 
         InlineJS.Config.SetOptimizedBindsState(true);
     });
@@ -95,17 +95,17 @@ describe('data binding', () => {
         InlineJS.Bootstrap.Attach();
     
         expect(document.querySelectorAll('span')[0].textContent).toEqual('bar');
-        expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:bar}');
+        expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"bar"}');
 
         userEvent.click(document.querySelectorAll('button')[0]);
 
         await waitFor(() => { expect(document.querySelectorAll('span')[0].textContent).toEqual('baz') });
-        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:baz}') });
+        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"baz"}') });
 
         userEvent.click(document.querySelectorAll('button')[1]);
 
         await waitFor(() => { expect(document.querySelector('span').textContent).toEqual('unoptimized') });
-        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{foo:unoptimized}') });
+        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('{"foo":"unoptimized"}') });
     });
 
     it('should obey \'$use\' global magic property', async () => {
