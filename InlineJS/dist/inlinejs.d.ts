@@ -51,6 +51,10 @@ declare namespace InlineJS {
     type GlobalCallbackType = (regionId?: string, contextElement?: HTMLElement) => any;
     class RootElement {
     }
+    interface GlobalAttributeInfo {
+        handler: GlobalCallbackType;
+        accessHandler: (regionId?: string) => boolean;
+    }
     class Region {
         private id_;
         private rootElement_;
@@ -146,9 +150,9 @@ declare namespace InlineJS {
         static AddComponent(region: Region, element: HTMLElement, key: string): boolean;
         static Find(key: string, getNativeProxy: false): Region;
         static Find(key: string, getNativeProxy: true): any;
-        static AddGlobal(key: string, callback: GlobalCallbackType): void;
+        static AddGlobal(key: string, callback: GlobalCallbackType, accessHandler?: (regionId?: string) => boolean): void;
         static RemoveGlobal(key: string): void;
-        static GetGlobal(key: string): GlobalCallbackType;
+        static GetGlobal(regionId: string, key: string): GlobalCallbackType;
         static AddPostProcessCallback(callback: () => void): void;
         static ExecutePostProcessCallbacks(): void;
         static SetDirectivePrefix(value: string): void;
@@ -180,9 +184,14 @@ declare namespace InlineJS {
         regionId: string;
         path: string;
     }
+    interface GetAccessCheckpoint {
+        optimized: number;
+        raw: number;
+    }
     interface GetAccessStorage {
         optimized: Array<GetAccessInfo>;
         raw: Array<GetAccessInfo>;
+        checkpoint: GetAccessCheckpoint;
     }
     interface GetAccessStorageInfo {
         storage: GetAccessStorage;
@@ -205,6 +214,9 @@ declare namespace InlineJS {
         Unsubscribe(id: number): void;
         AddGetAccess(path: string): void;
         ReplaceOptimizedGetAccesses(): void;
+        FlushRawGetAccesses(): void;
+        AddGetAccessesCheckpoint(): void;
+        DiscardGetAccessesCheckpoint(): void;
         PushGetAccessStorage(storage: GetAccessStorage): void;
         RetrieveGetAccessStorage(optimized: false): GetAccessStorage;
         RetrieveGetAccessStorage(optimized: true): Array<GetAccessInfo>;
@@ -402,7 +414,7 @@ declare namespace InlineJS {
         static SetOptimizedBindsState(enabled: boolean): void;
         static AddDirective(name: string, handler: DirectiveHandlerType): void;
         static RemoveDirective(name: string): void;
-        static AddGlobalMagicProperty(name: string, callback: GlobalCallbackType): void;
+        static AddGlobalMagicProperty(name: string, value: GlobalCallbackType | any): void;
         static RemoveGlobalMagicProperty(name: string): void;
     }
     class Bootstrap {

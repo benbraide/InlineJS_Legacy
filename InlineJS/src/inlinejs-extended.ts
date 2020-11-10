@@ -29,11 +29,13 @@ namespace InlineJS{
 
     export interface RouterInfo{
         currentPage: string;
+        currentQuery: Record<string, string>;
         targetComponent: string;
         targetExit: string;
-        pages: Record<string,RouterPageInfo>;
+        pages: Record<string, RouterPageInfo>;
         url: string;
         mount: HTMLElement;
+        middlewares: Record<string, (page?: string, params?: Record<string, string>) => boolean>;
     }
 
     export interface RouterPageInfo{
@@ -43,6 +45,7 @@ namespace InlineJS{
         entry: string;
         exit: string;
         disabled: boolean;
+        middlewares: Array<string>;
     }
 
     export interface TypewriterInfo{
@@ -1073,22 +1076,24 @@ namespace InlineJS{
         }
 
         public static Router(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$router')){
+            if (Region.GetGlobal('$router', region.GetId())){
                 return DirectiveHandlerReturn.Nil;
             }
             
-            let regionId = region.GetId(), prefix = directive.value, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage' ], info: RouterInfo = {
+            let regionId = region.GetId(), prefix = directive.value, origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery' ], info: RouterInfo = {
                 currentPage: null,
+                currentQuery: {},
                 targetComponent: null,
                 targetExit: null,
                 pages: {},
                 url: null,
-                mount: null
+                mount: null,
+                middlewares: {}
             }, methods = {
                 register: (data: Record<string, any>) => {
                     let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
                     if (innerRegion){
-                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled);
+                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares);
                     }
                 },
                 unregister: (page: string) => {
@@ -1113,6 +1118,9 @@ namespace InlineJS{
                         exit(component);
                     }
                 },
+                addMiddleware: (name: string, handler: (page?: string, args?: Array<any> | any) => boolean) => {
+                    info.middlewares[name] = handler;
+                }
             };
 
             if (prefix){
@@ -1130,14 +1138,15 @@ namespace InlineJS{
                 });
             };
             
-            let register = (page: string, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean) => {
+            let register = (page: string, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean, middlewares: Array<string>) => {
                 info.pages[page] = {
                     path: path,
                     title: title,
                     component: component,
                     entry: entry,
                     exit: exit,
-                    disabled: disabled
+                    disabled: disabled,
+                    middlewares: ((middlewares && Array.isArray(middlewares)) ? middlewares : new Array<string>())
                 };
             };
 
@@ -1159,23 +1168,22 @@ namespace InlineJS{
                         return;
                     }
                     
-                    info.currentPage = page;
-                    if (replace){
-                        history.replaceState({
-                            page: page,
-                            params: params,
-                            query: query
-                        }, info.pages[page].title, `${page}${query}`);
-                    }
-                    else{
-                        history.pushState({
-                            page: page,
-                            params: params,
-                            query: query
-                        }, info.pages[page].title, `${page}${query}`);
-                    }
-                    
-                    load(page, params, query);
+                    load(page, params, query, () => {
+                        if (replace){
+                            history.replaceState({
+                                page: page,
+                                params: params,
+                                query: query
+                            }, info.pages[page].title, `${origin}/${page}${query}`);
+                        }
+                        else{
+                            history.pushState({
+                                page: page,
+                                params: params,
+                                query: query
+                            }, info.pages[page].title, `${origin}/${page}${query}`);
+                        }
+                    });
                 }
                 else{
                     window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
@@ -1199,11 +1207,22 @@ namespace InlineJS{
                 }
             };
 
-            let load = (page: string, params: Record<string, string>, query: string) => {
-                let component = info.pages[page].component, handled: any;
+            let load = (page: string, params: Record<string, string>, query: string, callback?: () => void) => {
+                let pageInfo = info.pages[page], component = pageInfo.component, handled: any;
+                for (let i = 0; i < (pageInfo.middlewares || []).length; ++i){
+                    let middleware = pageInfo.middlewares[i];
+                    if (middleware in info.middlewares && !info.middlewares[middleware](page, params)){
+                        return;//Rejected
+                    }
+                };
 
                 info.currentPage = page;
                 alert('currentPage');
+
+                if (!Region.IsEqual(info.currentQuery, params)){
+                    info.currentQuery = params;
+                    alert('currentQuery');
+                }
 
                 try{
                     if (component){
@@ -1218,10 +1237,14 @@ namespace InlineJS{
                 }
 
                 if (handled === false){
-                    info.url = `${prefix}${info.pages[page].path}${query}`;
+                    info.url = `${origin}/${prefix}${info.pages[page].path}${query}`;
                     alert('url');
                 }
 
+                if (callback){
+                    callback();
+                }
+                
                 window.dispatchEvent(new CustomEvent('router.load'));
             };
 
@@ -1299,7 +1322,7 @@ namespace InlineJS{
             
             DirectiveHandlerManager.AddHandler('routerRegister', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled);
+                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares);
                 return DirectiveHandlerReturn.Handled;
             });
 
@@ -1388,7 +1411,7 @@ namespace InlineJS{
         }
 
         public static Screen(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$screen')){
+            if (Region.GetGlobal('$screen', region.GetId())){
                 return DirectiveHandlerReturn.Nil;
             }
             
@@ -1779,7 +1802,7 @@ namespace InlineJS{
             
             DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
             DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
-            
+
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
             DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);

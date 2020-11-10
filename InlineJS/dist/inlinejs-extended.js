@@ -888,21 +888,23 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Router = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$router')) {
+            if (InlineJS.Region.GetGlobal('$router', region.GetId())) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var regionId = region.GetId(), prefix = directive.value, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage'], info = {
+            var regionId = region.GetId(), prefix = directive.value, origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery'], info = {
                 currentPage: null,
+                currentQuery: {},
                 targetComponent: null,
                 targetExit: null,
                 pages: {},
                 url: null,
-                mount: null
+                mount: null,
+                middlewares: {}
             }, methods = {
                 register: function (data) {
                     var innerRegion = InlineJS.Region.Get(InlineJS.RegionMap.scopeRegionIds.Peek());
                     if (innerRegion) {
-                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled);
+                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares);
                     }
                 },
                 unregister: function (page) {
@@ -927,6 +929,9 @@ var InlineJS;
                     else {
                         exit(component);
                     }
+                },
+                addMiddleware: function (name, handler) {
+                    info.middlewares[name] = handler;
                 }
             };
             if (prefix) {
@@ -942,14 +947,15 @@ var InlineJS;
                     origin: myRegion.GetChanges().GetOrigin()
                 });
             };
-            var register = function (page, path, title, component, entry, exit, disabled) {
+            var register = function (page, path, title, component, entry, exit, disabled, middlewares) {
                 info.pages[page] = {
                     path: path,
                     title: title,
                     component: component,
                     entry: entry,
                     exit: exit,
-                    disabled: disabled
+                    disabled: disabled,
+                    middlewares: ((middlewares && Array.isArray(middlewares)) ? middlewares : new Array())
                 };
             };
             var goto = function (page, params, replace) {
@@ -969,22 +975,22 @@ var InlineJS;
                         window.dispatchEvent(new CustomEvent('router.load'));
                         return;
                     }
-                    info.currentPage = page;
-                    if (replace) {
-                        history.replaceState({
-                            page: page,
-                            params: params,
-                            query: query_1
-                        }, info.pages[page].title, "" + page + query_1);
-                    }
-                    else {
-                        history.pushState({
-                            page: page,
-                            params: params,
-                            query: query_1
-                        }, info.pages[page].title, "" + page + query_1);
-                    }
-                    load(page, params, query_1);
+                    load(page, params, query_1, function () {
+                        if (replace) {
+                            history.replaceState({
+                                page: page,
+                                params: params,
+                                query: query_1
+                            }, info.pages[page].title, origin + "/" + page + query_1);
+                        }
+                        else {
+                            history.pushState({
+                                page: page,
+                                params: params,
+                                query: query_1
+                            }, info.pages[page].title, origin + "/" + page + query_1);
+                        }
+                    });
                 }
                 else {
                     window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
@@ -1004,10 +1010,21 @@ var InlineJS;
                     history.back();
                 }
             };
-            var load = function (page, params, query) {
-                var component = info.pages[page].component, handled;
+            var load = function (page, params, query, callback) {
+                var pageInfo = info.pages[page], component = pageInfo.component, handled;
+                for (var i = 0; i < (pageInfo.middlewares || []).length; ++i) {
+                    var middleware = pageInfo.middlewares[i];
+                    if (middleware in info.middlewares && !info.middlewares[middleware](page, params)) {
+                        return; //Rejected
+                    }
+                }
+                ;
                 info.currentPage = page;
                 alert('currentPage');
+                if (!InlineJS.Region.IsEqual(info.currentQuery, params)) {
+                    info.currentQuery = params;
+                    alert('currentQuery');
+                }
                 try {
                     if (component) {
                         handled = (InlineJS.Region.Find(component, true)[info.pages[page].entry])(params);
@@ -1020,8 +1037,11 @@ var InlineJS;
                     handled = false;
                 }
                 if (handled === false) {
-                    info.url = "" + prefix + info.pages[page].path + query;
+                    info.url = origin + "/" + prefix + info.pages[page].path + query;
                     alert('url');
+                }
+                if (callback) {
+                    callback();
                 }
                 window.dispatchEvent(new CustomEvent('router.load'));
             };
@@ -1085,7 +1105,7 @@ var InlineJS;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {
                 var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled);
+                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares);
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerLink', function (innerRegion, innerElement, innerDirective) {
@@ -1158,7 +1178,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Screen = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$screen')) {
+            if (InlineJS.Region.GetGlobal('$screen', region.GetId())) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var computeBreakpoint = function (width) {

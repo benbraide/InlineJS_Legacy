@@ -71,10 +71,15 @@ namespace InlineJS{
     
     export type GlobalCallbackType = (regionId?: string, contextElement?: HTMLElement) => any;
     export class RootElement{};
+
+    export interface GlobalAttributeInfo{
+        handler: GlobalCallbackType;
+        accessHandler: (regionId?: string) => boolean;
+    }
     
     export class Region{
         private static components_: Record<string, string> = {};
-        private static globals_: Record<string, GlobalCallbackType> = {};
+        private static globals_: Record<string, GlobalAttributeInfo> = {};
         private static postProcessCallbacks_ = new Array<() => void>();
 
         public static enableOptimizedBinds = true;
@@ -571,16 +576,24 @@ namespace InlineJS{
             return (region ? (getNativeProxy ? region.rootProxy_.GetNativeProxy() : region) : null);
         }
 
-        public static AddGlobal(key: string, callback: GlobalCallbackType){
-            Region.globals_[key] = callback;
+        public static AddGlobal(key: string, callback: GlobalCallbackType, accessHandler?: (regionId?: string) => boolean){
+            Region.globals_[key] = {
+                handler: callback,
+                accessHandler: accessHandler
+            };
         }
 
         public static RemoveGlobal(key: string){
             delete Region.globals_[key];
         }
 
-        public static GetGlobal(key: string): GlobalCallbackType{
-            return ((key in Region.globals_) ? Region.globals_[key] : null);
+        public static GetGlobal(regionId: string, key: string): GlobalCallbackType{
+            if (!(key in Region.globals_)){
+                return null;
+            }
+
+            let info = Region.globals_[key];
+            return ((!info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
         }
 
         public static AddPostProcessCallback(callback: () => void){
@@ -731,9 +744,15 @@ namespace InlineJS{
         path: string;
     }
 
+    export interface GetAccessCheckpoint{
+        optimized: number;
+        raw: number;
+    }
+
     export interface GetAccessStorage{
-        optimized: Array<GetAccessInfo>,
-        raw: Array<GetAccessInfo>
+        optimized: Array<GetAccessInfo>;
+        raw: Array<GetAccessInfo>;
+        checkpoint: GetAccessCheckpoint;
     }
 
     export interface GetAccessStorageInfo{
@@ -889,11 +908,59 @@ namespace InlineJS{
             }
         }
 
+        public FlushRawGetAccesses(){
+            if (!Region.Get(this.regionId_).OptimizedBindsIsEnabled()){
+                return;
+            }
+
+            let info = this.getAccessStorages_.Peek();
+            if (info && info.storage && info.storage.raw){
+                info.storage.raw = [];
+            }
+        }
+
+        public AddGetAccessesCheckpoint(){
+            let info = this.getAccessStorages_.Peek();
+            if (!info || !info.storage){
+                return;
+            }
+            
+            if (info.storage.optimized){
+                info.storage.checkpoint.optimized = info.storage.optimized.length;
+            }
+
+            if (info.storage.raw){
+                info.storage.checkpoint.raw = info.storage.raw.length;
+            }
+        }
+
+        public DiscardGetAccessesCheckpoint(){
+            let info = this.getAccessStorages_.Peek();
+            if (!info || !info.storage){
+                return;
+            }
+            
+            if (info.storage.optimized && info.storage.checkpoint.optimized != -1 && info.storage.checkpoint.optimized < info.storage.optimized.length){
+                info.storage.optimized.splice(info.storage.checkpoint.optimized);
+            }
+
+            if (info.storage.raw && info.storage.checkpoint.raw != -1 && info.storage.checkpoint.raw < info.storage.raw.length){
+                info.storage.raw.splice(info.storage.checkpoint.raw);
+            }
+
+            info.storage.checkpoint.optimized = -1;
+            info.storage.checkpoint.raw = -1;
+        }
+
         public PushGetAccessStorage(storage: GetAccessStorage): void{
             this.getAccessStorages_.Push({
                 storage: (storage || {
                     optimized: (Region.Get(this.regionId_).OptimizedBindsIsEnabled() ? new Array<GetAccessInfo>() : null),
-                    raw: new Array<GetAccessInfo>()
+                    raw: new Array<GetAccessInfo>(),
+                    checkpoint: {
+                        optimized: -1,
+                        raw: -1
+                    }
                 }),
                 lastAccessPath: ''
             });
@@ -1318,7 +1385,7 @@ namespace InlineJS{
                             return ((local instanceof Value) ? local.Get() : local);
                         }
 
-                        let global = Region.GetGlobal(stringProp);
+                        let global = Region.GetGlobal(regionId, stringProp);
                         if (global){
                             let result = global(regionId, contextElement);
                             if (!(result instanceof NoResult)){//Local found
@@ -1447,6 +1514,7 @@ namespace InlineJS{
                 }
             });
 
+            Region.AddGlobal('$proxy', (regionId: string) => Region.Get(regionId).GetRootProxy().GetNativeProxy());
             Region.AddGlobal('$refs', (regionId: string) => Region.Get(regionId).GetRefs());
             Region.AddGlobal('$self', (regionId: string) => Region.Get(regionId).GetState().GetElementContext());
             Region.AddGlobal('$root', (regionId: string) => Region.Get(regionId).GetRootElement());
@@ -1490,6 +1558,29 @@ namespace InlineJS{
                 }
 
                 return value;
+            }, (regionId: string) => {
+                let region = Region.GetCurrent(regionId);
+                if (region){
+                    region.GetChanges().FlushRawGetAccesses();
+                }
+
+                return true;
+            });
+
+            Region.AddGlobal('$static', (regionId: string) => (value: any) => {
+                let region = Region.GetCurrent(regionId);
+                if (region){
+                    region.GetChanges().DiscardGetAccessesCheckpoint();
+                }
+
+                return value;
+            }, (regionId: string) => {
+                let region = Region.GetCurrent(regionId);
+                if (region){
+                    region.GetChanges().AddGetAccessesCheckpoint();
+                }
+
+                return true;
             });
 
             Region.AddGlobal('$raw', () => (value: any) => {
@@ -2944,8 +3035,13 @@ namespace InlineJS{
             DirectiveHandlerManager.RemoveHandler(name);
         }
         
-        public static AddGlobalMagicProperty(name: string, callback: GlobalCallbackType){
-            Region.AddGlobal(('$' + name), callback);
+        public static AddGlobalMagicProperty(name: string, value: GlobalCallbackType | any){
+            if (typeof value === 'function'){
+                Region.AddGlobal(('$' + name), value);
+            }
+            else{
+                Region.AddGlobal(('$' + name), () => value);
+            }
         }
 
         public static RemoveGlobalMagicProperty(name: string){

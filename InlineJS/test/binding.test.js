@@ -127,4 +127,24 @@ describe('data binding', () => {
         await waitFor(() => { expect(document.querySelectorAll('span')[0].textContent).toEqual('bar') });
         await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('unoptimized') });
     });
+
+    it('should obey \'$static\' global magic property', async () => {
+        document.body.innerHTML = `
+            <div x-data="{ foo: 'bar' }">
+                <span x-text="foo"></span>
+                <span x-text="$static(foo)"></span>
+                <button x-on:click="foo = 'baz'"></button>
+            </div>
+        `;
+    
+        InlineJS.Bootstrap.Attach();
+    
+        expect(document.querySelectorAll('span')[0].textContent).toEqual('bar');
+        expect(document.querySelectorAll('span')[1].textContent).toEqual('bar');
+
+        userEvent.click(document.querySelector('button'));
+
+        await waitFor(() => { expect(document.querySelectorAll('span')[0].textContent).toEqual('baz') });
+        await waitFor(() => { expect(document.querySelectorAll('span')[1].textContent).toEqual('bar') });
+    });
 });

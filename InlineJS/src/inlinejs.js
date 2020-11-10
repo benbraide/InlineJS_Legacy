@@ -440,14 +440,21 @@ export var InlineJS;
             var region = Region.Get(Region.components_[key]);
             return (region ? (getNativeProxy ? region.rootProxy_.GetNativeProxy() : region) : null);
         };
-        Region.AddGlobal = function (key, callback) {
-            Region.globals_[key] = callback;
+        Region.AddGlobal = function (key, callback, accessHandler) {
+            Region.globals_[key] = {
+                handler: callback,
+                accessHandler: accessHandler
+            };
         };
         Region.RemoveGlobal = function (key) {
             delete Region.globals_[key];
         };
-        Region.GetGlobal = function (key) {
-            return ((key in Region.globals_) ? Region.globals_[key] : null);
+        Region.GetGlobal = function (regionId, key) {
+            if (!(key in Region.globals_)) {
+                return null;
+            }
+            var info = Region.globals_[key];
+            return ((!info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
         };
         Region.AddPostProcessCallback = function (callback) {
             Region.postProcessCallbacks_.push(callback);
@@ -708,11 +715,50 @@ export var InlineJS;
                 info.storage.raw.forEach(function (item) { return info.storage.optimized.push(item); });
             }
         };
+        Changes.prototype.FlushRawGetAccesses = function () {
+            if (!Region.Get(this.regionId_).OptimizedBindsIsEnabled()) {
+                return;
+            }
+            var info = this.getAccessStorages_.Peek();
+            if (info && info.storage && info.storage.raw) {
+                info.storage.raw = [];
+            }
+        };
+        Changes.prototype.AddGetAccessesCheckpoint = function () {
+            var info = this.getAccessStorages_.Peek();
+            if (!info || !info.storage) {
+                return;
+            }
+            if (info.storage.optimized) {
+                info.storage.checkpoint.optimized = info.storage.optimized.length;
+            }
+            if (info.storage.raw) {
+                info.storage.checkpoint.raw = info.storage.raw.length;
+            }
+        };
+        Changes.prototype.DiscardGetAccessesCheckpoint = function () {
+            var info = this.getAccessStorages_.Peek();
+            if (!info || !info.storage) {
+                return;
+            }
+            if (info.storage.optimized && info.storage.checkpoint.optimized != -1 && info.storage.checkpoint.optimized < info.storage.optimized.length) {
+                info.storage.optimized.splice(info.storage.checkpoint.optimized);
+            }
+            if (info.storage.raw && info.storage.checkpoint.raw != -1 && info.storage.checkpoint.raw < info.storage.raw.length) {
+                info.storage.raw.splice(info.storage.checkpoint.raw);
+            }
+            info.storage.checkpoint.optimized = -1;
+            info.storage.checkpoint.raw = -1;
+        };
         Changes.prototype.PushGetAccessStorage = function (storage) {
             this.getAccessStorages_.Push({
                 storage: (storage || {
                     optimized: (Region.Get(this.regionId_).OptimizedBindsIsEnabled() ? new Array() : null),
-                    raw: new Array()
+                    raw: new Array(),
+                    checkpoint: {
+                        optimized: -1,
+                        raw: -1
+                    }
                 }),
                 lastAccessPath: ''
             });
@@ -1054,7 +1100,7 @@ export var InlineJS;
                         if (!(local instanceof NoResult)) { //Local found
                             return ((local instanceof Value) ? local.Get() : local);
                         }
-                        var global = Region.GetGlobal(stringProp);
+                        var global = Region.GetGlobal(regionId, stringProp);
                         if (global) {
                             var result = global(regionId, contextElement);
                             if (!(result instanceof NoResult)) { //Local found
@@ -1162,6 +1208,7 @@ export var InlineJS;
                     resolvedTarget.dispatchEvent(resolvedEvent);
                 }
             }; });
+            Region.AddGlobal('$proxy', function (regionId) { return Region.Get(regionId).GetRootProxy().GetNativeProxy(); });
             Region.AddGlobal('$refs', function (regionId) { return Region.Get(regionId).GetRefs(); });
             Region.AddGlobal('$self', function (regionId) { return Region.Get(regionId).GetState().GetElementContext(); });
             Region.AddGlobal('$root', function (regionId) { return Region.Get(regionId).GetRootElement(); });
@@ -1196,7 +1243,26 @@ export var InlineJS;
                     region.GetChanges().ReplaceOptimizedGetAccesses();
                 }
                 return value;
-            }; });
+            }; }, function (regionId) {
+                var region = Region.GetCurrent(regionId);
+                if (region) {
+                    region.GetChanges().FlushRawGetAccesses();
+                }
+                return true;
+            });
+            Region.AddGlobal('$static', function (regionId) { return function (value) {
+                var region = Region.GetCurrent(regionId);
+                if (region) {
+                    region.GetChanges().DiscardGetAccessesCheckpoint();
+                }
+                return value;
+            }; }, function (regionId) {
+                var region = Region.GetCurrent(regionId);
+                if (region) {
+                    region.GetChanges().AddGetAccessesCheckpoint();
+                }
+                return true;
+            });
             Region.AddGlobal('$raw', function () { return function (value) {
                 return ((Region.IsObject(value) && '__InlineJS_Target__' in value) ? value.__InlineJS_Target__ : value);
             }; });
@@ -2416,8 +2482,13 @@ export var InlineJS;
         Config.RemoveDirective = function (name) {
             DirectiveHandlerManager.RemoveHandler(name);
         };
-        Config.AddGlobalMagicProperty = function (name, callback) {
-            Region.AddGlobal(('$' + name), callback);
+        Config.AddGlobalMagicProperty = function (name, value) {
+            if (typeof value === 'function') {
+                Region.AddGlobal(('$' + name), value);
+            }
+            else {
+                Region.AddGlobal(('$' + name), function () { return value; });
+            }
         };
         Config.RemoveGlobalMagicProperty = function (name) {
             Region.RemoveGlobal(('$' + name));
