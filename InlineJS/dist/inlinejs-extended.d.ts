@@ -25,13 +25,13 @@ declare namespace InlineJS {
     }
     interface RouterInfo {
         currentPage: string;
-        currentQuery: Record<string, string>;
+        currentQuery: string;
         targetComponent: string;
         targetExit: string;
         pages: Record<string, RouterPageInfo>;
         url: string;
         mount: HTMLElement;
-        middlewares: Record<string, (page?: string, params?: Record<string, string>) => boolean>;
+        middlewares: Record<string, (page?: string, query?: string) => boolean>;
     }
     interface RouterPageInfo {
         path: string;

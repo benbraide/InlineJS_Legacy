@@ -29,13 +29,13 @@ namespace InlineJS{
 
     export interface RouterInfo{
         currentPage: string;
-        currentQuery: Record<string, string>;
+        currentQuery: string;
         targetComponent: string;
         targetExit: string;
         pages: Record<string, RouterPageInfo>;
         url: string;
         mount: HTMLElement;
-        middlewares: Record<string, (page?: string, params?: Record<string, string>) => boolean>;
+        middlewares: Record<string, (page?: string, query?: string) => boolean>;
     }
 
     export interface RouterPageInfo{
@@ -1082,7 +1082,7 @@ namespace InlineJS{
             
             let regionId = region.GetId(), prefix = directive.value, origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery' ], info: RouterInfo = {
                 currentPage: null,
-                currentQuery: {},
+                currentQuery: '',
                 targetComponent: null,
                 targetExit: null,
                 pages: {},
@@ -1120,7 +1120,8 @@ namespace InlineJS{
                 },
                 addMiddleware: (name: string, handler: (page?: string, args?: Array<any> | any) => boolean) => {
                     info.middlewares[name] = handler;
-                }
+                },
+                parseQuery: (query: string) => parseQuery(query)
             };
 
             if (prefix){
@@ -1150,16 +1151,10 @@ namespace InlineJS{
                 };
             };
 
-            let goto = (page: string, params?: Record<string, string>, replace = false) => {
+            let goto = (page: string, query?: string, replace = false) => {
                 if (page in info.pages && !info.pages[page].disabled){
-                    let query = '';
-                    for (let key in params){
-                        if (query){
-                            query += `&${key}=${params[key]}`;
-                        }
-                        else{
-                            query += `?${key}=${params[key]}`;
-                        }
+                    if (query && query.substr(0, 1) !== '?'){
+                        query = `?${query}`;
                     }
                     
                     if (`${origin}/${prefix}${info.pages[page].path}${query}` === info.url){
@@ -1168,18 +1163,16 @@ namespace InlineJS{
                         return;
                     }
                     
-                    load(page, params, query, () => {
+                    load(page, query, () => {
                         if (replace){
                             history.replaceState({
                                 page: page,
-                                params: params,
                                 query: query
                             }, info.pages[page].title, `${origin}/${page}${query}`);
                         }
                         else{
                             history.pushState({
                                 page: page,
-                                params: params,
                                 query: query
                             }, info.pages[page].title, `${origin}/${page}${query}`);
                         }
@@ -1207,11 +1200,11 @@ namespace InlineJS{
                 }
             };
 
-            let load = (page: string, params: Record<string, string>, query: string, callback?: () => void) => {
+            let load = (page: string, query: string, callback?: () => void) => {
                 let pageInfo = info.pages[page], component = pageInfo.component, handled: any;
                 for (let i = 0; i < (pageInfo.middlewares || []).length; ++i){
                     let middleware = pageInfo.middlewares[i];
-                    if (middleware in info.middlewares && !info.middlewares[middleware](page, params)){
+                    if (middleware in info.middlewares && !info.middlewares[middleware](page, query)){
                         return;//Rejected
                     }
                 };
@@ -1219,14 +1212,14 @@ namespace InlineJS{
                 info.currentPage = page;
                 alert('currentPage');
 
-                if (!Region.IsEqual(info.currentQuery, params)){
-                    info.currentQuery = params;
+                if (!Region.IsEqual(info.currentQuery, query)){
+                    info.currentQuery = query;
                     alert('currentQuery');
                 }
 
                 try{
                     if (component){
-                        handled = (Region.Find(component, true)[info.pages[page].entry])(params);
+                        handled = (Region.Find(component, true)[info.pages[page].entry])(query);
                     }
                     else{
                         handled = false;
@@ -1327,28 +1320,72 @@ namespace InlineJS{
             });
 
             DirectiveHandlerManager.AddHandler('routerLink', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                if (innerElement instanceof HTMLFormElement){
-                    innerElement.addEventListener('submit', (e) => {
+                let target = innerElement, path = innerDirective.value, query = '', onEvent = () => {
+                    if (document.contains(innerElement)){
+                        if (info.currentPage === path){
+                            innerElement.classList.add('router-active');
+                        }
+                        else if (innerElement.classList.contains('router-active')){
+                            innerElement.classList.remove('router-active');
+                        }
+                    }
+                    else{//Removed from DOM
+                        window.removeEventListener('router.load', onEvent);
+                    }
+                };
+
+                if (path){//Use specified path
+                    let queryIndex = path.indexOf('?');
+                    if (queryIndex != -1){//Split
+                        query = path.substr(queryIndex + 1);
+                        path = path.substr(0, queryIndex);
+                    }
+                }
+                else if (!(innerElement instanceof HTMLFormElement) && !(innerElement instanceof HTMLAnchorElement)){//Resolve path
+                    target = (innerElement.querySelector('a') || innerElement.querySelector('form') || innerElement);
+                }
+
+                if (innerDirective.arg.options.indexOf('nav') != -1){
+                    window.addEventListener('router.load', onEvent);
+                }
+                
+                if (target instanceof HTMLFormElement){
+                    if (target.method && target.method.toLowerCase() !== 'get' && target.method.toLowerCase() !== 'head'){
+                        return DirectiveHandlerReturn.Nil;
+                    }
+                    
+                    if (!path){
+                        let queryIndex = (path = target.action).indexOf('?');
+                        if (queryIndex != -1){//Split
+                            query = path.substr(queryIndex + 1);
+                            path = path.substr(0, queryIndex);
+                        }
+                    }
+                    
+                    target.addEventListener('submit', (e) => {
                         e.preventDefault();
                         
-                        let data = new FormData(innerElement), query: Record<string, string> = {};
+                        let data = new FormData(target as HTMLFormElement);
                         data.forEach((value, key) => {
-                            let stringValue = value.toString();
-                            if (stringValue){
-                                query[key] = stringValue;
+                            if (query){
+                                query = `${query}&${key}=${value.toString()}`;
+                            }
+                            else{
+                                query = `${key}=${value.toString()}`;
                             }
                         });
                         
-                        goto(innerDirective.value, query);
+                        goto(path, query);
                     });
 
                     return DirectiveHandlerReturn.Handled;
                 }
                 
-                let path: string, query = '';
-                if (innerElement instanceof HTMLAnchorElement){
-                    query = innerElement.search.substr(1);
-                    path = innerElement.pathname;
+                if (target instanceof HTMLAnchorElement){
+                    if (!path){
+                        path = target.pathname;
+                        query = target.search.substr(1);
+                    }
 
                     if (!path){
                         path = innerDirective.value;
@@ -1357,13 +1394,10 @@ namespace InlineJS{
                         path = path.substr(1);
                     }
                 }
-                else{
-                    path = innerDirective.value;
-                }
                 
-                innerElement.addEventListener('click', (e) => {
+                target.addEventListener('click', (e) => {
                     e.preventDefault();
-                    goto(path, parseQuery(query));
+                    goto(path, query);
                 });
                 
                 return DirectiveHandlerReturn.Handled;
@@ -1404,7 +1438,7 @@ namespace InlineJS{
             
             Region.AddGlobal('$router', () => proxy);
             Region.AddPostProcessCallback(() => {
-                goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1): pathname), parseQuery(query));
+                goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1): pathname), query);
             });
             
             return DirectiveHandlerReturn.Handled;
