@@ -1162,7 +1162,7 @@ namespace InlineJS{
                         }
                     }
                     
-                    if (`${prefix}${info.pages[page].path}${query}` === info.url){
+                    if (`${origin}/${prefix}${info.pages[page].path}${query}` === info.url){
                         window.dispatchEvent(new CustomEvent('router.reload'));
                         window.dispatchEvent(new CustomEvent('router.load'));
                         return;

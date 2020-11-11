@@ -1424,6 +1424,14 @@ export var InlineJS;
                 else if (key === '$component' && data[key] && typeof data[key] === 'string') {
                     Region.AddComponent(region, element, data[key]);
                 }
+                else if (key === '$locals') {
+                    var locals = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
+                    if (Region.IsObject(locals)) {
+                        for (var field in locals) {
+                            region.AddLocal(element, field, locals[field]);
+                        }
+                    }
+                }
                 else if (key !== '$component') {
                     target[key] = data[key];
                 }
@@ -1589,6 +1597,7 @@ export var InlineJS;
                 outside: false,
                 prevent: false,
                 stop: false,
+                immediate: false,
                 once: false,
                 document: false,
                 window: false,
@@ -1663,6 +1672,9 @@ export var InlineJS;
                 }
                 if (stoppable && options.stop) {
                     e.stopPropagation();
+                }
+                if (stoppable && options.immediate) {
+                    e.stopImmediatePropagation();
                 }
                 try {
                     if (myRegion) {

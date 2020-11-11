@@ -1801,6 +1801,14 @@ namespace InlineJS{
                 else if (key === '$component' && data[key] && typeof data[key] === 'string'){
                     Region.AddComponent(region, element, data[key]);
                 }
+                else if (key === '$locals'){
+                    let locals = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
+                    if (Region.IsObject(locals)){
+                        for (let field in (locals as Record<string, any>)){
+                            region.AddLocal(element, field, locals[field]);
+                        }
+                    }
+                }
                 else if (key !== '$component'){
                     target[key] = data[key];
                 }
@@ -1995,6 +2003,7 @@ namespace InlineJS{
                 outside: false,
                 prevent: false,
                 stop: false,
+                immediate: false,
                 once: false,
                 document: false,
                 window: false,
@@ -2082,6 +2091,10 @@ namespace InlineJS{
 
                 if (stoppable && options.stop){
                     e.stopPropagation();
+                }
+
+                if (stoppable && options.immediate){
+                    e.stopImmediatePropagation();
                 }
                 
                 try{

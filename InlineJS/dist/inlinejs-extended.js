@@ -970,7 +970,7 @@ var InlineJS;
                             query_1 += "?" + key + "=" + params[key];
                         }
                     }
-                    if ("" + prefix + info.pages[page].path + query_1 === info.url) {
+                    if (origin + "/" + prefix + info.pages[page].path + query_1 === info.url) {
                         window.dispatchEvent(new CustomEvent('router.reload'));
                         window.dispatchEvent(new CustomEvent('router.load'));
                         return;
