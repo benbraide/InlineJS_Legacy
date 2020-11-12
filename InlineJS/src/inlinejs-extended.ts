@@ -209,6 +209,7 @@ namespace InlineJS{
                     alert: (key: string) => {
                         let myRegion = Region.Get(regionId);
                         myRegion.GetChanges().Add({
+                            regionId: regionId,
                             type: 'set',
                             path: `${scope.path}.${key}`,
                             prop: key,
@@ -393,6 +394,7 @@ namespace InlineJS{
                 
                 Object.keys(info).forEach((key) => {
                     myRegion.GetChanges().Add({
+                        regionId: regionId,
                         type: 'set',
                         path: `${scope.path}.${key}`,
                         prop: key,
@@ -446,6 +448,7 @@ namespace InlineJS{
 
                     let myRegion = Region.Get(regionId);
                     myRegion.GetChanges().Add({
+                        regionId: regionId,
                         type: 'set',
                         path: `${scope.path}.isLoaded`,
                         prop: 'isLoaded',
@@ -514,6 +517,7 @@ namespace InlineJS{
 
                     let myRegion = Region.Get(regionId);
                     myRegion.GetChanges().Add({
+                        regionId: regionId,
                         type: 'set',
                         path: `${scope.path}.isLoaded`,
                         prop: 'isLoaded',
@@ -561,6 +565,7 @@ namespace InlineJS{
                     if (entry.isIntersecting != info.visible){//Visibility changed
                         info.visible = entry.isIntersecting;
                         myRegion.GetChanges().Add({
+                            regionId: regionId,
                             type: 'set',
                             path: `${scope.path}.visible`,
                             prop: 'visible',
@@ -576,6 +581,7 @@ namespace InlineJS{
                     if (entry.intersectionRatio != info.ratio){
                         info.ratio = entry.intersectionRatio;
                         Region.Get(regionId).GetChanges().Add({
+                            regionId: regionId,
                             type: 'set',
                             path: `${scope.path}.ratio`,
                             prop: 'ratio',
@@ -1132,6 +1138,7 @@ namespace InlineJS{
             let alert = (prop: string) => {
                 let myRegion = Region.Get(regionId);
                 myRegion.GetChanges().Add({
+                    regionId: regionId,
                     type: 'set',
                     path: `${scope.path}.${prop}`,
                     prop: prop,
@@ -1320,18 +1327,43 @@ namespace InlineJS{
             });
 
             DirectiveHandlerManager.AddHandler('routerLink', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                let target = innerElement, path = innerDirective.value, query = '', onEvent = () => {
+                let innerRegionId = innerRegion.GetId(), target = innerElement, active: boolean | null = null, nav = (innerDirective.arg.options.indexOf('nav') != -1), path = innerDirective.value, query = '', onEvent = () => {
                     if (document.contains(innerElement)){
+                        if (active !== null && active == (info.currentPage === path)){
+                            return;
+                        }
+                        
                         if (info.currentPage === path){
-                            innerElement.classList.add('router-active');
+                            active = true;
+                            if (nav){
+                                innerElement.classList.add('router-active');
+                            }
                         }
-                        else if (innerElement.classList.contains('router-active')){
-                            innerElement.classList.remove('router-active');
+                        else{
+                            active = false;
+                            if (nav && innerElement.classList.contains('router-active')){
+                                innerElement.classList.remove('router-active');
+                            }
                         }
+
+                        alert('active');
+                        innerElement.dispatchEvent(new CustomEvent('router.active'));
                     }
                     else{//Removed from DOM
                         window.removeEventListener('router.load', onEvent);
                     }
+                };
+
+                let innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []);
+                let alert = (prop: string) => {
+                    let myRegion = Region.Get(innerRegionId);
+                    myRegion.GetChanges().Add({
+                        regionId: innerRegionId,
+                        type: 'set',
+                        path: `${innerScope.path}.${prop}`,
+                        prop: prop,
+                        origin: myRegion.GetChanges().GetOrigin()
+                    });
                 };
 
                 if (path){//Use specified path
@@ -1345,61 +1377,71 @@ namespace InlineJS{
                     target = (innerElement.querySelector('a') || innerElement.querySelector('form') || innerElement);
                 }
 
-                if (innerDirective.arg.options.indexOf('nav') != -1){
-                    window.addEventListener('router.load', onEvent);
-                }
-                
+                window.addEventListener('router.load', onEvent);
                 if (target instanceof HTMLFormElement){
                     if (target.method && target.method.toLowerCase() !== 'get' && target.method.toLowerCase() !== 'head'){
                         return DirectiveHandlerReturn.Nil;
                     }
                     
-                    if (!path){
-                        let queryIndex = (path = target.action).indexOf('?');
-                        if (queryIndex != -1){//Split
-                            query = path.substr(queryIndex + 1);
-                            path = path.substr(0, queryIndex);
-                        }
-                    }
-                    
                     target.addEventListener('submit', (e) => {
                         e.preventDefault();
+
+                        let data = new FormData(target as HTMLFormElement), thisPath = (target as HTMLFormElement).action, thisQuery = '';
+                        if (!path){//Compute path
+                            let queryIndex = thisPath.indexOf('?');
+                            if (queryIndex != -1){//Split
+                                thisQuery = thisPath.substr(queryIndex + 1);
+                                thisPath = thisPath.substr(0, queryIndex);
+                            }
+                        }
+                        else{//Use specified path
+                            thisPath = path;
+                            thisQuery = query;
+                        }
                         
-                        let data = new FormData(target as HTMLFormElement);
                         data.forEach((value, key) => {
-                            if (query){
-                                query = `${query}&${key}=${value.toString()}`;
+                            if (thisQuery){
+                                thisQuery = `${thisQuery}&${key}=${value.toString()}`;
                             }
                             else{
-                                query = `${key}=${value.toString()}`;
+                                thisQuery = `${key}=${value.toString()}`;
                             }
                         });
                         
-                        goto(path, query);
+                        goto(thisPath, thisQuery);
                     });
 
                     return DirectiveHandlerReturn.Handled;
                 }
                 
-                if (target instanceof HTMLAnchorElement){
-                    if (!path){
-                        path = target.pathname;
-                        query = target.search.substr(1);
-                    }
-
-                    if (!path){
-                        path = innerDirective.value;
-                    }
-                    else if (path.length > 1 && path.startsWith('/')){
-                        path = path.substr(1);
-                    }
-                }
-                
                 target.addEventListener('click', (e) => {
                     e.preventDefault();
-                    goto(path, query);
+
+                    let thisPath = path, thisQuery = query;
+                    if (!path && target instanceof HTMLAnchorElement){//Compute path
+                        thisPath = target.href;
+                        thisQuery = '';
+                        
+                        let queryIndex = thisPath.indexOf('?');
+                        if (queryIndex != -1){//Split
+                            thisQuery = thisPath.substr(queryIndex + 1);
+                            thisPath = thisPath.substr(0, queryIndex);
+                        }
+                    }
+                    
+                    goto(thisPath, thisQuery);
                 });
+
+                let innerProxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                    if (prop === 'active'){
+                        Region.Get(innerRegionId).GetChanges().AddGetAccess(`${innerScope.path}.${prop}`);
+                        return active;
+                    }
+                    
+                    return proxy[prop];
+                }, ['active', ...Object.keys(info), ...Object.keys(methods)]);
                 
+                innerRegion.AddLocal(innerElement, '$router', () => innerProxy);
                 return DirectiveHandlerReturn.Handled;
             });
 
@@ -1481,6 +1523,7 @@ namespace InlineJS{
             let alert = (prop: string) => {
                 let myRegion = Region.Get(regionId);
                 myRegion.GetChanges().Add({
+                    regionId: regionId,
                     type: 'set',
                     path: `${scope.path}.${prop}`,
                     prop: prop,

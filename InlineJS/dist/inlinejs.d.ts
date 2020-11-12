@@ -162,6 +162,7 @@ declare namespace InlineJS {
         static IsObject(target: any): boolean;
     }
     interface Change {
+        regionId: string;
         type: 'set' | 'delete';
         path: string;
         prop: string;
@@ -208,6 +209,7 @@ declare namespace InlineJS {
         private getAccessHooks_;
         private origins_;
         constructor(regionId_: string);
+        GetRegionId(): string;
         Schedule(): void;
         Add(item: Change | BubbledChange): void;
         Subscribe(path: string, callback: ChangeCallbackType): number;

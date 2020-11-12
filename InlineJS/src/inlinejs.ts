@@ -1,4 +1,4 @@
-namespace InlineJS{
+export namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -717,6 +717,7 @@ namespace InlineJS{
     }
 
     export interface Change{
+        regionId: string;
         type: 'set' | 'delete';
         path: string;
         prop: string;
@@ -774,6 +775,10 @@ namespace InlineJS{
         
         public constructor (private regionId_: string){}
 
+        public GetRegionId(){
+            return this.regionId_;
+        }
+
         public Schedule(){
             if (this.isScheduled_){
                 return;
@@ -820,7 +825,7 @@ namespace InlineJS{
                 id = ++this.subscriberId_;
             }
 
-            let region = Region.Get(RegionMap.scopeRegionIds.Peek() || this.regionId_);
+            let region = Region.GetCurrent(this.regionId_);
             if (region){//Check for a context element
                 let contextElement = region.GetState().GetElementContext();
                 if (contextElement){//Add reference
@@ -1299,6 +1304,7 @@ namespace InlineJS{
         }
         
         let change: Change = {
+            regionId: changes.GetRegionId(),
             type: type,
             path: path,
             prop: prop,
@@ -1570,14 +1576,14 @@ namespace InlineJS{
             Region.AddGlobal('$static', (regionId: string) => (value: any) => {
                 let region = Region.GetCurrent(regionId);
                 if (region){
-                    region.GetChanges().DiscardGetAccessesCheckpoint();
+                    region.GetChanges().AddGetAccessesCheckpoint();
                 }
 
                 return value;
             }, (regionId: string) => {
                 let region = Region.GetCurrent(regionId);
                 if (region){
-                    region.GetChanges().AddGetAccessesCheckpoint();
+                    region.GetChanges().DiscardGetAccessesCheckpoint();
                 }
 
                 return true;
@@ -1815,7 +1821,12 @@ namespace InlineJS{
             }
 
             if ('$init' in target && typeof target.$init === 'function'){
-                (proxy['$init'] as () => void)();
+                RegionMap.scopeRegionIds.Push(region.GetId());
+                try{
+                    (proxy['$init'] as (region?: Region) => void)(region);
+                }
+                catch (err){}
+                RegionMap.scopeRegionIds.Pop();
             }
 
             return DirectiveHandlerReturn.Handled;
@@ -2338,6 +2349,7 @@ namespace InlineJS{
 
                 if (options.path){
                     myRegion.GetChanges().Add({
+                        regionId: info.regionId,
                         type: 'set',
                         path: options.path,
                         prop: '',
@@ -2528,6 +2540,7 @@ namespace InlineJS{
 
             let addSizeChange = (myRegion: Region) => {
                 myRegion.GetChanges().Add({
+                    regionId: info.regionId,
                     type: 'set',
                     path: `${options.path}.length`,
                     prop: 'length',
@@ -2546,6 +2559,7 @@ namespace InlineJS{
                 }
                 
                 changes.forEach((change) => {
+                    let fromRegion = Region.Get(('original' in change) ? change.original.regionId : change.regionId);
                     if ('original' in change){//Bubbled
                         if (options.isArray || change.original.type !== 'set' || `${options.path}.${change.original.prop}` !== change.original.path){
                             return true;
@@ -2557,7 +2571,7 @@ namespace InlineJS{
                     else if (change.type === 'set' && change.path === options.path){//Object replaced
                         empty(myRegion);
                         
-                        let target = myRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
+                        let target = fromRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
                         for (let i = 1; i < parts.length; ++i){//Resolve target
                             if (!target || typeof target !== 'object' || !('__InlineJS_Target__' in target)){
                                 return false;

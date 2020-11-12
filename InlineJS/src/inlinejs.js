@@ -600,6 +600,9 @@ export var InlineJS;
             this.getAccessHooks_ = new Stack();
             this.origins_ = new Stack();
         }
+        Changes.prototype.GetRegionId = function () {
+            return this.regionId_;
+        };
         Changes.prototype.Schedule = function () {
             var _this = this;
             if (this.isScheduled_) {
@@ -640,7 +643,7 @@ export var InlineJS;
             else {
                 id = ++this.subscriberId_;
             }
-            var region = Region.Get(RegionMap.scopeRegionIds.Peek() || this.regionId_);
+            var region = Region.GetCurrent(this.regionId_);
             if (region) { //Check for a context element
                 var contextElement = region.GetState().GetElementContext();
                 if (contextElement) { //Add reference
@@ -1029,6 +1032,7 @@ export var InlineJS;
             return;
         }
         var change = {
+            regionId: changes.GetRegionId(),
             type: type,
             path: path,
             prop: prop,
@@ -1253,13 +1257,13 @@ export var InlineJS;
             Region.AddGlobal('$static', function (regionId) { return function (value) {
                 var region = Region.GetCurrent(regionId);
                 if (region) {
-                    region.GetChanges().DiscardGetAccessesCheckpoint();
+                    region.GetChanges().AddGetAccessesCheckpoint();
                 }
                 return value;
             }; }, function (regionId) {
                 var region = Region.GetCurrent(regionId);
                 if (region) {
-                    region.GetChanges().AddGetAccessesCheckpoint();
+                    region.GetChanges().DiscardGetAccessesCheckpoint();
                 }
                 return true;
             });
@@ -1437,7 +1441,12 @@ export var InlineJS;
                 }
             }
             if ('$init' in target && typeof target.$init === 'function') {
-                proxy['$init']();
+                RegionMap.scopeRegionIds.Push(region.GetId());
+                try {
+                    proxy['$init'](region);
+                }
+                catch (err) { }
+                RegionMap.scopeRegionIds.Pop();
             }
             return DirectiveHandlerReturn.Handled;
         };
@@ -1877,6 +1886,7 @@ export var InlineJS;
                 empty(myRegion);
                 if (options.path) {
                     myRegion.GetChanges().Add({
+                        regionId: info.regionId,
                         type: 'set',
                         path: options.path,
                         prop: '',
@@ -2037,6 +2047,7 @@ export var InlineJS;
             };
             var addSizeChange = function (myRegion) {
                 myRegion.GetChanges().Add({
+                    regionId: info.regionId,
                     type: 'set',
                     path: options.path + ".length",
                     prop: 'length',
@@ -2052,6 +2063,7 @@ export var InlineJS;
                     return init(myRegion, false);
                 }
                 changes.forEach(function (change) {
+                    var fromRegion = Region.Get(('original' in change) ? change.original.regionId : change.regionId);
                     if ('original' in change) { //Bubbled
                         if (options.isArray || change.original.type !== 'set' || options.path + "." + change.original.prop !== change.original.path) {
                             return true;
@@ -2061,7 +2073,7 @@ export var InlineJS;
                     }
                     else if (change.type === 'set' && change.path === options.path) { //Object replaced
                         empty(myRegion);
-                        var target = myRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
+                        var target = fromRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
                         for (var i = 1; i < parts.length; ++i) { //Resolve target
                             if (!target || typeof target !== 'object' || !('__InlineJS_Target__' in target)) {
                                 return false;

@@ -138,6 +138,7 @@ var InlineJS;
                     alert: function (key) {
                         var myRegion = InlineJS.Region.Get(regionId);
                         myRegion.GetChanges().Add({
+                            regionId: regionId,
                             type: 'set',
                             path: scope.path + "." + key,
                             prop: key,
@@ -290,6 +291,7 @@ var InlineJS;
                 assign();
                 Object.keys(info).forEach(function (key) {
                     myRegion.GetChanges().Add({
+                        regionId: regionId,
                         type: 'set',
                         path: scope.path + "." + key,
                         prop: key,
@@ -334,6 +336,7 @@ var InlineJS;
                     info.isLoaded = true;
                     var myRegion = InlineJS.Region.Get(regionId);
                     myRegion.GetChanges().Add({
+                        regionId: regionId,
                         type: 'set',
                         path: scope.path + ".isLoaded",
                         prop: 'isLoaded',
@@ -388,6 +391,7 @@ var InlineJS;
                     info.isLoaded = true;
                     var myRegion = InlineJS.Region.Get(regionId);
                     myRegion.GetChanges().Add({
+                        regionId: regionId,
                         type: 'set',
                         path: scope.path + ".isLoaded",
                         prop: 'isLoaded',
@@ -427,6 +431,7 @@ var InlineJS;
                     if (entry.isIntersecting != info.visible) { //Visibility changed
                         info.visible = entry.isIntersecting;
                         myRegion.GetChanges().Add({
+                            regionId: regionId,
                             type: 'set',
                             path: scope.path + ".visible",
                             prop: 'visible',
@@ -439,6 +444,7 @@ var InlineJS;
                     if (entry.intersectionRatio != info.ratio) {
                         info.ratio = entry.intersectionRatio;
                         InlineJS.Region.Get(regionId).GetChanges().Add({
+                            regionId: regionId,
                             type: 'set',
                             path: scope.path + ".ratio",
                             prop: 'ratio',
@@ -942,6 +948,7 @@ var InlineJS;
             var alert = function (prop) {
                 var myRegion = InlineJS.Region.Get(regionId);
                 myRegion.GetChanges().Add({
+                    regionId: regionId,
                     type: 'set',
                     path: scope.path + "." + prop,
                     prop: prop,
@@ -1102,18 +1109,40 @@ var InlineJS;
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerLink', function (innerRegion, innerElement, innerDirective) {
-                var target = innerElement, path = innerDirective.value, query = '', onEvent = function () {
+                var innerRegionId = innerRegion.GetId(), target = innerElement, active = null, nav = (innerDirective.arg.options.indexOf('nav') != -1), path = innerDirective.value, query = '', onEvent = function () {
                     if (document.contains(innerElement)) {
+                        if (active !== null && active == (info.currentPage === path)) {
+                            return;
+                        }
                         if (info.currentPage === path) {
-                            innerElement.classList.add('router-active');
+                            active = true;
+                            if (nav) {
+                                innerElement.classList.add('router-active');
+                            }
                         }
-                        else if (innerElement.classList.contains('router-active')) {
-                            innerElement.classList.remove('router-active');
+                        else {
+                            active = false;
+                            if (nav && innerElement.classList.contains('router-active')) {
+                                innerElement.classList.remove('router-active');
+                            }
                         }
+                        alert('active');
+                        innerElement.dispatchEvent(new CustomEvent('router.active'));
                     }
                     else { //Removed from DOM
                         window.removeEventListener('router.load', onEvent);
                     }
+                };
+                var innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []);
+                var alert = function (prop) {
+                    var myRegion = InlineJS.Region.Get(innerRegionId);
+                    myRegion.GetChanges().Add({
+                        regionId: innerRegionId,
+                        type: 'set',
+                        path: innerScope.path + "." + prop,
+                        prop: prop,
+                        origin: myRegion.GetChanges().GetOrigin()
+                    });
                 };
                 if (path) { //Use specified path
                     var queryIndex = path.indexOf('?');
@@ -1125,51 +1154,59 @@ var InlineJS;
                 else if (!(innerElement instanceof HTMLFormElement) && !(innerElement instanceof HTMLAnchorElement)) { //Resolve path
                     target = (innerElement.querySelector('a') || innerElement.querySelector('form') || innerElement);
                 }
-                if (innerDirective.arg.options.indexOf('nav') != -1) {
-                    window.addEventListener('router.load', onEvent);
-                }
+                window.addEventListener('router.load', onEvent);
                 if (target instanceof HTMLFormElement) {
                     if (target.method && target.method.toLowerCase() !== 'get' && target.method.toLowerCase() !== 'head') {
                         return InlineJS.DirectiveHandlerReturn.Nil;
                     }
-                    if (!path) {
-                        var queryIndex = (path = target.action).indexOf('?');
-                        if (queryIndex != -1) { //Split
-                            query = path.substr(queryIndex + 1);
-                            path = path.substr(0, queryIndex);
-                        }
-                    }
                     target.addEventListener('submit', function (e) {
                         e.preventDefault();
-                        var data = new FormData(target);
+                        var data = new FormData(target), thisPath = target.action, thisQuery = '';
+                        if (!path) { //Compute path
+                            var queryIndex = thisPath.indexOf('?');
+                            if (queryIndex != -1) { //Split
+                                thisQuery = thisPath.substr(queryIndex + 1);
+                                thisPath = thisPath.substr(0, queryIndex);
+                            }
+                        }
+                        else { //Use specified path
+                            thisPath = path;
+                            thisQuery = query;
+                        }
                         data.forEach(function (value, key) {
-                            if (query) {
-                                query = query + "&" + key + "=" + value.toString();
+                            if (thisQuery) {
+                                thisQuery = thisQuery + "&" + key + "=" + value.toString();
                             }
                             else {
-                                query = key + "=" + value.toString();
+                                thisQuery = key + "=" + value.toString();
                             }
                         });
-                        goto(path, query);
+                        goto(thisPath, thisQuery);
                     });
                     return InlineJS.DirectiveHandlerReturn.Handled;
                 }
-                if (target instanceof HTMLAnchorElement) {
-                    if (!path) {
-                        path = target.pathname;
-                        query = target.search.substr(1);
-                    }
-                    if (!path) {
-                        path = innerDirective.value;
-                    }
-                    else if (path.length > 1 && path.startsWith('/')) {
-                        path = path.substr(1);
-                    }
-                }
                 target.addEventListener('click', function (e) {
                     e.preventDefault();
-                    goto(path, query);
+                    var thisPath = path, thisQuery = query;
+                    if (!path && target instanceof HTMLAnchorElement) { //Compute path
+                        thisPath = target.href;
+                        thisQuery = '';
+                        var queryIndex = thisPath.indexOf('?');
+                        if (queryIndex != -1) { //Split
+                            thisQuery = thisPath.substr(queryIndex + 1);
+                            thisPath = thisPath.substr(0, queryIndex);
+                        }
+                    }
+                    goto(thisPath, thisQuery);
                 });
+                var innerProxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                    if (prop === 'active') {
+                        InlineJS.Region.Get(innerRegionId).GetChanges().AddGetAccess(innerScope.path + "." + prop);
+                        return active;
+                    }
+                    return proxy[prop];
+                }, __spreadArrays(['active'], Object.keys(info), Object.keys(methods)));
+                innerRegion.AddLocal(innerElement, '$router', function () { return innerProxy; });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerBack', function (innerRegion, innerElement, innerDirective) {
@@ -1235,6 +1272,7 @@ var InlineJS;
             var alert = function (prop) {
                 var myRegion = InlineJS.Region.Get(regionId);
                 myRegion.GetChanges().Add({
+                    regionId: regionId,
                     type: 'set',
                     path: scope.path + "." + prop,
                     prop: prop,
