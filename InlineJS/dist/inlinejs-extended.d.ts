@@ -51,6 +51,22 @@ declare namespace InlineJS {
         useRandom: boolean;
         showCursor: boolean;
     }
+    interface CartItem {
+        quantity: number;
+        price: number;
+        product: Record<string, any>;
+    }
+    interface CartHandlers {
+        load?: (callback: (items: Record<string, CartItem>) => void) => void;
+        update?: (sku: string, quantity: number, incremental: boolean, callback: (item: CartItem) => void) => void;
+        updateLink?: string;
+    }
+    interface CartInfo {
+        items: Record<string, CartItem>;
+        itemProxies: Record<string, {}>;
+        count: number;
+        total: number;
+    }
     class ExtendedDirectiveHandlers {
         private static scopeId_;
         private static scopes_;
@@ -67,7 +83,8 @@ declare namespace InlineJS {
         static Animate(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Typewriter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Router(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static Screen(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Screen(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Cart(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static DB(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
         static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean): boolean;

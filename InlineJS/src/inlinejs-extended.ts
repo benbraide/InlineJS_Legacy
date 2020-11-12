@@ -57,6 +57,25 @@ namespace InlineJS{
         useRandom: boolean;
         showCursor: boolean;
     }
+
+    export interface CartItem{
+        quantity: number;
+        price: number;
+        product: Record<string, any>;
+    }
+
+    export interface CartHandlers{
+        load?: (callback: (items: Record<string, CartItem>) => void) => void;
+        update?: (sku: string, quantity: number, incremental: boolean, callback: (item: CartItem) => void) => void;
+        updateLink?: string;
+    }
+
+    export interface CartInfo{
+        items: Record<string, CartItem>;
+        itemProxies: Record<string, {}>;
+        count: number;
+        total: number;
+    }
     
     export class ExtendedDirectiveHandlers{
         private static scopeId_ = 0;
@@ -1558,6 +1577,230 @@ namespace InlineJS{
             }, ['size', 'breakpoint']);
             
             Region.AddGlobal('$screen', () => proxy);
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Cart(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$cart', region.GetId())){
+                return DirectiveHandlerReturn.Nil;
+            }
+            
+            let handlers = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) as CartHandlers);
+            if (!handlers){
+                return DirectiveHandlerReturn.Nil;
+            }
+            
+            let scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue: Array<() => void> = null;
+            let alert = (prop: string) => {
+                let myRegion = Region.Get(regionId);
+                myRegion.GetChanges().Add({
+                    regionId: regionId,
+                    type: 'set',
+                    path: `${scope.path}.${prop}`,
+                    prop: prop,
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
+            };
+            
+            let info: CartInfo = {
+                items: {},
+                itemProxies: {},
+                count: 0,
+                total: 0
+            };
+
+            let computeValues = () => {
+                let count = 0, total = 0;
+                for (let sku in info.items){
+                    count += info.items[sku].quantity;
+                    total += (info.items[sku].price * info.items[sku].quantity);
+                }
+
+                if (count != info.count){
+                    info.count = count;
+                    alert('count');
+                }
+
+                if (total != info.total){
+                    info.total = total;
+                    alert('total');
+                }
+            };
+
+            let postUpdate = (item: CartItem) => {
+                if (!item){
+                    return;
+                }
+
+                let sku = item.product.sku;
+                if (sku in info.items){//Update exisiting
+                    if (info.items[sku].quantity != item.quantity){
+                        info.items[sku].quantity = item.quantity;
+                        alert(`items.${sku}.quantity`);
+                    }
+
+                    if (info.items[sku].price != item.price){
+                        info.items[sku].price = item.price;
+                        alert(`items.${sku}.price`);
+                    }
+                }
+                else{//Add new
+                    info.items[sku] = item;
+                    alert('items');
+                }
+
+                computeValues();
+            };
+
+            let update = (sku: string, quantity: number, incremental: boolean) => {
+                if (updatesQueue){//Defer
+                    updatesQueue.push(() => {
+                        update(sku, quantity, incremental);
+                    });
+                    return;
+                }
+                
+                if (handlers.update){
+                    handlers.update(sku, quantity, incremental, postUpdate);
+                    return;
+                }
+
+                if (!handlers.updateLink){
+                    return;
+                }
+
+                fetch(`${handlers.updateLink}?sku=${sku}&quantity=${quantity}&incremental=${incremental}`, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                }).then(response => response.json()).then(postUpdate);
+            };
+
+            let createItemProxy = (sku: string) => {
+                return CoreDirectiveHandlers.CreateProxy((prop) => {
+                    if (prop === 'quantity'){
+                        if (sku in info.items){
+                            Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.items.${sku}.${prop}`);
+                            return info.items[sku].quantity;
+                        }
+                        
+                        return 0;
+                    }
+
+                    if (prop === 'price'){
+                        if (sku in info.items){
+                            Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.items.${sku}.${prop}`);
+                            return info.items[sku].price;
+                        }
+                        
+                        return 0;
+                    }
+    
+                    if (prop === 'product'){
+                        if (sku in info.items){
+                            return info.items[sku].product;
+                        }
+                        
+                        return null;
+                    }
+                }, ['quantity', 'price', 'product']);
+            };
+
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop in info && prop !== 'itemProxies'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return info[prop];
+                }
+
+                if (prop === 'update'){
+                    return update;
+                }
+            }, ['items', 'count', 'total', 'update']);
+
+            if (handlers.load){
+                updatesQueue = new Array<() => void>();
+                handlers.load((list) => {
+                    info.items = (list || {});
+                    for (let sku in info.items){//Create proxies
+                        info.itemProxies[sku] = createItemProxy(sku);
+                    }
+
+                    if (0 < Object.keys(info.items).length){
+                        alert('items');
+                    }
+                    
+                    computeValues();
+                    (updatesQueue || []).forEach((callback) => {
+                        try{
+                            callback();
+                        }
+                        catch (err){}
+                    });
+
+                    updatesQueue = null;
+                });
+            }
+
+            Region.AddGlobal('$cart', () => proxy);
+            DirectiveHandlerManager.AddHandler('cartUpdate', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let form = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, '$form');
+                if (!form || !(form instanceof HTMLFormElement)){
+                    return DirectiveHandlerReturn.Nil;
+                }
+                
+                let sku = '';
+                innerRegion.GetState().TrapGetAccess(() => {
+                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                }, true, innerElement);
+                
+                if (!sku){
+                    return DirectiveHandlerReturn.Nil;    
+                }
+
+                form.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    update(sku, parseInt(((form as HTMLFormElement).elements.namedItem('cart-value') as HTMLInputElement).value), false);
+                });
+                
+                return DirectiveHandlerReturn.Handled;
+            });
+
+            DirectiveHandlerManager.AddHandler('cartIncrement', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let sku = '';
+                innerRegion.GetState().TrapGetAccess(() => {
+                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                }, true, innerElement);
+                
+                if (!sku){
+                    return DirectiveHandlerReturn.Nil;    
+                }
+
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    update(sku, 1, true);
+                });
+                
+                return DirectiveHandlerReturn.Handled;
+            });
+
+            DirectiveHandlerManager.AddHandler('cartDecrement', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let sku = '';
+                innerRegion.GetState().TrapGetAccess(() => {
+                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                }, true, innerElement);
+
+                if (!sku){
+                    return DirectiveHandlerReturn.Nil;    
+                }
+
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    update(sku, -1, true);
+                });
+
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            return DirectiveHandlerReturn.Handled;
         }
 
         public static DB(region: Region, element: HTMLElement, directive: Directive){
@@ -1886,6 +2129,8 @@ namespace InlineJS{
 
             DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
             DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
+
+            DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
 
             let buildGlobal = (name: string) => {
@@ -1902,6 +2147,7 @@ namespace InlineJS{
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
+            buildGlobal('router');
             buildGlobal('db');
         }
     }

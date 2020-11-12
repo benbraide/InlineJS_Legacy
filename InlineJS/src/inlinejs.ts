@@ -1,4 +1,4 @@
-export namespace InlineJS{
+namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -1576,14 +1576,14 @@ export namespace InlineJS{
             Region.AddGlobal('$static', (regionId: string) => (value: any) => {
                 let region = Region.GetCurrent(regionId);
                 if (region){
-                    region.GetChanges().AddGetAccessesCheckpoint();
+                    region.GetChanges().DiscardGetAccessesCheckpoint();
                 }
 
                 return value;
             }, (regionId: string) => {
                 let region = Region.GetCurrent(regionId);
                 if (region){
-                    region.GetChanges().DiscardGetAccessesCheckpoint();
+                    region.GetChanges().AddGetAccessesCheckpoint();
                 }
 
                 return true;

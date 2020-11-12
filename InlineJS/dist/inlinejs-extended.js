@@ -1302,6 +1302,189 @@ var InlineJS;
                 }
             }, ['size', 'breakpoint']);
             InlineJS.Region.AddGlobal('$screen', function () { return proxy; });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.Cart = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal('$cart', region.GetId())) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var handlers = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (!handlers) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue = null;
+            var alert = function (prop) {
+                var myRegion = InlineJS.Region.Get(regionId);
+                myRegion.GetChanges().Add({
+                    regionId: regionId,
+                    type: 'set',
+                    path: scope.path + "." + prop,
+                    prop: prop,
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
+            };
+            var info = {
+                items: {},
+                itemProxies: {},
+                count: 0,
+                total: 0
+            };
+            var computeValues = function () {
+                var count = 0, total = 0;
+                for (var sku in info.items) {
+                    count += info.items[sku].quantity;
+                    total += (info.items[sku].price * info.items[sku].quantity);
+                }
+                if (count != info.count) {
+                    info.count = count;
+                    alert('count');
+                }
+                if (total != info.total) {
+                    info.total = total;
+                    alert('total');
+                }
+            };
+            var postUpdate = function (item) {
+                if (!item) {
+                    return;
+                }
+                var sku = item.product.sku;
+                if (sku in info.items) { //Update exisiting
+                    if (info.items[sku].quantity != item.quantity) {
+                        info.items[sku].quantity = item.quantity;
+                        alert("items." + sku + ".quantity");
+                    }
+                    if (info.items[sku].price != item.price) {
+                        info.items[sku].price = item.price;
+                        alert("items." + sku + ".price");
+                    }
+                }
+                else { //Add new
+                    info.items[sku] = item;
+                    alert('items');
+                }
+                computeValues();
+            };
+            var update = function (sku, quantity, incremental) {
+                if (updatesQueue) { //Defer
+                    updatesQueue.push(function () {
+                        update(sku, quantity, incremental);
+                    });
+                    return;
+                }
+                if (handlers.update) {
+                    handlers.update(sku, quantity, incremental, postUpdate);
+                    return;
+                }
+                if (!handlers.updateLink) {
+                    return;
+                }
+                fetch(handlers.updateLink + "?sku=" + sku + "&quantity=" + quantity + "&incremental=" + incremental, {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                }).then(function (response) { return response.json(); }).then(postUpdate);
+            };
+            var createItemProxy = function (sku) {
+                return InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                    if (prop === 'quantity') {
+                        if (sku in info.items) {
+                            InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + sku + "." + prop);
+                            return info.items[sku].quantity;
+                        }
+                        return 0;
+                    }
+                    if (prop === 'price') {
+                        if (sku in info.items) {
+                            InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + sku + "." + prop);
+                            return info.items[sku].price;
+                        }
+                        return 0;
+                    }
+                    if (prop === 'product') {
+                        if (sku in info.items) {
+                            return info.items[sku].product;
+                        }
+                        return null;
+                    }
+                }, ['quantity', 'price', 'product']);
+            };
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop in info && prop !== 'itemProxies') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return info[prop];
+                }
+                if (prop === 'update') {
+                    return update;
+                }
+            }, ['items', 'count', 'total', 'update']);
+            if (handlers.load) {
+                updatesQueue = new Array();
+                handlers.load(function (list) {
+                    info.items = (list || {});
+                    for (var sku in info.items) { //Create proxies
+                        info.itemProxies[sku] = createItemProxy(sku);
+                    }
+                    if (0 < Object.keys(info.items).length) {
+                        alert('items');
+                    }
+                    computeValues();
+                    (updatesQueue || []).forEach(function (callback) {
+                        try {
+                            callback();
+                        }
+                        catch (err) { }
+                    });
+                    updatesQueue = null;
+                });
+            }
+            InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
+            InlineJS.DirectiveHandlerManager.AddHandler('cartUpdate', function (innerRegion, innerElement, innerDirective) {
+                var form = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, '$form');
+                if (!form || !(form instanceof HTMLFormElement)) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                var sku = '';
+                innerRegion.GetState().TrapGetAccess(function () {
+                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                }, true, innerElement);
+                if (!sku) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                form.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    update(sku, parseInt(form.elements.namedItem('cart-value').value), false);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('cartIncrement', function (innerRegion, innerElement, innerDirective) {
+                var sku = '';
+                innerRegion.GetState().TrapGetAccess(function () {
+                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                }, true, innerElement);
+                if (!sku) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    update(sku, 1, true);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('cartDecrement', function (innerRegion, innerElement, innerDirective) {
+                var sku = '';
+                innerRegion.GetState().TrapGetAccess(function () {
+                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                }, true, innerElement);
+                if (!sku) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    update(sku, -1, true);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.DB = function (region, element, directive) {
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
@@ -1578,6 +1761,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
             InlineJS.DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
             InlineJS.DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
+            InlineJS.DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             InlineJS.DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
@@ -1592,6 +1776,7 @@ var InlineJS;
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
+            buildGlobal('router');
             buildGlobal('db');
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;

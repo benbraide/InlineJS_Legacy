@@ -1257,13 +1257,13 @@ export var InlineJS;
             Region.AddGlobal('$static', function (regionId) { return function (value) {
                 var region = Region.GetCurrent(regionId);
                 if (region) {
-                    region.GetChanges().AddGetAccessesCheckpoint();
+                    region.GetChanges().DiscardGetAccessesCheckpoint();
                 }
                 return value;
             }; }, function (regionId) {
                 var region = Region.GetCurrent(regionId);
                 if (region) {
-                    region.GetChanges().DiscardGetAccessesCheckpoint();
+                    region.GetChanges().AddGetAccessesCheckpoint();
                 }
                 return true;
             });
