@@ -59,7 +59,7 @@ describe('x-each directive', () => {
                 <p x-each="{ name: 'John Doe', age: 36, gender: 'MALE' } as item" x-text="\`\${$each.index}.\${$each.value}.\${item}.\${$each.count}\`"></p>
             </div>
         `;
-    
+        
         InlineJS.Bootstrap.Attach();
     
         expect(document.querySelectorAll('p').length).toEqual(3);

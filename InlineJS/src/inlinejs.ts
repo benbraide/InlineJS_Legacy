@@ -378,6 +378,19 @@ namespace InlineJS{
             return (scope && scope.removed);
         }
 
+        public ElementIsContained(element: HTMLElement | string, checkDocument = true): boolean{
+            if (typeof element === 'string'){
+                return (element && element in this.elementScopes_);
+            }
+            
+            if (!element || (checkDocument && !document.contains(element))){
+                return false;
+            }
+            
+            let key = element.getAttribute(Region.GetElementKeyName());
+            return ((key && key in this.elementScopes_) || this.ElementIsContained(element, false));
+        }
+        
         public ElementExists(element: HTMLElement | string): boolean{
             let scope = this.GetElementScope(element);
             return (scope && !scope.removed);
@@ -1494,7 +1507,7 @@ namespace InlineJS{
             };
 
             region.GetState().TrapGetAccess(() => {
-                let value = Evaluator.Evaluate(regionId, elementContext, expression);
+                let value = Evaluator.Evaluate(regionId, elementContext, `$use(${expression})`);
                 previousValue = Region.DeepCopy(value);
                 return (skipFirst || callback(value));
             }, onChange, elementContext);
@@ -1786,47 +1799,65 @@ namespace InlineJS{
         path: string;
     }
 
+    export interface DataOptions{
+        $enableOptimizedBinds?: boolean;
+        $locals?: Record<string, any>;
+        $component?: string;
+        $init?: (region?: Region) => void;
+    }
+
     export class CoreDirectiveHandlers{
         public static Noop(region: Region, element: HTMLElement, directive: Directive){
             return DirectiveHandlerReturn.Handled;
         }
 
         public static Data(region: Region, element: HTMLElement, directive: Directive){
-            let proxy = region.GetRootProxy().GetNativeProxy();
-            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
+            let proxy = region.GetRootProxy().GetNativeProxy(), data = (CoreDirectiveHandlers.Evaluate(region, element, directive.value, true) as DataOptions);
+            if (!data){
+                return DirectiveHandlerReturn.Handled;
+            }
+
+            if (data.$locals){//Add local fields
+                for (let field in data.$locals){
+                    region.AddLocal(element, field, data.$locals[field]);
+                }
+            }
+
+            if (data.$enableOptimizedBinds === true || data.$enableOptimizedBinds === false){
+                region.SetOptimizedBindsState(data.$enableOptimizedBinds);
+            }
+
+            if (data.$component){
+                Region.AddComponent(region, element, data.$component);
+            }
+
+            let target = proxy['__InlineJS_Target__'];
+            Object.keys(data).filter(key => (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds')).forEach(key => target[key] = data[key]);
             
+            if (data.$init){
+                RegionMap.scopeRegionIds.Push(region.GetId());
+                region.GetState().PushElementContext(element);
+                
+                try{
+                    (proxy as DataOptions).$init(region);
+                }
+                catch (err){}
+
+                region.GetState().PopElementContext();
+                RegionMap.scopeRegionIds.Pop();
+            }
+
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Locals(region: Region, element: HTMLElement, directive: Directive){
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, false);
             if (!Region.IsObject(data)){
                 return DirectiveHandlerReturn.Handled;
             }
 
-            let target = proxy['__InlineJS_Target__'];
-            for (let key in data){
-                if (key === '$enableOptimizedBinds'){
-                    region.SetOptimizedBindsState(!!data[key]);
-                }
-                else if (key === '$component' && data[key] && typeof data[key] === 'string'){
-                    Region.AddComponent(region, element, data[key]);
-                }
-                else if (key === '$locals'){
-                    let locals = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
-                    if (Region.IsObject(locals)){
-                        for (let field in (locals as Record<string, any>)){
-                            region.AddLocal(element, field, locals[field]);
-                        }
-                    }
-                }
-                else if (key !== '$component'){
-                    target[key] = data[key];
-                }
-            }
-
-            if ('$init' in target && typeof target.$init === 'function'){
-                RegionMap.scopeRegionIds.Push(region.GetId());
-                try{
-                    (proxy['$init'] as (region?: Region) => void)(region);
-                }
-                catch (err){}
-                RegionMap.scopeRegionIds.Pop();
+            for (let field in data){
+                region.AddLocal(element, field, data[field]);
             }
 
             return DirectiveHandlerReturn.Handled;
@@ -2335,10 +2366,11 @@ namespace InlineJS{
         }
 
         public static Each(region: Region, element: HTMLElement, directive: Directive){
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false, isRange = false;
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false, isRange = false, isOptimized = false;
             if (directive.arg){
                 isCount = (directive.arg.options.indexOf('count') != -1);
                 isReverse = (directive.arg.options.indexOf('reverse') != -1);
+                isOptimized = (directive.arg.options.indexOf('nooptimize') == -1);
             }
 
             let scope = region.GetElementScope(info.scopeKey), ifConditionIsTrue = true, falseIfCondition = () => {
@@ -2388,7 +2420,9 @@ namespace InlineJS{
             }
 
             let getIndex = (clone: HTMLElement, key?: string) => (options.isArray ? (options.list as Array<HTMLElement>).indexOf(clone) : key);
-            let getValue = (clone: HTMLElement, key?: string) => (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Record<string, any>)[key]);
+            let getValue = (clone: HTMLElement, key?: string) => {
+                return (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Record<string, any>)[key])
+            };
             
             let initLocals = (myRegion: Region, clone: HTMLElement, key?: string) => {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
@@ -2424,7 +2458,9 @@ namespace InlineJS{
                 }, ['count', 'index', 'value', 'collection', 'parent']));
 
                 if (valueKey){
-                    myRegion.AddLocal(clone, valueKey, new Value(() => getValue(clone, key)));
+                    myRegion.AddLocal(clone, valueKey, new Value(() => {
+                        return getValue(clone, key);
+                    }));
                 }
             };
 
@@ -2556,6 +2592,50 @@ namespace InlineJS{
 
                 if (isRange){
                     return init(myRegion, false);
+                }
+
+                if (!isOptimized){
+                    let target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
+                    if (target === options.target){
+                        if (options.isArray){//Update count
+                            let count = (options.target as Array<any>).length;
+                            if (count < options.count){//Item(s) removed
+                                addSizeChange(Region.Get(info.regionId));
+                                (options.list as Array<HTMLElement>).splice(count).forEach((clone) => {
+                                    info.parent.removeChild(clone);
+                                    myRegion.MarkElementAsRemoved(clone);
+                                });
+                            }
+                            else if (options.count < count){//Item(s) added
+                                addSizeChange(Region.Get(info.regionId));
+                                for (let diff = (count - options.count); 0 < diff; --diff){
+                                    insert(myRegion);
+                                }
+                            }
+
+                            options.count = count;
+                        }
+                        else{
+                            let newTargetKeys = Object.keys(target), oldTargetKeys = Object.keys(options.target);
+                            if (newTargetKeys.length != oldTargetKeys.length){
+                                addSizeChange(Region.Get(info.regionId));
+                            }
+
+                            newTargetKeys.filter(key => !(key in options.list)).forEach(key => insert(myRegion, key));//Add new keys
+                            oldTargetKeys.filter(key => !(key in target)).forEach((key) => {//Remove previous keys
+                                info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]);
+                                myRegion.MarkElementAsRemoved((options.list as Record<string, HTMLElement>)[key]);
+                                delete (options.list as Record<string, HTMLElement>)[key];
+                            });
+                        }
+                    }
+                    else{//Refresh
+                        empty(myRegion);
+                        options.target = target;
+                        init(myRegion, true);
+                    }
+                    
+                    return true;
                 }
                 
                 changes.forEach((change) => {
@@ -2800,6 +2880,7 @@ namespace InlineJS{
         public static AddAll(){
             DirectiveHandlerManager.AddHandler('cloak', CoreDirectiveHandlers.Noop);
             DirectiveHandlerManager.AddHandler('data', CoreDirectiveHandlers.Data);
+            DirectiveHandlerManager.AddHandler('locals', CoreDirectiveHandlers.Locals);
             DirectiveHandlerManager.AddHandler('component', CoreDirectiveHandlers.Component);
 
             DirectiveHandlerManager.AddHandler('init', CoreDirectiveHandlers.Init);

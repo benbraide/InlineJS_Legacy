@@ -57,7 +57,8 @@ declare namespace InlineJS {
         product: Record<string, any>;
     }
     interface CartHandlers {
-        load?: (callback: (items: Record<string, CartItem>) => void) => void;
+        init?: () => void;
+        load?: (items: Record<string, CartItem>) => void;
         update?: (sku: string, quantity: number, incremental: boolean, callback: (item: CartItem) => void) => void;
         updateLink?: string;
     }
@@ -66,6 +67,11 @@ declare namespace InlineJS {
         itemProxies: Record<string, {}>;
         count: number;
         total: number;
+    }
+    interface DBOptions {
+        drop: boolean;
+        name: string;
+        fields: Record<string, boolean>;
     }
     class ExtendedDirectiveHandlers {
         private static scopeId_;

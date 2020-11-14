@@ -276,6 +276,17 @@ var InlineJS;
             var scope = this.GetElementScope(element);
             return (scope && scope.removed);
         };
+        Region.prototype.ElementIsContained = function (element, checkDocument) {
+            if (checkDocument === void 0) { checkDocument = true; }
+            if (typeof element === 'string') {
+                return (element && element in this.elementScopes_);
+            }
+            if (!element || (checkDocument && !document.contains(element))) {
+                return false;
+            }
+            var key = element.getAttribute(Region.GetElementKeyName());
+            return ((key && key in this.elementScopes_) || this.ElementIsContained(element, false));
+        };
         Region.prototype.ElementExists = function (element) {
             var scope = this.GetElementScope(element);
             return (scope && !scope.removed);
@@ -1190,7 +1201,7 @@ var InlineJS;
                 return callback(value);
             };
             region.GetState().TrapGetAccess(function () {
-                var value = Evaluator.Evaluate(regionId, elementContext, expression);
+                var value = Evaluator.Evaluate(regionId, elementContext, "$use(" + expression + ")");
                 previousValue = Region.DeepCopy(value);
                 return (skipFirst || callback(value));
             }, onChange, elementContext);
@@ -1416,38 +1427,42 @@ var InlineJS;
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Data = function (region, element, directive) {
-            var proxy = region.GetRootProxy().GetNativeProxy();
-            var data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
+            var proxy = region.GetRootProxy().GetNativeProxy(), data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
+            if (!data) {
+                return DirectiveHandlerReturn.Handled;
+            }
+            if (data.$locals) { //Add local fields
+                for (var field in data.$locals) {
+                    region.AddLocal(element, field, data.$locals[field]);
+                }
+            }
+            if (data.$enableOptimizedBinds === true || data.$enableOptimizedBinds === false) {
+                region.SetOptimizedBindsState(data.$enableOptimizedBinds);
+            }
+            if (data.$component) {
+                Region.AddComponent(region, element, data.$component);
+            }
+            var target = proxy['__InlineJS_Target__'];
+            Object.keys(data).filter(function (key) { return (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds'); }).forEach(function (key) { return target[key] = data[key]; });
+            if (data.$init) {
+                RegionMap.scopeRegionIds.Push(region.GetId());
+                region.GetState().PushElementContext(element);
+                try {
+                    proxy.$init(region);
+                }
+                catch (err) { }
+                region.GetState().PopElementContext();
+                RegionMap.scopeRegionIds.Pop();
+            }
+            return DirectiveHandlerReturn.Handled;
+        };
+        CoreDirectiveHandlers.Locals = function (region, element, directive) {
+            var data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, false);
             if (!Region.IsObject(data)) {
                 return DirectiveHandlerReturn.Handled;
             }
-            var target = proxy['__InlineJS_Target__'];
-            for (var key in data) {
-                if (key === '$enableOptimizedBinds') {
-                    region.SetOptimizedBindsState(!!data[key]);
-                }
-                else if (key === '$component' && data[key] && typeof data[key] === 'string') {
-                    Region.AddComponent(region, element, data[key]);
-                }
-                else if (key === '$locals') {
-                    var locals = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
-                    if (Region.IsObject(locals)) {
-                        for (var field in locals) {
-                            region.AddLocal(element, field, locals[field]);
-                        }
-                    }
-                }
-                else if (key !== '$component') {
-                    target[key] = data[key];
-                }
-            }
-            if ('$init' in target && typeof target.$init === 'function') {
-                RegionMap.scopeRegionIds.Push(region.GetId());
-                try {
-                    proxy['$init'](region);
-                }
-                catch (err) { }
-                RegionMap.scopeRegionIds.Pop();
+            for (var field in data) {
+                region.AddLocal(element, field, data[field]);
             }
             return DirectiveHandlerReturn.Handled;
         };
@@ -1876,10 +1891,11 @@ var InlineJS;
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.Each = function (region, element, directive) {
-            var info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false, isRange = false;
+            var info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false, isRange = false, isOptimized = false;
             if (directive.arg) {
                 isCount = (directive.arg.options.indexOf('count') != -1);
                 isReverse = (directive.arg.options.indexOf('reverse') != -1);
+                isOptimized = (directive.arg.options.indexOf('nooptimize') == -1);
             }
             var scope = region.GetElementScope(info.scopeKey), ifConditionIsTrue = true, falseIfCondition = function () {
                 var myRegion = Region.Get(info.regionId);
@@ -1921,7 +1937,9 @@ var InlineJS;
                 expression = directive.value;
             }
             var getIndex = function (clone, key) { return (options.isArray ? options.list.indexOf(clone) : key); };
-            var getValue = function (clone, key) { return (options.isArray ? options.target[getIndex(clone)] : options.target[key]); };
+            var getValue = function (clone, key) {
+                return (options.isArray ? options.target[getIndex(clone)] : options.target[key]);
+            };
             var initLocals = function (myRegion, clone, key) {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy(function (prop) {
                     if (prop === 'count') {
@@ -1948,7 +1966,9 @@ var InlineJS;
                     return null;
                 }, ['count', 'index', 'value', 'collection', 'parent']));
                 if (valueKey) {
-                    myRegion.AddLocal(clone, valueKey, new Value(function () { return getValue(clone, key); }));
+                    myRegion.AddLocal(clone, valueKey, new Value(function () {
+                        return getValue(clone, key);
+                    }));
                 }
             };
             var insert = function (myRegion, key) {
@@ -2062,6 +2082,46 @@ var InlineJS;
                 }
                 if (isRange) {
                     return init(myRegion, false);
+                }
+                if (!isOptimized) {
+                    var target_1 = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
+                    if (target_1 === options.target) {
+                        if (options.isArray) { //Update count
+                            var count = options.target.length;
+                            if (count < options.count) { //Item(s) removed
+                                addSizeChange(Region.Get(info.regionId));
+                                options.list.splice(count).forEach(function (clone) {
+                                    info.parent.removeChild(clone);
+                                    myRegion.MarkElementAsRemoved(clone);
+                                });
+                            }
+                            else if (options.count < count) { //Item(s) added
+                                addSizeChange(Region.Get(info.regionId));
+                                for (var diff = (count - options.count); 0 < diff; --diff) {
+                                    insert(myRegion);
+                                }
+                            }
+                            options.count = count;
+                        }
+                        else {
+                            var newTargetKeys = Object.keys(target_1), oldTargetKeys = Object.keys(options.target);
+                            if (newTargetKeys.length != oldTargetKeys.length) {
+                                addSizeChange(Region.Get(info.regionId));
+                            }
+                            newTargetKeys.filter(function (key) { return !(key in options.list); }).forEach(function (key) { return insert(myRegion, key); }); //Add new keys
+                            oldTargetKeys.filter(function (key) { return !(key in target_1); }).forEach(function (key) {
+                                info.parent.removeChild(options.list[key]);
+                                myRegion.MarkElementAsRemoved(options.list[key]);
+                                delete options.list[key];
+                            });
+                        }
+                    }
+                    else { //Refresh
+                        empty(myRegion);
+                        options.target = target_1;
+                        init(myRegion, true);
+                    }
+                    return true;
                 }
                 changes.forEach(function (change) {
                     var fromRegion = Region.Get(('original' in change) ? change.original.regionId : change.regionId);
@@ -2282,6 +2342,7 @@ var InlineJS;
         CoreDirectiveHandlers.AddAll = function () {
             DirectiveHandlerManager.AddHandler('cloak', CoreDirectiveHandlers.Noop);
             DirectiveHandlerManager.AddHandler('data', CoreDirectiveHandlers.Data);
+            DirectiveHandlerManager.AddHandler('locals', CoreDirectiveHandlers.Locals);
             DirectiveHandlerManager.AddHandler('component', CoreDirectiveHandlers.Component);
             DirectiveHandlerManager.AddHandler('init', CoreDirectiveHandlers.Init);
             DirectiveHandlerManager.AddHandler('post', CoreDirectiveHandlers.Post);

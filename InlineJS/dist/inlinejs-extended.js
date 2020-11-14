@@ -968,11 +968,19 @@ var InlineJS;
             };
             var goto = function (page, query, replace) {
                 if (replace === void 0) { replace = false; }
-                if (page in info.pages && !info.pages[page].disabled) {
+                var pageInfo = null;
+                if (page in info.pages) {
+                    pageInfo = info.pages[page];
+                }
+                else if (page.indexOf(origin + "/") == 0) {
+                    page = page.substr(origin.length + 1);
+                    pageInfo = ((page in info.pages) ? info.pages[page] : null);
+                }
+                if (pageInfo && !pageInfo.disabled) {
                     if (query && query.substr(0, 1) !== '?') {
                         query = "?" + query;
                     }
-                    if (origin + "/" + prefix + info.pages[page].path + query === info.url) {
+                    if (origin + "/" + prefix + pageInfo.path + query === info.url) {
                         window.dispatchEvent(new CustomEvent('router.reload'));
                         window.dispatchEvent(new CustomEvent('router.load'));
                         return;
@@ -982,13 +990,13 @@ var InlineJS;
                             history.replaceState({
                                 page: page,
                                 query: query
-                            }, info.pages[page].title, origin + "/" + page + query);
+                            }, pageInfo.title, origin + "/" + page + query);
                         }
                         else {
                             history.pushState({
                                 page: page,
                                 query: query
-                            }, info.pages[page].title, origin + "/" + page + query);
+                            }, pageInfo.title, origin + "/" + page + query);
                         }
                     });
                 }
@@ -1417,26 +1425,21 @@ var InlineJS;
                     return update;
                 }
             }, ['items', 'count', 'total', 'update']);
-            if (handlers.load) {
-                updatesQueue = new Array();
-                handlers.load(function (list) {
-                    info.items = (list || {});
-                    for (var sku in info.items) { //Create proxies
-                        info.itemProxies[sku] = createItemProxy(sku);
+            handlers.load = function (items) {
+                info.items = (items || {});
+                for (var sku in info.items) { //Create proxies
+                    info.itemProxies[sku] = createItemProxy(sku);
+                }
+                alert('items');
+                computeValues();
+                (updatesQueue || []).forEach(function (callback) {
+                    try {
+                        callback();
                     }
-                    if (0 < Object.keys(info.items).length) {
-                        alert('items');
-                    }
-                    computeValues();
-                    (updatesQueue || []).forEach(function (callback) {
-                        try {
-                            callback();
-                        }
-                        catch (err) { }
-                    });
-                    updatesQueue = null;
+                    catch (err) { }
                 });
-            }
+                updatesQueue = null;
+            };
             InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
             InlineJS.DirectiveHandlerManager.AddHandler('cartUpdate', function (innerRegion, innerElement, innerDirective) {
                 var form = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, '$form');
@@ -1484,17 +1487,27 @@ var InlineJS;
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
+            if (handlers.init) {
+                handlers.init();
+            }
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.DB = function (region, element, directive) {
-            var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
-            if (typeof options === 'string') {
-                options = {
-                    name: options
+            var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (typeof data === 'string') {
+                data = {
+                    name: data
                 };
             }
-            if (!InlineJS.Region.IsObject(options) || !options.name) {
+            if (!InlineJS.Region.IsObject(data) || !data.name) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var options;
+            if ('__InlineJS_Target__' in data) {
+                options = data['__InlineJS_Target__'];
+            }
+            else { //Raw data
+                options = data;
             }
             var opened = false, openRequest = null, handle = null, queuedRequests = new Array(), regionId = region.GetId();
             var open = function (myRegion) {
@@ -1503,8 +1516,8 @@ var InlineJS;
                 }
                 openRequest = window.indexedDB.open(options.name);
                 openRequest.addEventListener('error', function (e) {
-                    myRegion.GetState().ReportError("Failed to open database '" + options.name + "'", e);
                     opened = true;
+                    InlineJS.Region.Get(regionId).GetState().ReportError("Failed to open database '" + options.name + "'", e);
                 });
                 openRequest.addEventListener('success', function () {
                     handle = openRequest.result;
@@ -1520,16 +1533,14 @@ var InlineJS;
                 openRequest.addEventListener('upgradeneeded', function () {
                     var db = openRequest.result, store = db.createObjectStore(options.name);
                     db.addEventListener('error', function (e) {
-                        myRegion.GetState().ReportError("Failed to open database '" + options.name + "'", e);
                         opened = true;
+                        InlineJS.Region.Get(regionId).GetState().ReportError("Failed to open database '" + options.name + "'", e);
                     });
-                    if (InlineJS.Region.IsObject(options.fields)) {
-                        Object.keys(options.fields).forEach(function (key) {
-                            store.createIndex(key, key, {
-                                unique: !!options.fields[key]
-                            });
+                    Object.keys(options.fields || {}).forEach(function (key) {
+                        store.createIndex(key, key, {
+                            unique: options.fields[key]
                         });
-                    }
+                    });
                 });
             };
             var close = function () {

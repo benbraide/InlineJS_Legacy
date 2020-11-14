@@ -65,7 +65,8 @@ namespace InlineJS{
     }
 
     export interface CartHandlers{
-        load?: (callback: (items: Record<string, CartItem>) => void) => void;
+        init?: () => void;
+        load?: (items: Record<string, CartItem>) => void;
         update?: (sku: string, quantity: number, incremental: boolean, callback: (item: CartItem) => void) => void;
         updateLink?: string;
     }
@@ -75,6 +76,12 @@ namespace InlineJS{
         itemProxies: Record<string, {}>;
         count: number;
         total: number;
+    }
+
+    export interface DBOptions{
+        drop: boolean;
+        name: string;
+        fields: Record<string, boolean>;
     }
     
     export class ExtendedDirectiveHandlers{
@@ -1178,12 +1185,21 @@ namespace InlineJS{
             };
 
             let goto = (page: string, query?: string, replace = false) => {
-                if (page in info.pages && !info.pages[page].disabled){
+                let pageInfo: RouterPageInfo = null;
+                if (page in info.pages){
+                    pageInfo = info.pages[page];
+                }
+                else if (page.indexOf(`${origin}/`) == 0){
+                    page = page.substr(origin.length + 1);
+                    pageInfo = ((page in info.pages) ? info.pages[page] : null);
+                }
+                
+                if (pageInfo && !pageInfo.disabled){
                     if (query && query.substr(0, 1) !== '?'){
                         query = `?${query}`;
                     }
                     
-                    if (`${origin}/${prefix}${info.pages[page].path}${query}` === info.url){
+                    if (`${origin}/${prefix}${pageInfo.path}${query}` === info.url){
                         window.dispatchEvent(new CustomEvent('router.reload'));
                         window.dispatchEvent(new CustomEvent('router.load'));
                         return;
@@ -1194,13 +1210,13 @@ namespace InlineJS{
                             history.replaceState({
                                 page: page,
                                 query: query
-                            }, info.pages[page].title, `${origin}/${page}${query}`);
+                            }, pageInfo.title, `${origin}/${page}${query}`);
                         }
                         else{
                             history.pushState({
                                 page: page,
                                 query: query
-                            }, info.pages[page].title, `${origin}/${page}${query}`);
+                            }, pageInfo.title, `${origin}/${page}${query}`);
                         }
                     });
                 }
@@ -1716,29 +1732,24 @@ namespace InlineJS{
                 }
             }, ['items', 'count', 'total', 'update']);
 
-            if (handlers.load){
-                updatesQueue = new Array<() => void>();
-                handlers.load((list) => {
-                    info.items = (list || {});
-                    for (let sku in info.items){//Create proxies
-                        info.itemProxies[sku] = createItemProxy(sku);
-                    }
+            handlers.load = (items: Record<string, CartItem>) => {
+                info.items = (items || {});
+                for (let sku in info.items){//Create proxies
+                    info.itemProxies[sku] = createItemProxy(sku);
+                }
 
-                    if (0 < Object.keys(info.items).length){
-                        alert('items');
-                    }
-                    
-                    computeValues();
-                    (updatesQueue || []).forEach((callback) => {
-                        try{
-                            callback();
-                        }
-                        catch (err){}
-                    });
+                alert('items');
+                computeValues();
 
-                    updatesQueue = null;
+                (updatesQueue || []).forEach((callback) => {
+                    try{
+                        callback();
+                    }
+                    catch (err){}
                 });
-            }
+
+                updatesQueue = null;
+            };
 
             Region.AddGlobal('$cart', () => proxy);
             DirectiveHandlerManager.AddHandler('cartUpdate', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
@@ -1751,7 +1762,7 @@ namespace InlineJS{
                 innerRegion.GetState().TrapGetAccess(() => {
                     sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 }, true, innerElement);
-                
+
                 if (!sku){
                     return DirectiveHandlerReturn.Nil;    
                 }
@@ -1800,19 +1811,31 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Handled;
             });
             
+            if (handlers.init){
+                handlers.init();
+            }
+            
             return DirectiveHandlerReturn.Handled;
         }
 
         public static DB(region: Region, element: HTMLElement, directive: Directive){
-            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
-            if (typeof options === 'string'){
-                options = {
-                    name: options
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (typeof data === 'string'){
+                data = {
+                    name: data
                 };
             }
 
-            if (!Region.IsObject(options) || !options.name){
+            if (!Region.IsObject(data) || !data.name){
                 return DirectiveHandlerReturn.Nil;
+            }
+
+            let options: DBOptions;
+            if ('__InlineJS_Target__' in data){
+                options = data['__InlineJS_Target__'];
+            }
+            else{//Raw data
+                options = data;
             }
             
             let opened = false, openRequest: IDBOpenDBRequest = null, handle: IDBDatabase = null, queuedRequests = new Array<() => void>(), regionId = region.GetId();
@@ -1823,8 +1846,8 @@ namespace InlineJS{
                 
                 openRequest = window.indexedDB.open(options.name);
                 openRequest.addEventListener('error', (e) => {
-                    myRegion.GetState().ReportError(`Failed to open database '${options.name}'`, e);
                     opened = true;
+                    Region.Get(regionId).GetState().ReportError(`Failed to open database '${options.name}'`, e);
                 });
 
                 openRequest.addEventListener('success', () => {
@@ -1844,17 +1867,15 @@ namespace InlineJS{
                 openRequest.addEventListener('upgradeneeded', () => {
                     let db = openRequest.result, store = db.createObjectStore(options.name);
                     db.addEventListener('error', (e) => {
-                        myRegion.GetState().ReportError(`Failed to open database '${options.name}'`, e);
                         opened = true;
+                        Region.Get(regionId).GetState().ReportError(`Failed to open database '${options.name}'`, e);
                     });
 
-                    if (Region.IsObject(options.fields)){
-                        Object.keys(options.fields).forEach((key) => {
-                            store.createIndex(key, key, {
-                                unique: !! options.fields[key]
-                            });
+                    Object.keys(options.fields || {}).forEach((key) => {
+                        store.createIndex(key, key, {
+                            unique: options.fields[key]
                         });
-                    }
+                    });
                 });
             };
 

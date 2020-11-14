@@ -129,6 +129,7 @@ declare namespace InlineJS {
         RemoveElement(element: HTMLElement | string, preserve?: boolean): void;
         MarkElementAsRemoved(element: HTMLElement | string): void;
         ElementIsRemoved(element: HTMLElement | string): boolean;
+        ElementIsContained(element: HTMLElement | string, checkDocument?: boolean): boolean;
         ElementExists(element: HTMLElement | string): boolean;
         AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
         RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
@@ -351,9 +352,16 @@ declare namespace InlineJS {
         count: number;
         path: string;
     }
+    interface DataOptions {
+        $enableOptimizedBinds?: boolean;
+        $locals?: Record<string, any>;
+        $component?: string;
+        $init?: (region?: Region) => void;
+    }
     class CoreDirectiveHandlers {
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Locals(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Component(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Post(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Init(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
