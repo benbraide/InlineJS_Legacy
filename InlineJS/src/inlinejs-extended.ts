@@ -1201,7 +1201,7 @@ namespace InlineJS{
                     
                     if (`${origin}/${prefix}${pageInfo.path}${query}` === info.url){
                         window.dispatchEvent(new CustomEvent('router.reload'));
-                        window.dispatchEvent(new CustomEvent('router.load'));
+                        window.dispatchEvent(new CustomEvent('router.page'));
                         return;
                     }
                     
@@ -1243,6 +1243,10 @@ namespace InlineJS{
             };
 
             let load = (page: string, query: string, callback?: () => void) => {
+                if (info.currentPage && info.currentPage !== '/'){
+                    unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
+                }
+                
                 let pageInfo = info.pages[page], component = pageInfo.component, handled: any;
                 for (let i = 0; i < (pageInfo.middlewares || []).length; ++i){
                     let middleware = pageInfo.middlewares[i];
@@ -1254,7 +1258,7 @@ namespace InlineJS{
                 info.currentPage = page;
                 alert('currentPage');
 
-                if (!Region.IsEqual(info.currentQuery, query)){
+                if (info.currentQuery !== query){
                     info.currentQuery = query;
                     alert('currentQuery');
                 }
@@ -1271,16 +1275,25 @@ namespace InlineJS{
                     handled = false;
                 }
 
+                let urlChanged = false;
                 if (handled === false){
-                    info.url = `${origin}/${prefix}${info.pages[page].path}${query}`;
-                    alert('url');
+                    let url = `${origin}/${prefix}${info.pages[page].path}${query || ''}`;
+                    if (url !== info.url){
+                        urlChanged = true;
+                        info.url = url;
+                        alert('url');
+                    }
                 }
 
                 if (callback){
                     callback();
                 }
                 
-                window.dispatchEvent(new CustomEvent('router.load'));
+                if (urlChanged){
+                    window.dispatchEvent(new CustomEvent('router.load'));    
+                }
+
+                window.dispatchEvent(new CustomEvent('router.page'));
             };
 
             let unload = (component: string, exit: string) => {
@@ -1322,15 +1335,11 @@ namespace InlineJS{
 
                 if (!info.targetComponent || info.pages[page].component !== info.targetComponent || !back()){
                     if (info.targetComponent){
-                        unload(info.targetComponent, info.targetExit);
                         info.targetComponent = null;
                         info.targetExit = null;
                     }
-                    else if (info.currentPage && info.currentPage !== '/'){
-                        unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
-                    }
                     
-                    load(page, event.state.params, event.state.query);
+                    load(page, event.state.query);
                 }
             });
 
@@ -1724,7 +1733,7 @@ namespace InlineJS{
             let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop in info && prop !== 'itemProxies'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
-                    return info[prop];
+                    return ((prop === 'items') ? info.itemProxies : info[prop]);
                 }
 
                 if (prop === 'update'){
@@ -1734,6 +1743,8 @@ namespace InlineJS{
 
             handlers.load = (items: Record<string, CartItem>) => {
                 info.items = (items || {});
+                info.itemProxies = {};
+                
                 for (let sku in info.items){//Create proxies
                     info.itemProxies[sku] = createItemProxy(sku);
                 }

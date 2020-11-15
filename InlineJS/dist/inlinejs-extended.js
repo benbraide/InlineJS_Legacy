@@ -982,7 +982,7 @@ var InlineJS;
                     }
                     if (origin + "/" + prefix + pageInfo.path + query === info.url) {
                         window.dispatchEvent(new CustomEvent('router.reload'));
-                        window.dispatchEvent(new CustomEvent('router.load'));
+                        window.dispatchEvent(new CustomEvent('router.page'));
                         return;
                     }
                     load(page, query, function () {
@@ -1019,6 +1019,9 @@ var InlineJS;
                 }
             };
             var load = function (page, query, callback) {
+                if (info.currentPage && info.currentPage !== '/') {
+                    unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
+                }
                 var pageInfo = info.pages[page], component = pageInfo.component, handled;
                 for (var i = 0; i < (pageInfo.middlewares || []).length; ++i) {
                     var middleware = pageInfo.middlewares[i];
@@ -1029,7 +1032,7 @@ var InlineJS;
                 ;
                 info.currentPage = page;
                 alert('currentPage');
-                if (!InlineJS.Region.IsEqual(info.currentQuery, query)) {
+                if (info.currentQuery !== query) {
                     info.currentQuery = query;
                     alert('currentQuery');
                 }
@@ -1044,14 +1047,22 @@ var InlineJS;
                 catch (err) {
                     handled = false;
                 }
+                var urlChanged = false;
                 if (handled === false) {
-                    info.url = origin + "/" + prefix + info.pages[page].path + query;
-                    alert('url');
+                    var url = origin + "/" + prefix + info.pages[page].path + (query || '');
+                    if (url !== info.url) {
+                        urlChanged = true;
+                        info.url = url;
+                        alert('url');
+                    }
                 }
                 if (callback) {
                     callback();
                 }
-                window.dispatchEvent(new CustomEvent('router.load'));
+                if (urlChanged) {
+                    window.dispatchEvent(new CustomEvent('router.load'));
+                }
+                window.dispatchEvent(new CustomEvent('router.page'));
             };
             var unload = function (component, exit) {
                 try {
@@ -1084,14 +1095,10 @@ var InlineJS;
                 }
                 if (!info.targetComponent || info.pages[page].component !== info.targetComponent || !back()) {
                     if (info.targetComponent) {
-                        unload(info.targetComponent, info.targetExit);
                         info.targetComponent = null;
                         info.targetExit = null;
                     }
-                    else if (info.currentPage && info.currentPage !== '/') {
-                        unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
-                    }
-                    load(page, event.state.params, event.state.query);
+                    load(page, event.state.query);
                 }
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerMount', function (innerRegion, innerElement, innerDirective) {
@@ -1419,7 +1426,7 @@ var InlineJS;
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop in info && prop !== 'itemProxies') {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
-                    return info[prop];
+                    return ((prop === 'items') ? info.itemProxies : info[prop]);
                 }
                 if (prop === 'update') {
                     return update;
@@ -1427,6 +1434,7 @@ var InlineJS;
             }, ['items', 'count', 'total', 'update']);
             handlers.load = function (items) {
                 info.items = (items || {});
+                info.itemProxies = {};
                 for (var sku in info.items) { //Create proxies
                     info.itemProxies[sku] = createItemProxy(sku);
                 }
