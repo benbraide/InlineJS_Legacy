@@ -40,6 +40,10 @@ declare namespace InlineJS {
         preserve: boolean;
         paused: boolean;
     }
+    interface LocalHandler {
+        element: HTMLElement;
+        callback: (element: HTMLElement, prop: string, bubble: boolean) => any;
+    }
     interface ExternalCallbacks {
         isEqual: (first: any, second: any) => boolean;
         deepCopy: (target: any) => any;
@@ -103,6 +107,7 @@ declare namespace InlineJS {
         private refs_;
         private observer_;
         private outsideEvents_;
+        private localHandlers_;
         private nextTickCallbacks_;
         private tempCallbacks_;
         private tempCallbacksId_;
@@ -137,6 +142,8 @@ declare namespace InlineJS {
         ExecuteNextTick(): void;
         AddLocal(element: HTMLElement | string, key: string, value: any): void;
         GetLocal(element: HTMLElement | string, key: string, bubble?: boolean): any;
+        AddLocalHandler(element: HTMLElement, callback: (element: HTMLElement, prop: string, bubble: boolean) => any): void;
+        RemoveLocalHandler(element: HTMLElement): void;
         SetObserver(observer: MutationObserver): void;
         GetObserver(): MutationObserver;
         ExpandEvent(event: string, element: HTMLElement | string | true): string;
@@ -346,11 +353,9 @@ declare namespace InlineJS {
         attributes: Array<LiteAttr>;
     }
     interface EachOptions {
-        isArray: boolean;
-        list: Array<HTMLElement> | Record<string, HTMLElement>;
-        target: Array<any> | Record<string, any> | number;
+        clones: Array<HTMLElement> | Record<string, HTMLElement>;
+        items: Array<any> | Record<string, any> | number;
         count: number;
-        path: string;
     }
     interface DataOptions {
         $enableOptimizedBinds?: boolean;

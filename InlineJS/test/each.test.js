@@ -291,7 +291,7 @@ describe('x-each directive', () => {
         });
     });
 
-    it('can be used in conjunction with x-each', async () => {
+    it('can be used in conjunction with x-if', async () => {
         document.body.innerHTML = `
             <div x-data="{ items: ['foo', 'bar'], show: false }">
                 <button @click="show = ! show"></button>

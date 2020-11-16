@@ -59,6 +59,11 @@ namespace InlineJS{
         paused: boolean;
     }
 
+    export interface LocalHandler{
+        element: HTMLElement;
+        callback: (element: HTMLElement, prop: string, bubble: boolean) => any;
+    }
+
     export interface ExternalCallbacks{
         isEqual: (first: any, second: any) => boolean;
         deepCopy: (target: any) => any;
@@ -133,6 +138,7 @@ namespace InlineJS{
         private refs_: Record<string, HTMLElement> = {};
         private observer_: MutationObserver = null;
         private outsideEvents_ = new Array<string>();
+        private localHandlers_ = new Array<LocalHandler>();
         private nextTickCallbacks_ = new Array<() => void>();
         private tempCallbacks_: Record<string, () => any> = {};
         private tempCallbacksId_ = 0;
@@ -471,6 +477,14 @@ namespace InlineJS{
         }
 
         public GetLocal(element: HTMLElement | string, key: string, bubble: boolean = true): any{
+            if (typeof element !== 'string'){
+                for (let i = 0; i < this.localHandlers_.length; ++i){
+                    if (this.localHandlers_[i].element === element){
+                        return this.localHandlers_[i].callback(element, key, bubble);
+                    }
+                }
+            }
+            
             let scope = this.GetElementScope(element);
             if (scope && key in scope.locals){
                 return scope.locals[key];
@@ -488,6 +502,17 @@ namespace InlineJS{
             }
 
             return new NoResult();
+        }
+
+        public AddLocalHandler(element: HTMLElement, callback: (element: HTMLElement, prop: string, bubble: boolean) => any){
+            this.localHandlers_.push({
+                element: element,
+                callback: callback
+            });
+        }
+
+        public RemoveLocalHandler(element: HTMLElement){
+            this.localHandlers_ = this.localHandlers_.filter(info => (info.element !== element));
         }
 
         public SetObserver(observer: MutationObserver){
@@ -1792,11 +1817,9 @@ namespace InlineJS{
     }
 
     export interface EachOptions{
-        isArray: boolean;
-        list: Array<HTMLElement> | Record<string, HTMLElement>;
-        target: Array<any> | Record<string, any> | number;
+        clones: Array<HTMLElement> | Record<string, HTMLElement>;
+        items: Array<any> | Record<string, any> | number;
         count: number;
-        path: string;
     }
 
     export interface DataOptions{
@@ -2314,30 +2337,45 @@ namespace InlineJS{
 
         public static If(region: Region, element: HTMLElement, directive: Directive){
             let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isInserted = true, ifFirstEntry = true;
+
+            let evaluate = (myRegion: Region) => {
+                let hasParent = !! element.parentElement;
+                if (hasParent){
+                    myRegion.AddLocalHandler(element, (element: HTMLElement, prop: string, bubble: boolean) => {
+                        return myRegion.GetLocal(info.parent, prop, bubble);
+                    });
+                }
+
+                let result = CoreDirectiveHandlers.EvaluateAlways(myRegion, element, directive.value);
+                if (hasParent){
+                    myRegion.RemoveLocalHandler(element);
+                }
+
+                return result;
+            };
+            
             region.GetState().TrapGetAccess(() => {
                 let myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition){
                     scope.falseIfCondition = new Array<() => void>();
                 }
                 
-                if (!isInserted){
-                    scope.paused = true;//Pause removal
-                    if (!element.parentElement){
-                        CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker);//Temporarily insert element into DOM
-                        scope.removed = false;
-                    }
-
-                    if (CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)){
+                let predicate = !! evaluate(myRegion);
+                if (predicate){
+                    if (!isInserted){
                         isInserted = true;
-                        scope.paused = false;//Resume removal
+                        if (!element.parentElement){
+                            CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker);//Temporarily insert element into DOM
+                            scope.removed = false;
+                        }
+                        
                         CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info);//Execute directives
                     }
-                    else{//Remove from DOM
-                        info.parent.removeChild(element);
-                        scope.removed = true;
+                    else if (ifFirstEntry){//Execute directives
+                        CoreDirectiveHandlers.InsertIfOrEach(region, element, info);
                     }
                 }
-                else if (!CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value)){
+                else if (isInserted){
                     isInserted = false;
                     scope.preserve = true;//Don't remove scope
                     [...scope.falseIfCondition].forEach(callback => callback());
@@ -2351,10 +2389,7 @@ namespace InlineJS{
                         scope.removed = true;
                     }
                 }
-                else if (ifFirstEntry){//Execute directives
-                    CoreDirectiveHandlers.InsertIfOrEach(region, element, info);
-                }
-
+                
                 ifFirstEntry = false;
             }, true, null, () => { region.GetElementScope(element).preserve = false });
 
@@ -2366,11 +2401,10 @@ namespace InlineJS{
         }
 
         public static Each(region: Region, element: HTMLElement, directive: Directive){
-            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false, isRange = false, isOptimized = false;
+            let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isCount = false, isReverse = false;
             if (directive.arg){
                 isCount = (directive.arg.options.indexOf('count') != -1);
                 isReverse = (directive.arg.options.indexOf('reverse') != -1);
-                isOptimized = (directive.arg.options.indexOf('nooptimize') == -1);
             }
 
             let scope = region.GetElementScope(info.scopeKey), ifConditionIsTrue = true, falseIfCondition = () => {
@@ -2379,15 +2413,13 @@ namespace InlineJS{
                 ifConditionIsTrue = false;
                 empty(myRegion);
 
-                if (options.path){
-                    myRegion.GetChanges().Add({
-                        regionId: info.regionId,
-                        type: 'set',
-                        path: options.path,
-                        prop: '',
-                        origin: myRegion.GetChanges().GetOrigin()
-                    });
-                }
+                myRegion.GetChanges().Add({
+                    regionId: info.regionId,
+                    type: 'set',
+                    path: `${scope.key}.$each`,
+                    prop: '',
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
                 
                 let myScope = myRegion.GetElementScope(element);
                 if (myScope){
@@ -2403,11 +2435,9 @@ namespace InlineJS{
             }
             
             let options: EachOptions = {
-                isArray: false,
-                list: null,
-                target: null,
-                count: 0,
-                path: ''
+                clones: null,
+                items: null,
+                count: 0
             };
 
             let valueKey = '', matches = directive.value.match(/^(.+)? as[ ]+([A-Za-z_][0-9A-Za-z_$]*)[ ]*$/), expression: string;
@@ -2419,35 +2449,37 @@ namespace InlineJS{
                 expression = directive.value;
             }
 
-            let getIndex = (clone: HTMLElement, key?: string) => (options.isArray ? (options.list as Array<HTMLElement>).indexOf(clone) : key);
-            let getValue = (clone: HTMLElement, key?: string) => {
-                return (options.isArray ? (options.target as Array<any>)[(getIndex(clone) as number)] : (options.target as Record<string, any>)[key])
+            let addSizeChange = (myRegion: Region) => {
+                myRegion.GetChanges().Add({
+                    regionId: info.regionId,
+                    type: 'set',
+                    path: `${scope.key}.$each.count`,
+                    prop: 'count',
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
             };
-            
-            let initLocals = (myRegion: Region, clone: HTMLElement, key?: string) => {
+
+            let indexOf = (clone: HTMLElement) => {
+                return (options.clones as Array<HTMLElement>).indexOf(clone);
+            };
+
+            let locals = (myRegion: Region, clone: HTMLElement, key?: string) => {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
                     if (prop === 'count'){
-                        if (options.isArray){
-                            return (options.target as Array<any>).length;
-                        }
-
-                        if (options.path){
-                            Region.Get(info.regionId).GetChanges().AddGetAccess(`${options.path}.length`);
-                        }
-                        
+                        Region.Get(info.regionId).GetChanges().AddGetAccess(`${scope.key}.$each.count`);
                         return options.count;
                     }
                     
                     if (prop === 'index'){
-                        return getIndex(clone, key);
+                        return (key || indexOf(clone));
                     }
 
                     if (prop === 'value'){
-                        return getValue(clone, key);
+                        return (key ? (options.items as Record<string, any>)[key] : (options.items as Array<any>)[indexOf(clone)]);
                     }
 
                     if (prop === 'collection'){
-                        return options.target;
+                        return options.items;
                     }
 
                     if (prop === 'parent'){
@@ -2459,54 +2491,38 @@ namespace InlineJS{
 
                 if (valueKey){
                     myRegion.AddLocal(clone, valueKey, new Value(() => {
-                        return getValue(clone, key);
+                        return (key ? (options.items as Record<string, any>)[key] : (options.items as Array<any>)[indexOf(clone)]);
                     }));
                 }
             };
 
-            let insert = (myRegion: Region, key?: string) => {
-                let clone = (element.cloneNode(true) as HTMLElement), offset: number;
-                if (!options.isArray){
-                    offset = Object.keys(options.list as Record<string, HTMLElement>).length;
-                    if (key in (options.list as Record<string, HTMLElement>)){//Remove existing
-                        info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]);
-                    }
-                    (options.list as Record<string, HTMLElement>)[key] = clone;
+            let append = (myRegion: Region, key?: string) => {
+                let clone = (element.cloneNode(true) as HTMLElement);
+                if (key){
+                    (options.clones as Record<string, HTMLElement>)[key] = clone;
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, clone, key), (Object.keys(options.clones).length - 1));
                 }
-                else{//Append to array
-                    offset = (options.list as Array<HTMLElement>).length;
-                    (options.list as Array<HTMLElement>).push(clone);
-                }
-
-                CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => initLocals(myRegion, clone, key), offset);
-            };
-
-            let build = (myRegion: Region) => {
-                if (options.isArray){
-                    for (let i = 0; i < options.count; ++i){
-                        insert(myRegion);
-                    }
-                }
-                else{
-                    Object.keys(options.target).forEach(key => insert(myRegion, key));
+                else{//Array
+                    (options.clones as Array<HTMLElement>).push(clone);
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, clone), ((options.clones as Array<HTMLElement>).length - 1));
                 }
             };
 
             let empty = (myRegion: Region) => {
-                if (options.isArray && options.list){
-                    (options.list as Array<HTMLElement>).forEach((clone) => {
+                if (Array.isArray(options.clones)){
+                    ((options.clones as Array<HTMLElement>) || []).forEach((clone) => {//Remove previous clones
                         info.parent.removeChild(clone);
                         myRegion.MarkElementAsRemoved(clone);
                     });
                 }
-                else if (options.list){//Key-value pairs
-                    Object.keys((options.list as Record<string, HTMLElement>)).forEach((key) => {
-                        info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]);
-                        myRegion.MarkElementAsRemoved((options.list as Record<string, HTMLElement>)[key]);
+                else{//Map
+                    Object.keys((options.clones as Record<string, HTMLElement>) || {}).forEach((key) => {//Remove previous clones
+                        info.parent.removeChild((options.clones as Record<string, HTMLElement>)[key]);
+                        myRegion.MarkElementAsRemoved((options.clones as Record<string, HTMLElement>)[key]);
                     });
                 }
 
-                options.list = null;
+                options.clones = null;
             };
 
             let getRange = (from: number, to: number) => {
@@ -2516,181 +2532,127 @@ namespace InlineJS{
                 return Array.from({length: (from - to)}, (value, key) => (from - key));
             };
 
-            let expandTarget = (target: any) => {
-                if (typeof target === 'number' && Number.isInteger(target)){
-                    let offset = (isCount ? 1 : 0);
-
-                    isRange = true;
-                    if (target < 0){
-                        return (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
-                    }
-                    
-                    return (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
+            let expander: (target: any) => any = (target: any) => target;
+            let rangeExpander = (target: any) => {
+                if (typeof target !== 'number' || !Number.isInteger(target)){
+                    return null;
                 }
 
-                return (isRange ? null : target);
+                let offset = (isCount ? 1 : 0);
+                if (target < 0){
+                    return (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
+                }
+                
+                return (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
             };
+            
+            let evaluate = (myRegion: Region) => {
+                myRegion.AddLocalHandler(element, (element: HTMLElement, prop: string, bubble: boolean) => {
+                    return myRegion.GetLocal(info.parent, prop, bubble);
+                });
 
-            let init = (myRegion: Region, refresh = false) => {
-                if (!refresh){
-                    empty(myRegion);
-                    
-                    options.target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
-                    if (element.parentElement){
-                        element.parentElement.removeChild(element);
-                    }
-                    
-                    if (!options.target){
-                        return false;
-                    }
-                }
+                let result = CoreDirectiveHandlers.EvaluateAlways(myRegion, element, expression);
+                myRegion.RemoveLocalHandler(element);
 
-                if (Array.isArray(options.target)){
-                    options.isArray = true;
-                    options.count = (options.target as Array<any>).length;
-                    options.list = new Array<HTMLElement>();
-                    if (!refresh && '__InlineJS_Path__' in options.target){
-                        options.path = options.target['__InlineJS_Path__'];
-                    }
-                }
-                else if (Region.IsObject(options.target)){
-                    options.list = {};
-                    if ('__InlineJS_Target__' in (options.target as Record<string, any>)){
-                        if (!refresh){
-                            options.path = options.target['__InlineJS_Path__'];
-                        }
-                        options.count = Object.keys(options.target['__InlineJS_Target__']).length;
-                    }
-                    else{
-                        options.count = Object.keys(options.target).length;
-                    }
-                }
-                else{
+                return result;
+            };
+            
+            let arrayHandler = (myRegion: Region, items?: Array<any>, shouldEvaluate = true) => {
+                items = expander(shouldEvaluate ? (evaluate(myRegion) || []) : items);
+                if (!Array.isArray(items)){
                     return false;
                 }
 
-                build(myRegion);
+                if (items === options.items){
+                    let count = options.count;
+                    if (items.length < options.count){//Item(s) removed
+                        options.count = items.length;
+                        addSizeChange(Region.Get(info.regionId));
+                        (options.clones as Array<HTMLElement>).splice(items.length).forEach((clone) => {
+                            info.parent.removeChild(clone);
+                            myRegion.MarkElementAsRemoved(clone);
+                        });
+                    }
+                    else if (options.count < items.length){//Item(s) added
+                        options.count = items.length;
+                        addSizeChange(Region.Get(info.regionId));
+                        for (let diff = (items.length - count); 0 < diff; --diff){
+                            append(myRegion);
+                        }
+                    }
+                }
+                else{//Refresh
+                    empty(myRegion);
+                    options.clones = new Array<HTMLElement>();
+                    options.count = items.length;
+                    options.items = items;
+
+                    items.forEach(() => { append(myRegion) });
+                    addSizeChange(myRegion);
+                }
 
                 return true;
             };
 
-            let addSizeChange = (myRegion: Region) => {
-                myRegion.GetChanges().Add({
-                    regionId: info.regionId,
-                    type: 'set',
-                    path: `${options.path}.length`,
-                    prop: 'length',
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-                options.count = Object.keys(options.target['__InlineJS_Target__']).length;
-            };
-
-            let onChange = (myRegion: Region, changes: Array<Change | BubbledChange>) => {
-                if (!ifConditionIsTrue){
+            let mapHandler = (myRegion: Region, items?: Record<string, any>, shouldEvaluate = true) => {
+                items = expander(shouldEvaluate ? (evaluate(myRegion) || {}) : items);
+                if (!Region.IsObject(items)){
                     return false;
                 }
 
-                if (isRange){
-                    return init(myRegion, false);
-                }
+                if (items === options.items){
+                    let newKeys = Object.keys(items), oldKeys = Object.keys(options.clones);
 
-                if (!isOptimized){
-                    let target = expandTarget(CoreDirectiveHandlers.Evaluate(myRegion, element, expression));
-                    if (target === options.target){
-                        if (options.isArray){//Update count
-                            let count = (options.target as Array<any>).length;
-                            if (count < options.count){//Item(s) removed
-                                addSizeChange(Region.Get(info.regionId));
-                                (options.list as Array<HTMLElement>).splice(count).forEach((clone) => {
-                                    info.parent.removeChild(clone);
-                                    myRegion.MarkElementAsRemoved(clone);
-                                });
-                            }
-                            else if (options.count < count){//Item(s) added
-                                addSizeChange(Region.Get(info.regionId));
-                                for (let diff = (count - options.count); 0 < diff; --diff){
-                                    insert(myRegion);
-                                }
-                            }
+                    newKeys.filter(key => !(key in options.clones)).forEach((key) => { append(myRegion, key) });//Add new items
+                    oldKeys.filter(key => !(key in items)).forEach((key) => {
+                        info.parent.removeChild(options.clones[key]);
+                        myRegion.MarkElementAsRemoved(options.clones[key]);
+                        delete options.clones[key];
+                    });
 
-                            options.count = count;
-                        }
-                        else{
-                            let newTargetKeys = Object.keys(target), oldTargetKeys = Object.keys(options.target);
-                            if (newTargetKeys.length != oldTargetKeys.length){
-                                addSizeChange(Region.Get(info.regionId));
-                            }
-
-                            newTargetKeys.filter(key => !(key in options.list)).forEach(key => insert(myRegion, key));//Add new keys
-                            oldTargetKeys.filter(key => !(key in target)).forEach((key) => {//Remove previous keys
-                                info.parent.removeChild((options.list as Record<string, HTMLElement>)[key]);
-                                myRegion.MarkElementAsRemoved((options.list as Record<string, HTMLElement>)[key]);
-                                delete (options.list as Record<string, HTMLElement>)[key];
-                            });
-                        }
-                    }
-                    else{//Refresh
-                        empty(myRegion);
-                        options.target = target;
-                        init(myRegion, true);
-                    }
-                    
-                    return true;
-                }
-                
-                changes.forEach((change) => {
-                    let fromRegion = Region.Get(('original' in change) ? change.original.regionId : change.regionId);
-                    if ('original' in change){//Bubbled
-                        if (options.isArray || change.original.type !== 'set' || `${options.path}.${change.original.prop}` !== change.original.path){
-                            return true;
-                        }
-
+                    if (newKeys.length != oldKeys.length){
                         addSizeChange(myRegion);
-                        insert(myRegion, change.original.prop);
                     }
-                    else if (change.type === 'set' && change.path === options.path){//Object replaced
-                        empty(myRegion);
-                        
-                        let target = fromRegion.GetRootProxy().GetNativeProxy(), parts = change.path.split('.');
-                        for (let i = 1; i < parts.length; ++i){//Resolve target
-                            if (!target || typeof target !== 'object' || !('__InlineJS_Target__' in target)){
-                                return false;
-                            }
+                }
+                else{//Refresh
+                    empty(myRegion);
+                    options.clones = {};
+                    options.count = Object.keys(items).length;
+                    options.items = items;
 
-                            target = target[parts[i]];
-                        }
-
-                        options.target = expandTarget(target);
-                        return (options.target && init(myRegion, true));
-                    }
-                    else if (options.isArray && change.type === 'set' && change.path === `${options.path}.length`){
-                        let count = (options.target as Array<any>).length;
-                        if (count < options.count){//Item(s) removed
-                            (options.list as Array<HTMLElement>).splice(count).forEach((clone) => {
-                                info.parent.removeChild(clone);
-                                myRegion.MarkElementAsRemoved(clone);
-                            });
-                        }
-                        else if (options.count < count){//Item(s) added
-                            for (let diff = (count - options.count); 0 < diff; --diff){
-                                insert(myRegion);
-                            }
-                        }
-                        options.count = count;
-                    }
-                    else if (!options.isArray && change.type === 'delete' && change.prop in (options.list as Record<string, HTMLElement>)){//Key deleted
-                        info.parent.removeChild((options.list as Record<string, HTMLElement>)[change.prop]);
-                        myRegion.MarkElementAsRemoved((options.list as Record<string, HTMLElement>)[change.prop]);
-
-                        addSizeChange(Region.Get(info.regionId));
-                        delete (options.list as Record<string, HTMLElement>)[change.prop];
-                    }
-                });
+                    Object.keys(items).forEach((key) => { append(myRegion, key) });
+                    addSizeChange(myRegion);
+                }
 
                 return true;
             };
             
-            region.GetState().TrapGetAccess(() => init(Region.Get(info.regionId)), (changes) => onChange(Region.Get(info.regionId), changes), null);
+            let handler: (myRegion: Region, items?: Array<any>, shouldEvaluate?: boolean) => boolean = null;
+            region.GetState().TrapGetAccess(() => {
+                if (element.parentElement){
+                    element.parentElement.removeChild(element);
+                }
+                
+                let myRegion = Region.Get(info.regionId), target = evaluate(myRegion);
+                if (!target){
+                    return false;
+                }
+                
+                if (Array.isArray(target)){
+                    handler = arrayHandler;
+                }
+                else if (Region.IsObject(target)){
+                    handler = mapHandler;
+                }
+                else if (typeof target === 'number' && Number.isInteger(target)){
+                    handler = arrayHandler;
+                    expander = rangeExpander;
+                }
+
+                return (handler && handler(myRegion, target, false));
+            }, () => {
+                return (handler && handler(Region.Get(info.regionId)));
+            }, null);
             
             return DirectiveHandlerReturn.QuitAll;
         }
