@@ -1301,7 +1301,9 @@ var InlineJS;
                 var thisBreakpoint = computeBreakpoint(screen.width);
                 if (thisBreakpoint !== breakpoint) {
                     breakpoint = thisBreakpoint;
-                    window.dispatchEvent(new CustomEvent('screen.breakpoint'));
+                    window.dispatchEvent(new CustomEvent('screen.breakpoint', {
+                        detail: thisBreakpoint
+                    }));
                     alert('breakpoint');
                 }
             });
@@ -1639,6 +1641,112 @@ var InlineJS;
             open(region);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Geolocation = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal('$geolocation', region.GetId())) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var position = null, error = null, regionId = region.GetId(), requested = false, tracking = false;
+            var alert = function (prop) {
+                var myRegion = InlineJS.Region.Get(regionId);
+                myRegion.GetChanges().Add({
+                    regionId: regionId,
+                    type: 'set',
+                    path: scope.path + "." + prop,
+                    prop: prop,
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
+            };
+            var check = function () {
+                if (navigator.geolocation) {
+                    error = null;
+                    return true;
+                }
+                error = {
+                    code: -1,
+                    message: 'Geolocation is not supported on this device.',
+                    PERMISSION_DENIED: 0,
+                    POSITION_UNAVAILABLE: 1,
+                    TIMEOUT: 2
+                };
+                return false;
+            };
+            var setPosition = function (value) {
+                position = value;
+                window.dispatchEvent(new CustomEvent('geolocation.position', {
+                    detail: value
+                }));
+                alert('position');
+            };
+            var setError = function (value) {
+                error = value;
+                window.dispatchEvent(new CustomEvent('geolocation.error', {
+                    detail: value
+                }));
+                alert('error');
+            };
+            var request = function () {
+                if (!requested && check()) {
+                    requested = true;
+                    navigator.geolocation.getCurrentPosition(setPosition, setError);
+                }
+            };
+            var track = function () {
+                if (!tracking && check()) {
+                    requested = tracking = true;
+                    navigator.geolocation.watchPosition(setPosition, setError);
+                }
+            };
+            var reset = function () {
+                requested = tracking = false;
+                position = null;
+                error = null;
+                alert('position');
+                alert('error');
+            };
+            var scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []);
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'position') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return position;
+                }
+                if (prop === 'error') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return error;
+                }
+                if (prop === 'request') {
+                    return request;
+                }
+                if (prop === 'track') {
+                    return track;
+                }
+                if (prop === 'reset') {
+                    return reset;
+                }
+            }, ['position', 'error', 'request', 'track', 'reset']);
+            InlineJS.Region.AddGlobal('$geolocation', function () { return proxy; });
+            InlineJS.DirectiveHandlerManager.AddHandler('geolocationRequest', function (innerRegion, innerElement, innerDirective) {
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    request();
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('geolocationTrack', function (innerRegion, innerElement, innerDirective) {
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    track();
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('geolocationReset', function (innerRegion, innerElement, innerDirective) {
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    reset();
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (InlineJS.Region.IsObject(options)) {
@@ -1794,6 +1902,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
             InlineJS.DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             InlineJS.DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
+            InlineJS.DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
                     return function (target) {
@@ -1807,7 +1916,6 @@ var InlineJS;
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
-            buildGlobal('router');
             buildGlobal('db');
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;

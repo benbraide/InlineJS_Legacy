@@ -1583,7 +1583,9 @@ namespace InlineJS{
                 let thisBreakpoint = computeBreakpoint(screen.width);
                 if (thisBreakpoint !== breakpoint){
                     breakpoint = thisBreakpoint;
-                    window.dispatchEvent(new CustomEvent('screen.breakpoint'));
+                    window.dispatchEvent(new CustomEvent('screen.breakpoint', {
+                        detail: thisBreakpoint
+                    }));
                     alert('breakpoint');
                 }
             });
@@ -2000,6 +2002,132 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Geolocation(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$geolocation', region.GetId())){
+                return DirectiveHandlerReturn.Nil;
+            }
+            
+            let position: Position = null, error: PositionError = null, regionId = region.GetId(), requested = false, tracking = false;
+            let alert = (prop: string) => {
+                let myRegion = Region.Get(regionId);
+                myRegion.GetChanges().Add({
+                    regionId: regionId,
+                    type: 'set',
+                    path: `${scope.path}.${prop}`,
+                    prop: prop,
+                    origin: myRegion.GetChanges().GetOrigin()
+                });
+            };
+
+            let check = () => {
+                if (navigator.geolocation){
+                    error = null;
+                    return true;
+                }
+
+                error = {
+                    code: -1,
+                    message: 'Geolocation is not supported on this device.',
+                    PERMISSION_DENIED: 0,
+                    POSITION_UNAVAILABLE: 1,
+                    TIMEOUT: 2
+                };
+
+                return false;
+            };
+
+            let setPosition = (value: Position) => {
+                position = value;
+                window.dispatchEvent(new CustomEvent('geolocation.position', {
+                    detail: value
+                }));
+                alert('position');
+            };
+
+            let setError = (value: PositionError) => {
+                error = value;
+                window.dispatchEvent(new CustomEvent('geolocation.error', {
+                    detail: value
+                }));
+                alert('error');
+            };
+
+            let request = () => {
+                if (!requested && check()){
+                    requested = true;
+                    navigator.geolocation.getCurrentPosition(setPosition, setError);
+                }
+            };
+
+            let track = () => {
+                if (!tracking && check()){
+                    requested = tracking = true;
+                    navigator.geolocation.watchPosition(setPosition, setError);
+                }
+            };
+
+            let reset = () => {
+                requested = tracking = false;
+                position = null;
+                error = null;
+
+                alert('position');
+                alert('error');
+            };
+
+            let scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []);
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'position'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return position;
+                }
+
+                if (prop === 'error'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return error;
+                }
+
+                if (prop === 'request'){
+                    return request;
+                }
+
+                if (prop === 'track'){
+                    return track;
+                }
+
+                if (prop === 'reset'){
+                    return reset;
+                }
+            }, ['position', 'error', 'request', 'track', 'reset']);
+            
+            Region.AddGlobal('$geolocation', () => proxy);
+            DirectiveHandlerManager.AddHandler('geolocationRequest', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    request();
+                });
+                return DirectiveHandlerReturn.Handled;
+            });
+
+            DirectiveHandlerManager.AddHandler('geolocationTrack', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    track();
+                });
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            DirectiveHandlerManager.AddHandler('geolocationReset', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    reset();
+                });
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
             let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
@@ -2179,6 +2307,7 @@ namespace InlineJS{
 
             DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
+            DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {
@@ -2194,7 +2323,6 @@ namespace InlineJS{
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
-            buildGlobal('router');
             buildGlobal('db');
         }
     }
