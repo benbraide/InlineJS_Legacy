@@ -1190,7 +1190,7 @@ namespace InlineJS{
                     pageInfo = info.pages[page];
                 }
                 else if (page.indexOf(`${origin}/`) == 0){
-                    page = page.substr(origin.length + 1);
+                    page = (page.substr(origin.length + 1) || '/');
                     pageInfo = ((page in info.pages) ? info.pages[page] : null);
                 }
                 
@@ -1210,13 +1210,13 @@ namespace InlineJS{
                             history.replaceState({
                                 page: page,
                                 query: query
-                            }, pageInfo.title, `${origin}/${page}${query}`);
+                            }, pageInfo.title, `${origin}/${(pageInfo.path === '/') ? '' : pageInfo.path}${query}`);
                         }
                         else{
                             history.pushState({
                                 page: page,
                                 query: query
-                            }, pageInfo.title, `${origin}/${page}${query}`);
+                            }, pageInfo.title, `${origin}/${(pageInfo.path === '/') ? '' : pageInfo.path}${query}`);
                         }
                     });
                 }
@@ -1671,6 +1671,7 @@ namespace InlineJS{
                 }
                 else{//Add new
                     info.items[sku] = item;
+                    info.itemProxies[sku] = createItemProxy(sku);
                     alert('items');
                 }
 
@@ -1699,6 +1700,8 @@ namespace InlineJS{
                     credentials: 'same-origin',
                 }).then(response => response.json()).then(postUpdate);
             };
+
+            let clear = () => update(null, 0, false);
 
             let createItemProxy = (sku: string) => {
                 return CoreDirectiveHandlers.CreateProxy((prop) => {
@@ -1739,7 +1742,11 @@ namespace InlineJS{
                 if (prop === 'update'){
                     return update;
                 }
-            }, ['items', 'count', 'total', 'update']);
+
+                if (prop === 'clear'){
+                    return clear;
+                }
+            }, ['items', 'count', 'total', 'update', 'clear']);
 
             handlers.load = (items: Record<string, CartItem>) => {
                 info.items = (items || {});
@@ -1763,6 +1770,14 @@ namespace InlineJS{
             };
 
             Region.AddGlobal('$cart', () => proxy);
+            DirectiveHandlerManager.AddHandler('cartClear', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    clear();
+                });
+                return DirectiveHandlerReturn.Handled;
+            });
+            
             DirectiveHandlerManager.AddHandler('cartUpdate', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let form = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, '$form');
                 if (!form || !(form instanceof HTMLFormElement)){

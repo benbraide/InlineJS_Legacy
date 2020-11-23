@@ -973,7 +973,7 @@ var InlineJS;
                     pageInfo = info.pages[page];
                 }
                 else if (page.indexOf(origin + "/") == 0) {
-                    page = page.substr(origin.length + 1);
+                    page = (page.substr(origin.length + 1) || '/');
                     pageInfo = ((page in info.pages) ? info.pages[page] : null);
                 }
                 if (pageInfo && !pageInfo.disabled) {
@@ -990,13 +990,13 @@ var InlineJS;
                             history.replaceState({
                                 page: page,
                                 query: query
-                            }, pageInfo.title, origin + "/" + page + query);
+                            }, pageInfo.title, origin + "/" + ((pageInfo.path === '/') ? '' : pageInfo.path) + query);
                         }
                         else {
                             history.pushState({
                                 page: page,
                                 query: query
-                            }, pageInfo.title, origin + "/" + page + query);
+                            }, pageInfo.title, origin + "/" + ((pageInfo.path === '/') ? '' : pageInfo.path) + query);
                         }
                     });
                 }
@@ -1376,6 +1376,7 @@ var InlineJS;
                 }
                 else { //Add new
                     info.items[sku] = item;
+                    info.itemProxies[sku] = createItemProxy(sku);
                     alert('items');
                 }
                 computeValues();
@@ -1399,6 +1400,7 @@ var InlineJS;
                     credentials: 'same-origin'
                 }).then(function (response) { return response.json(); }).then(postUpdate);
             };
+            var clear = function () { return update(null, 0, false); };
             var createItemProxy = function (sku) {
                 return InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                     if (prop === 'quantity') {
@@ -1431,7 +1433,10 @@ var InlineJS;
                 if (prop === 'update') {
                     return update;
                 }
-            }, ['items', 'count', 'total', 'update']);
+                if (prop === 'clear') {
+                    return clear;
+                }
+            }, ['items', 'count', 'total', 'update', 'clear']);
             handlers.load = function (items) {
                 info.items = (items || {});
                 info.itemProxies = {};
@@ -1449,6 +1454,13 @@ var InlineJS;
                 updatesQueue = null;
             };
             InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
+            InlineJS.DirectiveHandlerManager.AddHandler('cartClear', function (innerRegion, innerElement, innerDirective) {
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    clear();
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
             InlineJS.DirectiveHandlerManager.AddHandler('cartUpdate', function (innerRegion, innerElement, innerDirective) {
                 var form = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, '$form');
                 if (!form || !(form instanceof HTMLFormElement)) {
