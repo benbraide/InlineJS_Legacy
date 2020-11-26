@@ -241,6 +241,16 @@ namespace InlineJS{
                             prop: key,
                             origin: myRegion.GetChanges().GetOrigin()
                         });
+
+                        if (key === 'isDirty' || key === 'isValid'){
+                            myRegion.GetChanges().Add({
+                                regionId: regionId,
+                                type: 'set',
+                                path: `${scope.path}.isDirtyAndValid`,
+                                prop: key,
+                                origin: myRegion.GetChanges().GetOrigin()
+                            });
+                        }
                     },
                     resetCallbacks: new Array<() => void>()
                 };
@@ -253,6 +263,11 @@ namespace InlineJS{
                     if (prop in info.value){
                         Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                         return info.value[prop];
+                    }
+
+                    if (prop === 'isDirtyAndValid'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                        return (info.value.isDirty && info.value.isValid);
                     }
     
                     if (prop === 'reset'){

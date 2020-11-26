@@ -144,6 +144,15 @@ var InlineJS;
                             prop: key,
                             origin: myRegion.GetChanges().GetOrigin()
                         });
+                        if (key === 'isDirty' || key === 'isValid') {
+                            myRegion.GetChanges().Add({
+                                regionId: regionId,
+                                type: 'set',
+                                path: scope.path + ".isDirtyAndValid",
+                                prop: key,
+                                origin: myRegion.GetChanges().GetOrigin()
+                            });
+                        }
                     },
                     resetCallbacks: new Array()
                 };
@@ -154,6 +163,10 @@ var InlineJS;
                     if (prop in info.value) {
                         InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
                         return info.value[prop];
+                    }
+                    if (prop === 'isDirtyAndValid') {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                        return (info.value.isDirty && info.value.isValid);
                     }
                     if (prop === 'reset') {
                         return function () {
