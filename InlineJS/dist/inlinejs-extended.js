@@ -945,16 +945,6 @@ var InlineJS;
                 prefix += '/';
             }
             var scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
-            var alert = function (prop) {
-                var myRegion = InlineJS.Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: scope.path + "." + prop,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
             var register = function (page, path, title, component, entry, exit, disabled, middlewares) {
                 info.pages[page] = {
                     path: path,
@@ -977,6 +967,7 @@ var InlineJS;
                     pageInfo = ((page in info.pages) ? info.pages[page] : null);
                 }
                 if (pageInfo && !pageInfo.disabled) {
+                    query = (query || '');
                     if (query && query.substr(0, 1) !== '?') {
                         query = "?" + query;
                     }
@@ -1031,10 +1022,10 @@ var InlineJS;
                 }
                 ;
                 info.currentPage = page;
-                alert('currentPage');
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'currentPage', scope);
                 if (info.currentQuery !== query) {
                     info.currentQuery = query;
-                    alert('currentQuery');
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'currentQuery', scope);
                 }
                 try {
                     if (component) {
@@ -1053,7 +1044,7 @@ var InlineJS;
                     if (url !== info.url) {
                         urlChanged = true;
                         info.url = url;
-                        alert('url');
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'url', scope);
                     }
                 }
                 if (callback) {
@@ -1284,27 +1275,17 @@ var InlineJS;
                 width: screen.width,
                 height: screen.height
             }, breakpoint = computeBreakpoint(screen.width), regionId = region.GetId();
-            var alert = function (prop) {
-                var myRegion = InlineJS.Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: scope.path + "." + prop,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
             window.addEventListener('resize', function () {
                 size.width = screen.width;
                 size.height = screen.height;
-                alert('size');
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'size', scope);
                 var thisBreakpoint = computeBreakpoint(screen.width);
                 if (thisBreakpoint !== breakpoint) {
                     breakpoint = thisBreakpoint;
                     window.dispatchEvent(new CustomEvent('screen.breakpoint', {
                         detail: thisBreakpoint
                     }));
-                    alert('breakpoint');
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'breakpoint', scope);
                 }
             });
             var scope = ExtendedDirectiveHandlers.AddScope('screen', region.AddElement(element, true), []);
@@ -1330,16 +1311,6 @@ var InlineJS;
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue = null;
-            var alert = function (prop) {
-                var myRegion = InlineJS.Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: scope.path + "." + prop,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
             var info = {
                 items: {},
                 itemProxies: {},
@@ -1354,11 +1325,11 @@ var InlineJS;
                 }
                 if (count != info.count) {
                     info.count = count;
-                    alert('count');
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'count', scope);
                 }
                 if (total != info.total) {
                     info.total = total;
-                    alert('total');
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'total', scope);
                 }
             };
             var postUpdate = function (item) {
@@ -1369,17 +1340,18 @@ var InlineJS;
                 if (sku in info.items) { //Update exisiting
                     if (info.items[sku].quantity != item.quantity) {
                         info.items[sku].quantity = item.quantity;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + sku + ".quantity", scope);
                         alert("items." + sku + ".quantity");
                     }
                     if (info.items[sku].price != item.price) {
                         info.items[sku].price = item.price;
-                        alert("items." + sku + ".price");
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + sku + ".price", scope);
                     }
                 }
                 else { //Add new
                     info.items[sku] = item;
                     info.itemProxies[sku] = createItemProxy(sku);
-                    alert('items');
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
                 }
                 computeValues();
             };
@@ -1445,7 +1417,7 @@ var InlineJS;
                 for (var sku in info.items) { //Create proxies
                     info.itemProxies[sku] = createItemProxy(sku);
                 }
-                alert('items');
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
                 computeValues();
                 (updatesQueue || []).forEach(function (callback) {
                     try {
@@ -1641,21 +1613,124 @@ var InlineJS;
             open(region);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Auth = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal('$auth', region.GetId())) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var userUrl = window.location.origin + "/auth/user";
+            var registerUrl = window.location.origin + "/auth/register";
+            var loginUrl = window.location.origin + "/auth/login";
+            var logoutUrl = window.location.origin + "/auth/logout";
+            var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData = null, isInit = false;
+            if (!InlineJS.Region.IsObject(data)) { //Retrieve data
+                fetch(userUrl, {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                }).then(function (response) { return response.json(); }).then(function (data) {
+                    if (!isInit) {
+                        isInit = true;
+                        alertAll();
+                        userData = (data.userData || null);
+                    }
+                });
+            }
+            else { //Use specified data
+                isInit = true;
+                userData = (data.userData || null);
+            }
+            var alertAll = function () {
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'check', scope);
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'roles', scope);
+                Object.keys(userData || {}).forEach(function (key) { return ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "fields." + key, scope); });
+            };
+            var methods = {
+                check: function () {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".check");
+                    return !!userData;
+                },
+                hasRole: function (name) {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".roles");
+                    return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
+                },
+                isAdmin: function () {
+                    return methods.hasRole('admin');
+                },
+                getField: function (key) {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".fields." + key);
+                    return (userData ? userData[key] : null);
+                },
+                getName: function () {
+                    return methods.getField('name');
+                },
+                getEmail: function () {
+                    return methods.getField('email');
+                },
+                logout: function (callback) {
+                    if (!userData) {
+                        return;
+                    }
+                    fetch(logoutUrl, {
+                        method: 'GET',
+                        credentials: 'same-origin'
+                    }).then(function (response) { return response.json(); }).then(function (data) {
+                        isInit = true;
+                        if (!callback || callback(data)) {
+                            alertAll();
+                            userData = null;
+                            window.dispatchEvent(new CustomEvent('auth.authentication', {
+                                detail: false
+                            }));
+                        }
+                    });
+                },
+                authenticate: function (login, form, callback) {
+                    if (userData) {
+                        return;
+                    }
+                    var formData;
+                    if (!(form instanceof HTMLFormElement)) {
+                        formData = new FormData();
+                        Object.keys(form || {}).forEach(function (key) { return formData.append(key, form[key]); });
+                    }
+                    else {
+                        formData = new FormData(form);
+                    }
+                    fetch((login ? loginUrl : registerUrl), {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        body: formData
+                    }).then(function (response) { return response.json(); }).then(function (data) {
+                        isInit = true;
+                        if (!callback || callback(data)) {
+                            userData = (data.userData || {});
+                            alertAll();
+                            window.dispatchEvent(new CustomEvent('auth.authentication', {
+                                detail: true
+                            }));
+                        }
+                    });
+                },
+                login: function (form, callback) {
+                    methods.authenticate(true, form, callback);
+                },
+                register: function (form, callback) {
+                    methods.authenticate(false, form, callback);
+                }
+            };
+            var scope = ExtendedDirectiveHandlers.AddScope('auth', region.AddElement(element, true), []), regionId = region.GetId();
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop in methods) {
+                    return methods[prop];
+                }
+            }, Object.keys(methods));
+            InlineJS.Region.AddGlobal('$auth', function () { return proxy; });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.Geolocation = function (region, element, directive) {
             if (InlineJS.Region.GetGlobal('$geolocation', region.GetId())) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var position = null, error = null, regionId = region.GetId(), requested = false, tracking = false;
-            var alert = function (prop) {
-                var myRegion = InlineJS.Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: scope.path + "." + prop,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
             var check = function () {
                 if (navigator.geolocation) {
                     error = null;
@@ -1675,14 +1750,14 @@ var InlineJS;
                 window.dispatchEvent(new CustomEvent('geolocation.position', {
                     detail: value
                 }));
-                alert('position');
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
             };
             var setError = function (value) {
                 error = value;
                 window.dispatchEvent(new CustomEvent('geolocation.error', {
                     detail: value
                 }));
-                alert('error');
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'error', scope);
             };
             var request = function () {
                 if (!requested && check()) {
@@ -1700,8 +1775,14 @@ var InlineJS;
                 requested = tracking = false;
                 position = null;
                 error = null;
-                alert('position');
-                alert('error');
+                window.dispatchEvent(new CustomEvent('geolocation.position', {
+                    detail: null
+                }));
+                window.dispatchEvent(new CustomEvent('geolocation.error', {
+                    detail: null
+                }));
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'error', scope);
             };
             var scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []);
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
@@ -1876,6 +1957,15 @@ var InlineJS;
                 });
             }
         };
+        ExtendedDirectiveHandlers.Alert = function (region, prop, prefix) {
+            region.GetChanges().Add({
+                regionId: region.GetId(),
+                type: 'set',
+                path: (prefix ? ((typeof prefix === 'string') ? prefix : prefix.path) + "." + prop : prop),
+                prop: prop,
+                origin: region.GetChanges().GetOrigin()
+            });
+        };
         ExtendedDirectiveHandlers.AddScope = function (prefix, elementScope, callbacks) {
             var id = prefix + "<" + ++ExtendedDirectiveHandlers.scopeId_ + ">";
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -1902,6 +1992,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
             InlineJS.DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             InlineJS.DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
+            InlineJS.DirectiveHandlerManager.AddHandler('auth', ExtendedDirectiveHandlers.Auth);
             InlineJS.DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {

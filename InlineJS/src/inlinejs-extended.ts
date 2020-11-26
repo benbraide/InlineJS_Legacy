@@ -1161,17 +1161,6 @@ namespace InlineJS{
             }
 
             let scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
-            let alert = (prop: string) => {
-                let myRegion = Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: `${scope.path}.${prop}`,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
-            
             let register = (page: string, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean, middlewares: Array<string>) => {
                 info.pages[page] = {
                     path: path,
@@ -1195,6 +1184,7 @@ namespace InlineJS{
                 }
                 
                 if (pageInfo && !pageInfo.disabled){
+                    query = (query || '');
                     if (query && query.substr(0, 1) !== '?'){
                         query = `?${query}`;
                     }
@@ -1256,11 +1246,11 @@ namespace InlineJS{
                 };
 
                 info.currentPage = page;
-                alert('currentPage');
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'currentPage', scope);
 
                 if (info.currentQuery !== query){
                     info.currentQuery = query;
-                    alert('currentQuery');
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'currentQuery', scope);
                 }
 
                 try{
@@ -1281,7 +1271,7 @@ namespace InlineJS{
                     if (url !== info.url){
                         urlChanged = true;
                         info.url = url;
-                        alert('url');
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'url', scope);
                     }
                 }
 
@@ -1564,21 +1554,10 @@ namespace InlineJS{
                 height: screen.height
             }, breakpoint = computeBreakpoint(screen.width), regionId = region.GetId();
 
-            let alert = (prop: string) => {
-                let myRegion = Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: `${scope.path}.${prop}`,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
-
             window.addEventListener('resize', () => {
                 size.width = screen.width;
                 size.height = screen.height;
-                alert('size');
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'size', scope);
 
                 let thisBreakpoint = computeBreakpoint(screen.width);
                 if (thisBreakpoint !== breakpoint){
@@ -1586,7 +1565,7 @@ namespace InlineJS{
                     window.dispatchEvent(new CustomEvent('screen.breakpoint', {
                         detail: thisBreakpoint
                     }));
-                    alert('breakpoint');
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'breakpoint', scope);
                 }
             });
 
@@ -1618,17 +1597,6 @@ namespace InlineJS{
             }
             
             let scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue: Array<() => void> = null;
-            let alert = (prop: string) => {
-                let myRegion = Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: `${scope.path}.${prop}`,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
-            
             let info: CartInfo = {
                 items: {},
                 itemProxies: {},
@@ -1645,12 +1613,12 @@ namespace InlineJS{
 
                 if (count != info.count){
                     info.count = count;
-                    alert('count');
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'count', scope);
                 }
 
                 if (total != info.total){
                     info.total = total;
-                    alert('total');
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'total', scope);
                 }
             };
 
@@ -1663,18 +1631,19 @@ namespace InlineJS{
                 if (sku in info.items){//Update exisiting
                     if (info.items[sku].quantity != item.quantity){
                         info.items[sku].quantity = item.quantity;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `items.${sku}.quantity`, scope);
                         alert(`items.${sku}.quantity`);
                     }
 
                     if (info.items[sku].price != item.price){
                         info.items[sku].price = item.price;
-                        alert(`items.${sku}.price`);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `items.${sku}.price`, scope);
                     }
                 }
                 else{//Add new
                     info.items[sku] = item;
                     info.itemProxies[sku] = createItemProxy(sku);
-                    alert('items');
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
                 }
 
                 computeValues();
@@ -1758,7 +1727,7 @@ namespace InlineJS{
                     info.itemProxies[sku] = createItemProxy(sku);
                 }
 
-                alert('items');
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
                 computeValues();
 
                 (updatesQueue || []).forEach((callback) => {
@@ -2002,22 +1971,136 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Auth(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$auth', region.GetId())){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            const userUrl = `${window.location.origin}/auth/user`;
+            const registerUrl = `${window.location.origin}/auth/register`;
+
+            const loginUrl = `${window.location.origin}/auth/login`;
+            const logoutUrl = `${window.location.origin}/auth/logout`;
+
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData: Record<string, any> = null, isInit = false;
+            if (!Region.IsObject(data)){//Retrieve data
+                fetch(userUrl, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                }).then(response => response.json()).then((data) => {
+                    if (!isInit){
+                        isInit = true;
+                        alertAll();
+                        userData = (data.userData || null);
+                    }
+                });
+            }
+            else{//Use specified data
+                isInit = true;
+                userData = (data.userData || null);
+            }
+
+            let alertAll = () => {
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'check', scope);
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'roles', scope);
+                Object.keys(userData || {}).forEach(key => ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `fields.${key}`, scope));
+            };
+
+            let methods = {
+                check: () => {
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.check`);
+                    return !! userData;
+                },
+                hasRole: (name: string) => {
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.roles`);
+                    return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
+                },
+                isAdmin: () => {
+                    return methods.hasRole('admin');
+                },
+                getField: (key: string) => {
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.fields.${key}`);
+                    return (userData ? userData[key] : null);
+                },
+                getName: () => {
+                    return methods.getField('name');
+                },
+                getEmail: () => {
+                    return methods.getField('email');
+                },
+                logout: (callback?: (data: any) => boolean) => {
+                    if (!userData){
+                        return;
+                    }
+                    
+                    fetch(logoutUrl, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                    }).then(response => response.json()).then((data) => {
+                        isInit = true;
+                        if (!callback || callback(data)){
+                            alertAll();
+                            userData = null;
+                            window.dispatchEvent(new CustomEvent('auth.authentication', {
+                                detail: false
+                            }));
+                        }
+                    });
+                },
+                authenticate: (login: boolean, form: HTMLFormElement | Record<string, string>, callback?: (data: any) => boolean) => {
+                    if (userData){
+                        return;
+                    }
+                    
+                    let formData: FormData;
+                    if (!(form instanceof HTMLFormElement)){
+                        formData = new FormData();
+                        Object.keys(form || {}).forEach(key => formData.append(key, form[key]));
+                    }
+                    else{
+                        formData = new FormData(form);
+                    }
+
+                    fetch((login ? loginUrl : registerUrl), {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        body: formData
+                    }).then(response => response.json()).then((data) => {
+                        isInit = true;
+                        if (!callback || callback(data)){
+                            userData = (data.userData || {});
+                            alertAll();
+                            window.dispatchEvent(new CustomEvent('auth.authentication', {
+                                detail: true
+                            }));
+                        }
+                    });
+                },
+                login: (form: HTMLFormElement | Record<string, string>, callback?: (data: any) => boolean) => {
+                    methods.authenticate(true, form, callback);
+                },
+                register: (form: HTMLFormElement | Record<string, string>, callback?: (data: any) => boolean) => {
+                    methods.authenticate(false, form, callback);
+                },
+            };
+            
+            let scope = ExtendedDirectiveHandlers.AddScope('auth', region.AddElement(element, true), []), regionId = region.GetId();
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop in methods){
+                    return methods[prop];
+                }
+            }, Object.keys(methods));
+            
+            Region.AddGlobal('$auth', () => proxy);
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static Geolocation(region: Region, element: HTMLElement, directive: Directive){
             if (Region.GetGlobal('$geolocation', region.GetId())){
                 return DirectiveHandlerReturn.Nil;
             }
             
             let position: Position = null, error: PositionError = null, regionId = region.GetId(), requested = false, tracking = false;
-            let alert = (prop: string) => {
-                let myRegion = Region.Get(regionId);
-                myRegion.GetChanges().Add({
-                    regionId: regionId,
-                    type: 'set',
-                    path: `${scope.path}.${prop}`,
-                    prop: prop,
-                    origin: myRegion.GetChanges().GetOrigin()
-                });
-            };
 
             let check = () => {
                 if (navigator.geolocation){
@@ -2041,7 +2124,7 @@ namespace InlineJS{
                 window.dispatchEvent(new CustomEvent('geolocation.position', {
                     detail: value
                 }));
-                alert('position');
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'position', scope);
             };
 
             let setError = (value: PositionError) => {
@@ -2049,7 +2132,7 @@ namespace InlineJS{
                 window.dispatchEvent(new CustomEvent('geolocation.error', {
                     detail: value
                 }));
-                alert('error');
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'error', scope);
             };
 
             let request = () => {
@@ -2071,8 +2154,16 @@ namespace InlineJS{
                 position = null;
                 error = null;
 
-                alert('position');
-                alert('error');
+                window.dispatchEvent(new CustomEvent('geolocation.position', {
+                    detail: null
+                }));
+
+                window.dispatchEvent(new CustomEvent('geolocation.error', {
+                    detail: null
+                }));
+
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'position', scope);
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'error', scope);
             };
 
             let scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []);
@@ -2274,6 +2365,16 @@ namespace InlineJS{
             }
         }
 
+        public static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string){
+            region.GetChanges().Add({
+                regionId: region.GetId(),
+                type: 'set',
+                path: (prefix ? `${((typeof prefix === 'string') ? prefix : prefix.path)}.${prop}` : prop),
+                prop: prop,
+                origin: region.GetChanges().GetOrigin()
+            });
+        }
+
         public static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>) : ExtendedDirectiveHandlerScope{
             let id = `${prefix}<${++ExtendedDirectiveHandlers.scopeId_}>`;
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -2307,6 +2408,7 @@ namespace InlineJS{
 
             DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
+            DirectiveHandlerManager.AddHandler('auth', ExtendedDirectiveHandlers.Auth);
             DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
 
             let buildGlobal = (name: string) => {
