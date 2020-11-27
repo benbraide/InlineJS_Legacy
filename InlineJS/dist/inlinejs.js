@@ -2051,20 +2051,21 @@ var InlineJS;
                 if (!Array.isArray(items)) {
                     return false;
                 }
+                var targetItems = (('__InlineJS_Target__' in items) ? items['__InlineJS_Target__'] : items);
                 if (items === options.items) {
                     var count = options.count;
-                    if (items.length < options.count) { //Item(s) removed
-                        options.count = items.length;
+                    if (targetItems.length < options.count) { //Item(s) removed
+                        options.count = targetItems.length;
                         addSizeChange(Region.Get(info.regionId));
-                        options.clones.splice(items.length).forEach(function (clone) {
+                        options.clones.splice(targetItems.length).forEach(function (clone) {
                             info.parent.removeChild(clone);
                             myRegion.MarkElementAsRemoved(clone);
                         });
                     }
-                    else if (options.count < items.length) { //Item(s) added
-                        options.count = items.length;
+                    else if (options.count < targetItems.length) { //Item(s) added
+                        options.count = targetItems.length;
                         addSizeChange(Region.Get(info.regionId));
-                        for (var diff = (items.length - count); 0 < diff; --diff) {
+                        for (var diff = (targetItems.length - count); 0 < diff; --diff) {
                             append(myRegion);
                         }
                     }
@@ -2072,9 +2073,9 @@ var InlineJS;
                 else { //Refresh
                     empty(myRegion);
                     options.clones = new Array();
-                    options.count = items.length;
+                    options.count = targetItems.length;
                     options.items = items;
-                    items.forEach(function () { append(myRegion); });
+                    targetItems.forEach(function () { append(myRegion); });
                     addSizeChange(myRegion);
                 }
                 return true;
