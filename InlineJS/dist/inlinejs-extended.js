@@ -45,6 +45,28 @@ var InlineJS;
             element.parentElement.insertBefore(wrapper, element);
             wrapper.appendChild(element);
             wrapper.appendChild(span);
+            if (directive.arg.options.indexOf('password') != -1) {
+                var icon_1 = document.createElement('i'), updateIcon_1 = function () {
+                    if (element.type === 'text') {
+                        icon_1.title = 'Hide password';
+                        icon_1.textContent = 'visibility_off';
+                    }
+                    else { //Hidden
+                        icon_1.title = 'Show password';
+                        icon_1.textContent = 'visibility';
+                    }
+                };
+                wrapper.appendChild(icon_1);
+                icon_1.classList.add('material-icons-outlined');
+                updateIcon_1();
+                icon_1.addEventListener('click', function () {
+                    element.type = ((element.type === 'password') ? 'text' : 'password');
+                    updateIcon_1();
+                    element.dispatchEvent(new CustomEvent('input.password', {
+                        detail: element.type
+                    }));
+                });
+            }
             wrapper.classList.add('inlinejs-input');
             directive.arg.options.forEach(function (key) { return wrapper.classList.add(key); });
             span.style.top = "calc(" + wrapper.offsetHeight + "px - 1rem - " + style.marginBottom + " - " + style.paddingBottom + ")";

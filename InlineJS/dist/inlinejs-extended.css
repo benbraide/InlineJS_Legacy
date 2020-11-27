@@ -65,6 +65,14 @@
     outline: none;
 }
 
+.inlinejs-input.password > i{
+    position: absolute;
+    top: 1.15rem;
+    right: 0.5rem;
+    font-size: 1.125rem;
+    cursor: pointer;
+}
+
 .inlinejs-input.validate.blurred > input:valid, .inlinejs-input.validate > input:not(:placeholder-shown):valid{
     border-bottom-color: var(--inlinejs-input-border-color-valid);
 }

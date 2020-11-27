@@ -127,6 +127,32 @@ namespace InlineJS{
             wrapper.appendChild(element);
             wrapper.appendChild(span);
 
+            if (directive.arg.options.indexOf('password') != -1){
+                let icon = document.createElement('i'), updateIcon = () => {
+                    if ((element as HTMLInputElement).type === 'text'){
+                        icon.title = 'Hide password';
+                        icon.textContent = 'visibility_off';
+                    }
+                    else{//Hidden
+                        icon.title = 'Show password';
+                        icon.textContent = 'visibility';
+                    }
+                };
+
+                wrapper.appendChild(icon);
+                icon.classList.add('material-icons-outlined');
+                updateIcon();
+
+                icon.addEventListener('click', () => {
+                    (element as HTMLInputElement).type = (((element as HTMLInputElement).type === 'password') ? 'text' : 'password');
+                    updateIcon();
+
+                    element.dispatchEvent(new CustomEvent('input.password', {
+                        detail: (element as HTMLInputElement).type
+                    }));
+                });
+            }
+
             wrapper.classList.add('inlinejs-input');
             directive.arg.options.forEach(key => wrapper.classList.add(key));
 
