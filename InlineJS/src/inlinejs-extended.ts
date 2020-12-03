@@ -535,6 +535,11 @@ namespace InlineJS{
             region.GetState().TrapGetAccess(() => {
                 let url = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
                 if (url !== info.url && typeof url === 'string'){
+                    if (url.startsWith('::append::')){
+                        info.isAppend = info.isOnce = true;
+                        url = url.substr(10);
+                    }
+                    
                     load(url);
                     info.url = url;
                 }
@@ -1673,7 +1678,6 @@ namespace InlineJS{
                     if (info.items[sku].quantity != item.quantity){
                         info.items[sku].quantity = item.quantity;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `items.${sku}.quantity`, scope);
-                        alert(`items.${sku}.quantity`);
                     }
 
                     if (info.items[sku].price != item.price){
@@ -2321,7 +2325,13 @@ namespace InlineJS{
             let removeAll = (force: boolean = false) => {
                 if (force || !append){
                     while (element.firstElementChild){
+                        let child = (element.firstElementChild as HTMLElement);
+                        let region = Region.Infer(child);
+                        
                         element.removeChild(element.firstElementChild);
+                        if (region){
+                            region.RemoveElement(child as HTMLElement);
+                        }
                     }
                 }
             };

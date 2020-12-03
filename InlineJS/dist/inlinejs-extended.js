@@ -388,6 +388,10 @@ var InlineJS;
             region.GetState().TrapGetAccess(function () {
                 var url = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
                 if (url !== info.url && typeof url === 'string') {
+                    if (url.startsWith('::append::')) {
+                        info.isAppend = info.isOnce = true;
+                        url = url.substr(10);
+                    }
                     load(url);
                     info.url = url;
                 }
@@ -1376,7 +1380,6 @@ var InlineJS;
                     if (info.items[sku].quantity != item.quantity) {
                         info.items[sku].quantity = item.quantity;
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + sku + ".quantity", scope);
-                        alert("items." + sku + ".quantity");
                     }
                     if (info.items[sku].price != item.price) {
                         info.items[sku].price = item.price;
@@ -1915,7 +1918,12 @@ var InlineJS;
                 if (force === void 0) { force = false; }
                 if (force || !append) {
                     while (element.firstElementChild) {
+                        var child = element.firstElementChild;
+                        var region = InlineJS.Region.Infer(child);
                         element.removeChild(element.firstElementChild);
+                        if (region) {
+                            region.RemoveElement(child);
+                        }
                     }
                 }
             };
