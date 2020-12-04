@@ -383,6 +383,10 @@ var InlineJS;
                         info.isAppend = !info.isAppend;
                         info.isOnce = false;
                     }
+                }, function (err) {
+                    element.dispatchEvent(new CustomEvent("xhr.error", {
+                        detail: { error: err }
+                    }));
                 });
             };
             region.GetState().TrapGetAccess(function () {
@@ -445,6 +449,10 @@ var InlineJS;
                     });
                     Object.keys(scope.callbacks).forEach(function (key) { return scope.callbacks[key].forEach(function (callback) { return InlineJS.CoreDirectiveHandlers.Call(regionId, callback, true); }); });
                     element.dispatchEvent(new CustomEvent("xhr.load"));
+                }, function (err) {
+                    element.dispatchEvent(new CustomEvent("xhr.error", {
+                        detail: { error: err }
+                    }));
                 });
                 return false;
             });
@@ -1189,8 +1197,15 @@ var InlineJS;
                 info.mount = function (url) {
                     ExtendedDirectiveHandlers.FetchLoad(mount, url, false, function () {
                         window.scrollTo({ top: -window.scrollY, left: 0 });
-                        innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
+                        window.dispatchEvent(new CustomEvent('router.mount.load'));
                         InlineJS.Bootstrap.Reattach();
+                    }, function (err) {
+                        window.dispatchEvent(new CustomEvent("router.mount.error", {
+                            detail: {
+                                error: err,
+                                mount: mount
+                            }
+                        }));
                     });
                 };
                 return InlineJS.DirectiveHandlerReturn.Handled;
@@ -1218,7 +1233,7 @@ var InlineJS;
                                 innerElement.classList.remove('router-active');
                             }
                         }
-                        alert('active');
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(innerRegionId), 'active', innerScope);
                         innerElement.dispatchEvent(new CustomEvent('router.active'));
                     }
                     else { //Removed from DOM
@@ -1226,16 +1241,6 @@ var InlineJS;
                     }
                 };
                 var innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []), reload = (innerDirective.arg.key === 'reload');
-                var alert = function (prop) {
-                    var myRegion = InlineJS.Region.Get(innerRegionId);
-                    myRegion.GetChanges().Add({
-                        regionId: innerRegionId,
-                        type: 'set',
-                        path: innerScope.path + "." + prop,
-                        prop: prop,
-                        origin: myRegion.GetChanges().GetOrigin()
-                    });
-                };
                 if (path) { //Use specified path
                     var queryIndex = path.indexOf('?');
                     if (queryIndex != -1) { //Split
@@ -1347,21 +1352,21 @@ var InlineJS;
             }
             var computeBreakpoint = function (width) {
                 if (width < 576) { //Extra small
-                    return 'xs';
+                    return ['xs', 0];
                 }
                 if (width < 768) { //Small
-                    return 'sm';
+                    return ['sm', 1];
                 }
                 if (width < 992) { //Medium
-                    return 'md';
+                    return ['md', 2];
                 }
                 if (width < 1200) { //Large
-                    return 'lg';
+                    return ['lg', 3];
                 }
                 if (width < 1400) { //Extra large
-                    return 'xl';
+                    return ['xl', 4];
                 }
-                return 'xxl'; //Extra extra large
+                return ['xxl', 5]; //Extra extra large
             };
             var size = {
                 width: screen.width,
@@ -1372,12 +1377,16 @@ var InlineJS;
                 size.height = screen.height;
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'size', scope);
                 var thisBreakpoint = computeBreakpoint(screen.width);
-                if (thisBreakpoint !== breakpoint) {
+                if (thisBreakpoint[0] !== breakpoint[0]) {
                     breakpoint = thisBreakpoint;
                     window.dispatchEvent(new CustomEvent('screen.breakpoint', {
-                        detail: thisBreakpoint
+                        detail: breakpoint[0]
+                    }));
+                    window.dispatchEvent(new CustomEvent('screen.checkpoint', {
+                        detail: breakpoint[1]
                     }));
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'breakpoint', scope);
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'checkpoint', scope);
                 }
             });
             var scope = ExtendedDirectiveHandlers.AddScope('screen', region.AddElement(element, true), []);
@@ -1388,9 +1397,13 @@ var InlineJS;
                 }
                 if (prop === 'breakpoint') {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
-                    return breakpoint;
+                    return breakpoint[0];
                 }
-            }, ['size', 'breakpoint']);
+                if (prop === 'checkpoint') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return breakpoint[1];
+                }
+            }, ['size', 'breakpoint', 'checkpoint']);
             InlineJS.Region.AddGlobal('$screen', function () { return proxy; });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
@@ -1712,6 +1725,8 @@ var InlineJS;
             var registerUrl = window.location.origin + "/auth/register";
             var loginUrl = window.location.origin + "/auth/login";
             var logoutUrl = window.location.origin + "/auth/logout";
+            var updateUrl = window.location.origin + "/auth/update";
+            var deleteUrl = window.location.origin + "/auth/delete";
             var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData = null, isInit = false;
             if (!InlineJS.Region.IsObject(data)) { //Retrieve data
                 fetch(userUrl, {
@@ -1721,13 +1736,13 @@ var InlineJS;
                     if (!isInit) {
                         isInit = true;
                         alertAll();
-                        userData = (data.userData || null);
+                        userData = (data || null);
                     }
                 });
             }
             else { //Use specified data
                 isInit = true;
-                userData = (data.userData || null);
+                userData = (data || null);
             }
             var alertAll = function () {
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'check', scope);
@@ -1756,11 +1771,11 @@ var InlineJS;
                 getEmail: function () {
                     return methods.getField('email');
                 },
-                logout: function (callback) {
+                desync: function (logout, callback) {
                     if (!userData) {
                         return;
                     }
-                    fetch(logoutUrl, {
+                    fetch((logout ? logoutUrl : deleteUrl), {
                         method: 'GET',
                         credentials: 'same-origin'
                     }).then(function (response) { return response.json(); }).then(function (data) {
@@ -1773,6 +1788,9 @@ var InlineJS;
                             }));
                         }
                     });
+                },
+                logout: function (callback) {
+                    methods.desync(true, callback);
                 },
                 authenticate: function (login, form, callback) {
                     if (userData) {
@@ -1793,11 +1811,15 @@ var InlineJS;
                     }).then(function (response) { return response.json(); }).then(function (data) {
                         isInit = true;
                         if (!callback || callback(data)) {
-                            userData = (data.userData || {});
+                            userData = (data || {});
                             alertAll();
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
                                 detail: true
                             }));
+                        }
+                    })["catch"](function (err) {
+                        if (callback) {
+                            callback(null, err);
                         }
                     });
                 },
@@ -1806,6 +1828,37 @@ var InlineJS;
                 },
                 register: function (form, callback) {
                     methods.authenticate(false, form, callback);
+                },
+                update: function (form, callback) {
+                    if (!userData) {
+                        return;
+                    }
+                    var formData;
+                    if (!(form instanceof HTMLFormElement)) {
+                        formData = new FormData();
+                        Object.keys(form || {}).forEach(function (key) { return formData.append(key, form[key]); });
+                    }
+                    else {
+                        formData = new FormData(form);
+                    }
+                    fetch(updateUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        body: formData
+                    }).then(function (response) { return response.json(); }).then(function (data) {
+                        isInit = true;
+                        if (!callback || callback(data)) {
+                            userData = (data || {});
+                            alertAll();
+                        }
+                    })["catch"](function (err) {
+                        if (callback) {
+                            callback(null, err);
+                        }
+                    });
+                },
+                "delete": function (callback) {
+                    methods.desync(false, callback);
                 }
             };
             var scope = ExtendedDirectiveHandlers.AddScope('auth', region.AddElement(element, true), []), regionId = region.GetId();
@@ -1963,7 +2016,7 @@ var InlineJS;
             elementScope.intersectionObservers[path] = observer;
             observer.observe(element);
         };
-        ExtendedDirectiveHandlers.FetchLoad = function (element, url, append, onLoad) {
+        ExtendedDirectiveHandlers.FetchLoad = function (element, url, append, onLoad, onError) {
             if (!url || !(url = url.trim())) {
                 return;
             }
@@ -1980,21 +2033,29 @@ var InlineJS;
                     }
                 }
             };
-            var fetch = function (url, callback) {
-                window.fetch(url).then(function (response) { return response.text(); }).then(function (data) {
+            var fetch = function (url, tryJson, callback) {
+                window.fetch(url, {
+                    credentials: 'same-origin'
+                }).then(function (response) { return response.text(); }).then(function (data) {
+                    var parsedData;
                     try {
-                        callback(JSON.parse(data));
+                        parsedData = (tryJson ? JSON.parse(data) : data);
                     }
                     catch (err) {
-                        callback(data);
+                        parsedData = data;
                     }
+                    callback(parsedData);
                     if (onLoad) {
                         onLoad();
+                    }
+                })["catch"](function (err) {
+                    if (onError) {
+                        onError(err);
                     }
                 });
             };
             var fetchList = function (url, callback) {
-                fetch(url, function (data) {
+                fetch(url, true, function (data) {
                     removeAll();
                     if (Array.isArray(data)) {
                         data.forEach(callback);
@@ -2040,7 +2101,7 @@ var InlineJS;
                 element.src = url;
             }
             else { //Generic
-                fetch(url, function (data) {
+                fetch(url, false, function (data) {
                     if (append) {
                         var tmpl = document.createElement('template');
                         tmpl.innerHTML = ((typeof data === 'string') ? data : data.toString());

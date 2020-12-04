@@ -536,6 +536,10 @@ namespace InlineJS{
                         info.isAppend = !info.isAppend;
                         info.isOnce = false;
                     }
+                }, (err) => {
+                    element.dispatchEvent(new CustomEvent(`xhr.error`, {
+                        detail: { error: err },
+                    }));
                 });
             };
             
@@ -614,6 +618,10 @@ namespace InlineJS{
 
                     Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, true)));
                     element.dispatchEvent(new CustomEvent(`xhr.load`));
+                }, (err) => {
+                    element.dispatchEvent(new CustomEvent(`xhr.error`, {
+                        detail: { error: err },
+                    }));
                 });
                 
                 return false;
@@ -1456,8 +1464,15 @@ namespace InlineJS{
                 info.mount = (url) => {
                     ExtendedDirectiveHandlers.FetchLoad(mount, url, false, () => {
                         window.scrollTo({ top: -window.scrollY, left: 0 });
-                        innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
+                        window.dispatchEvent(new CustomEvent('router.mount.load'));
                         Bootstrap.Reattach();
+                    }, (err) => {
+                        window.dispatchEvent(new CustomEvent(`router.mount.error`, {
+                            detail: {
+                                error: err,
+                                mount: mount,
+                            },
+                        }));
                     });
                 };
 
@@ -1490,7 +1505,7 @@ namespace InlineJS{
                             }
                         }
 
-                        alert('active');
+                        ExtendedDirectiveHandlers.Alert(Region.Get(innerRegionId), 'active', innerScope);
                         innerElement.dispatchEvent(new CustomEvent('router.active'));
                     }
                     else{//Removed from DOM
@@ -1499,17 +1514,6 @@ namespace InlineJS{
                 };
 
                 let innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []), reload = (innerDirective.arg.key === 'reload');
-                let alert = (prop: string) => {
-                    let myRegion = Region.Get(innerRegionId);
-                    myRegion.GetChanges().Add({
-                        regionId: innerRegionId,
-                        type: 'set',
-                        path: `${innerScope.path}.${prop}`,
-                        prop: prop,
-                        origin: myRegion.GetChanges().GetOrigin()
-                    });
-                };
-
                 if (path){//Use specified path
                     let queryIndex = path.indexOf('?');
                     if (queryIndex != -1){//Split
@@ -1643,26 +1647,26 @@ namespace InlineJS{
             
             let computeBreakpoint = (width: number) => {
                 if (width < 576){//Extra small
-                    return 'xs';
+                    return [ 'xs', 0 ];
                 }
 
                 if (width < 768){//Small
-                    return 'sm';
+                    return [ 'sm', 1 ];
                 }
 
                 if (width < 992){//Medium
-                    return 'md';
+                    return [ 'md', 2 ];
                 }
 
                 if (width < 1200){//Large
-                    return 'lg';
+                    return [ 'lg', 3 ];
                 }
 
                 if (width < 1400){//Extra large
-                    return 'xl';
+                    return [ 'xl', 4 ];
                 }
 
-                return 'xxl';//Extra extra large
+                return [ 'xxl', 5 ];//Extra extra large
             };
             
             let size = {
@@ -1676,12 +1680,18 @@ namespace InlineJS{
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'size', scope);
 
                 let thisBreakpoint = computeBreakpoint(screen.width);
-                if (thisBreakpoint !== breakpoint){
+                if (thisBreakpoint[0] !== breakpoint[0]){
                     breakpoint = thisBreakpoint;
                     window.dispatchEvent(new CustomEvent('screen.breakpoint', {
-                        detail: thisBreakpoint
+                        detail: breakpoint[0]
                     }));
+
+                    window.dispatchEvent(new CustomEvent('screen.checkpoint', {
+                        detail: breakpoint[1]
+                    }));
+
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'breakpoint', scope);
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'checkpoint', scope);
                 }
             });
 
@@ -1694,9 +1704,14 @@ namespace InlineJS{
 
                 if (prop === 'breakpoint'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
-                    return breakpoint;
+                    return breakpoint[0];
                 }
-            }, ['size', 'breakpoint']);
+
+                if (prop === 'checkpoint'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return breakpoint[1];
+                }
+            }, ['size', 'breakpoint', 'checkpoint']);
             
             Region.AddGlobal('$screen', () => proxy);
             return DirectiveHandlerReturn.Handled;
@@ -2097,6 +2112,9 @@ namespace InlineJS{
             const loginUrl = `${window.location.origin}/auth/login`;
             const logoutUrl = `${window.location.origin}/auth/logout`;
 
+            const updateUrl = `${window.location.origin}/auth/update`;
+            const deleteUrl = `${window.location.origin}/auth/delete`;
+
             let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData: Record<string, any> = null, isInit = false;
             if (!Region.IsObject(data)){//Retrieve data
                 fetch(userUrl, {
@@ -2106,13 +2124,13 @@ namespace InlineJS{
                     if (!isInit){
                         isInit = true;
                         alertAll();
-                        userData = (data.userData || null);
+                        userData = (data || null);
                     }
                 });
             }
             else{//Use specified data
                 isInit = true;
-                userData = (data.userData || null);
+                userData = (data || null);
             }
 
             let alertAll = () => {
@@ -2143,12 +2161,12 @@ namespace InlineJS{
                 getEmail: () => {
                     return methods.getField('email');
                 },
-                logout: (callback?: (data: any) => boolean) => {
+                desync: (logout: boolean, callback?: (data: any) => boolean) => {
                     if (!userData){
                         return;
                     }
                     
-                    fetch(logoutUrl, {
+                    fetch((logout ? logoutUrl : deleteUrl), {
                         method: 'GET',
                         credentials: 'same-origin',
                     }).then(response => response.json()).then((data) => {
@@ -2162,7 +2180,10 @@ namespace InlineJS{
                         }
                     });
                 },
-                authenticate: (login: boolean, form: HTMLFormElement | Record<string, string>, callback?: (data: any) => boolean) => {
+                logout: (callback?: (data: any) => boolean) => {
+                    methods.desync(true, callback);
+                },
+                authenticate: (login: boolean, form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
                     if (userData){
                         return;
                     }
@@ -2183,19 +2204,56 @@ namespace InlineJS{
                     }).then(response => response.json()).then((data) => {
                         isInit = true;
                         if (!callback || callback(data)){
-                            userData = (data.userData || {});
+                            userData = (data || {});
                             alertAll();
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
                                 detail: true
                             }));
                         }
+                    }).catch((err) => {
+                        if (callback){
+                            callback(null, err);
+                        }
                     });
                 },
-                login: (form: HTMLFormElement | Record<string, string>, callback?: (data: any) => boolean) => {
+                login: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
                     methods.authenticate(true, form, callback);
                 },
-                register: (form: HTMLFormElement | Record<string, string>, callback?: (data: any) => boolean) => {
+                register: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
                     methods.authenticate(false, form, callback);
+                },
+                update: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
+                    if (!userData){
+                        return;
+                    }
+
+                    let formData: FormData;
+                    if (!(form instanceof HTMLFormElement)){
+                        formData = new FormData();
+                        Object.keys(form || {}).forEach(key => formData.append(key, form[key]));
+                    }
+                    else{
+                        formData = new FormData(form);
+                    }
+
+                    fetch(updateUrl, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        body: formData
+                    }).then(response => response.json()).then((data) => {
+                        isInit = true;
+                        if (!callback || callback(data)){
+                            userData = (data || {});
+                            alertAll();
+                        }
+                    }).catch((err) => {
+                        if (callback){
+                            callback(null, err);
+                        }
+                    });
+                },
+                delete: (callback?: (data: any, err?: any) => boolean) => {
+                    methods.desync(false, callback);
                 },
             };
             
@@ -2387,7 +2445,7 @@ namespace InlineJS{
             observer.observe(element);
         }
 
-        public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void){
+        public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void){
             if (!url || !(url = url.trim())){
                 return;
             }
@@ -2406,23 +2464,31 @@ namespace InlineJS{
                 }
             };
 
-            let fetch = (url: string, callback: (response: any) => void) => {
-                window.fetch(url).then(response => response.text()).then((data) => {
+            let fetch = (url: string, tryJson: boolean, callback: (response: any) => void) => {
+                window.fetch(url, {
+                    credentials: 'same-origin',
+                }).then(response => response.text()).then((data) => {
+                    let parsedData: any;
                     try{
-                        callback(JSON.parse(data));
+                        parsedData = (tryJson ? JSON.parse(data) : data);
                     }
                     catch (err){
-                        callback(data);
+                        parsedData = data;
                     }
-                    
+
+                    callback(parsedData);
                     if (onLoad){
                         onLoad();
+                    }
+                }).catch((err) => {
+                    if (onError){
+                        onError(err);
                     }
                 });
             };
 
             let fetchList = (url: string, callback: (item: object) => void) => {
-                fetch(url, (data) => {
+                fetch(url, true, (data) => {
                     removeAll();
                     if (Array.isArray(data)){
                         (data as Array<object>).forEach(callback);
@@ -2472,7 +2538,7 @@ namespace InlineJS{
                 (element as HTMLImageElement).src = url;
             }
             else{//Generic
-                fetch(url, (data) => {
+                fetch(url, false, (data) => {
                     if (append){
                         let tmpl = document.createElement('template');
                         tmpl.innerHTML = ((typeof data === 'string') ? data : (data as object).toString());
