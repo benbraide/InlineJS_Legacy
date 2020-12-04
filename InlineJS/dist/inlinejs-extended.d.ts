@@ -23,6 +23,11 @@ declare namespace InlineJS {
         path: string;
         callbacks: Record<string, Array<(value?: any) => boolean>>;
     }
+    interface RouterOptions {
+        urlPrefix?: string;
+        titlePrefix?: string;
+        titleSuffix?: string;
+    }
     interface RouterInfo {
         currentPage: string;
         currentQuery: string;
@@ -30,7 +35,8 @@ declare namespace InlineJS {
         targetExit: string;
         pages: Record<string, RouterPageInfo>;
         url: string;
-        mount: HTMLElement;
+        targetUrl: string;
+        mount: (url: string) => void;
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
     }
     interface RouterPageInfo {

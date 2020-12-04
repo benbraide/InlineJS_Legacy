@@ -386,8 +386,15 @@ var InlineJS;
                 });
             };
             region.GetState().TrapGetAccess(function () {
-                var url = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
-                if (url !== info.url && typeof url === 'string') {
+                var url = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), reload = false;
+                if (typeof url !== 'string') {
+                    return;
+                }
+                if (url.startsWith('::reload::')) {
+                    reload = true;
+                    url = (url.substr(10) || info.url);
+                }
+                if (reload || url !== info.url) {
                     if (url.startsWith('::append::')) {
                         info.isAppend = info.isOnce = true;
                         url = url.substr(10);
@@ -936,13 +943,18 @@ var InlineJS;
             if (InlineJS.Region.GetGlobal('$router', region.GetId())) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var regionId = region.GetId(), prefix = directive.value, origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery'], info = {
+            var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (!InlineJS.Region.IsObject(options)) {
+                options = {};
+            }
+            var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl'], info = {
                 currentPage: null,
                 currentQuery: '',
                 targetComponent: null,
                 targetExit: null,
                 pages: {},
                 url: null,
+                targetUrl: null,
                 mount: null,
                 middlewares: {}
             }, methods = {
@@ -980,8 +992,11 @@ var InlineJS;
                 },
                 parseQuery: function (query) { return parseQuery(query); }
             };
-            if (prefix) {
-                prefix += '/';
+            if (options.urlPrefix) {
+                options.urlPrefix += '/';
+            }
+            else { //Empty
+                options.urlPrefix = '';
             }
             var scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
             var register = function (page, path, title, component, entry, exit, disabled, middlewares) {
@@ -995,44 +1010,35 @@ var InlineJS;
                     middlewares: ((middlewares && Array.isArray(middlewares)) ? middlewares : new Array())
                 };
             };
-            var goto = function (page, query, replace) {
+            var goto = function (page, query, replace, onReload) {
                 if (replace === void 0) { replace = false; }
-                var pageInfo = null;
-                if (page in info.pages) {
-                    pageInfo = info.pages[page];
-                }
-                else if (page.indexOf(origin + "/") == 0) {
+                page = page.trim();
+                query = query.trim();
+                if (page.startsWith(origin + "/")) {
                     page = (page.substr(origin.length + 1) || '/');
-                    pageInfo = ((page in info.pages) ? info.pages[page] : null);
                 }
-                if (pageInfo && !pageInfo.disabled) {
-                    query = (query || '');
-                    if (query && query.substr(0, 1) !== '?') {
-                        query = "?" + query;
+                else if (page.length > 1 && page.startsWith('/')) {
+                    page = page.substr(1);
+                }
+                query = (query || '');
+                if (query && query.substr(0, 1) !== '?') {
+                    query = "?" + query;
+                }
+                load(page, query, function (title, path) {
+                    document.title = "" + options.titlePrefix + title + options.titleSuffix;
+                    if (replace) {
+                        history.replaceState({
+                            page: page,
+                            query: query
+                        }, title, buildHistoryPath(path, query));
                     }
-                    if (origin + "/" + prefix + pageInfo.path + query === info.url) {
-                        window.dispatchEvent(new CustomEvent('router.reload'));
-                        window.dispatchEvent(new CustomEvent('router.page'));
-                        return;
+                    else {
+                        history.pushState({
+                            page: page,
+                            query: query
+                        }, title, buildHistoryPath(path, query));
                     }
-                    load(page, query, function () {
-                        if (replace) {
-                            history.replaceState({
-                                page: page,
-                                query: query
-                            }, pageInfo.title, origin + "/" + ((pageInfo.path === '/') ? '' : pageInfo.path) + query);
-                        }
-                        else {
-                            history.pushState({
-                                page: page,
-                                query: query
-                            }, pageInfo.title, origin + "/" + ((pageInfo.path === '/') ? '' : pageInfo.path) + query);
-                        }
-                    });
-                }
-                else {
-                    window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
-                }
+                }, onReload);
             };
             var back = function () {
                 if (info.currentPage && info.currentPage !== '/') {
@@ -1048,9 +1054,44 @@ var InlineJS;
                     history.back();
                 }
             };
-            var load = function (page, query, callback) {
+            var load = function (page, query, callback, onReload) {
+                var myRegion = InlineJS.Region.Get(regionId);
                 if (info.currentPage && info.currentPage !== '/') {
                     unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
+                }
+                if (info.currentPage !== page) {
+                    info.currentPage = page;
+                    ExtendedDirectiveHandlers.Alert(myRegion, 'currentPage', scope);
+                }
+                if (info.currentQuery !== query) {
+                    info.currentQuery = query;
+                    ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
+                }
+                if (!(page in info.pages) || info.pages[page].disabled) { //Not found
+                    var targetUrl = buildPath(page, query);
+                    if (targetUrl !== info.targetUrl) {
+                        info.targetUrl = targetUrl;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'targetUrl', scope);
+                    }
+                    var url = buildPath('404', null);
+                    if (url !== info.url) {
+                        info.url = url;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'url', scope);
+                        if (info.mount) {
+                            info.mount(url);
+                        }
+                    }
+                    if (targetUrl === info.targetUrl) {
+                        if (onReload && !onReload()) {
+                            return;
+                        }
+                        window.dispatchEvent(new CustomEvent('router.reload'));
+                    }
+                    window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
+                    if (callback) {
+                        callback('Page Not Found', page);
+                    }
+                    return;
                 }
                 var pageInfo = info.pages[page], component = pageInfo.component, handled;
                 for (var i = 0; i < (pageInfo.middlewares || []).length; ++i) {
@@ -1060,12 +1101,6 @@ var InlineJS;
                     }
                 }
                 ;
-                info.currentPage = page;
-                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'currentPage', scope);
-                if (info.currentQuery !== query) {
-                    info.currentQuery = query;
-                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'currentQuery', scope);
-                }
                 try {
                     if (component) {
                         handled = (InlineJS.Region.Find(component, true)[info.pages[page].entry])(query);
@@ -1077,29 +1112,36 @@ var InlineJS;
                 catch (err) {
                     handled = false;
                 }
-                var urlChanged = false;
                 if (handled === false) {
-                    var url = origin + "/" + prefix + info.pages[page].path + (query || '');
+                    var url = buildPath(pageInfo.path, query);
                     if (url !== info.url) {
-                        urlChanged = true;
                         info.url = url;
-                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'url', scope);
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'url', scope);
+                    }
+                    if (url === info.targetUrl) {
+                        if (onReload && !onReload()) {
+                            return;
+                        }
+                        window.dispatchEvent(new CustomEvent('router.reload'));
+                    }
+                    else { //New target
+                        info.targetUrl = url;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'targetUrl', scope);
+                    }
+                    if (info.mount) {
+                        info.mount(url);
                     }
                 }
                 if (callback) {
-                    callback();
+                    callback(pageInfo.title, pageInfo.path);
                 }
-                if (urlChanged) {
-                    window.dispatchEvent(new CustomEvent('router.load'));
-                }
-                window.dispatchEvent(new CustomEvent('router.page'));
+                window.dispatchEvent(new CustomEvent('router.load'));
             };
             var unload = function (component, exit) {
                 try {
                     (InlineJS.Region.Find(component, true)[exit])();
                 }
                 catch (err) { }
-                window.dispatchEvent(new CustomEvent('router.unload'));
             };
             var parseQuery = function (query) {
                 var params = {};
@@ -1114,6 +1156,12 @@ var InlineJS;
                     params[decode(match[1])] = decode(match[2]);
                 }
                 return params;
+            };
+            var buildPath = function (path, query) {
+                return origin + "/" + options.urlPrefix + path + (query || '');
+            };
+            var buildHistoryPath = function (path, query) {
+                return origin + "/" + ((path === '/') ? '' : path) + (query || '');
             };
             window.addEventListener('popstate', function (event) {
                 if (!event.state) {
@@ -1132,20 +1180,19 @@ var InlineJS;
                 }
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerMount', function (innerRegion, innerElement, innerDirective) {
-                var innerRegionId = innerRegion.GetId();
                 if (info.mount) {
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
-                info.mount = document.createElement('div');
-                innerElement.parentElement.insertBefore(info.mount, innerElement);
-                info.mount.classList.add('router-mount');
-                innerRegion.GetState().TrapGetAccess(function () {
-                    var url = InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(innerRegionId), innerElement, '$router.url');
-                    ExtendedDirectiveHandlers.FetchLoad(info.mount, url, false, function () {
+                var mount = document.createElement('div');
+                innerElement.parentElement.insertBefore(mount, innerElement);
+                mount.classList.add('router-mount');
+                info.mount = function (url) {
+                    ExtendedDirectiveHandlers.FetchLoad(mount, url, false, function () {
+                        window.scrollTo({ top: -window.scrollY, left: 0 });
                         innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
                         InlineJS.Bootstrap.Reattach();
                     });
-                }, true, innerElement);
+                };
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {
@@ -1178,7 +1225,7 @@ var InlineJS;
                         window.removeEventListener('router.load', onEvent);
                     }
                 };
-                var innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []);
+                var innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []), reload = (innerDirective.arg.key === 'reload');
                 var alert = function (prop) {
                     var myRegion = InlineJS.Region.Get(innerRegionId);
                     myRegion.GetChanges().Add({
@@ -1242,7 +1289,13 @@ var InlineJS;
                             thisPath = thisPath.substr(0, queryIndex);
                         }
                     }
-                    goto(thisPath, thisQuery);
+                    goto(thisPath, thisQuery, false, function () {
+                        if (!reload) { //Scroll top
+                            window.scrollTo({ top: -window.scrollY, left: 0, behavior: 'smooth' });
+                            return false;
+                        }
+                        return true;
+                    });
                 });
                 var innerProxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                     if (prop === 'active') {

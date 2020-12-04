@@ -27,6 +27,12 @@ namespace InlineJS{
         callbacks: Record<string, Array<(value?: any) => boolean>>;
     }
 
+    export interface RouterOptions{
+        urlPrefix?: string;
+        titlePrefix?: string;
+        titleSuffix?: string;
+    }
+    
     export interface RouterInfo{
         currentPage: string;
         currentQuery: string;
@@ -34,7 +40,8 @@ namespace InlineJS{
         targetExit: string;
         pages: Record<string, RouterPageInfo>;
         url: string;
-        mount: HTMLElement;
+        targetUrl: string;
+        mount: (url: string) => void;
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
     }
 
@@ -533,8 +540,17 @@ namespace InlineJS{
             };
             
             region.GetState().TrapGetAccess(() => {
-                let url = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
-                if (url !== info.url && typeof url === 'string'){
+                let url = CoreDirectiveHandlers.Evaluate(region, element, directive.value), reload = false;
+                if (typeof url !== 'string'){
+                    return;
+                }
+                
+                if (url.startsWith('::reload::')){
+                    reload = true;
+                    url = (url.substr(10) || info.url);
+                }
+
+                if (reload || url !== info.url){
                     if (url.startsWith('::append::')){
                         info.isAppend = info.isOnce = true;
                         url = url.substr(10);
@@ -1157,14 +1173,20 @@ namespace InlineJS{
             if (Region.GetGlobal('$router', region.GetId())){
                 return DirectiveHandlerReturn.Nil;
             }
+
+            let options = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) as RouterOptions);
+            if (!Region.IsObject(options)){
+                options = {};
+            }
             
-            let regionId = region.GetId(), prefix = directive.value, origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery' ], info: RouterInfo = {
+            let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl' ], info: RouterInfo = {
                 currentPage: null,
                 currentQuery: '',
                 targetComponent: null,
                 targetExit: null,
                 pages: {},
                 url: null,
+                targetUrl: null,
                 mount: null,
                 middlewares: {}
             }, methods = {
@@ -1202,8 +1224,11 @@ namespace InlineJS{
                 parseQuery: (query: string) => parseQuery(query)
             };
 
-            if (prefix){
-                prefix += '/';
+            if (options.urlPrefix){
+                options.urlPrefix += '/';
+            }
+            else{//Empty
+                options.urlPrefix = '';
             }
 
             let scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
@@ -1219,46 +1244,37 @@ namespace InlineJS{
                 };
             };
 
-            let goto = (page: string, query?: string, replace = false) => {
-                let pageInfo: RouterPageInfo = null;
-                if (page in info.pages){
-                    pageInfo = info.pages[page];
-                }
-                else if (page.indexOf(`${origin}/`) == 0){
+            let goto = (page: string, query?: string, replace = false, onReload?: () => boolean) => {
+                page = page.trim();
+                query = query.trim();
+                
+                if (page.startsWith(`${origin}/`)){
                     page = (page.substr(origin.length + 1) || '/');
-                    pageInfo = ((page in info.pages) ? info.pages[page] : null);
+                }
+                else if (page.length > 1 && page.startsWith('/')){
+                    page = page.substr(1);
+                }
+
+                query = (query || '');
+                if (query && query.substr(0, 1) !== '?'){
+                    query = `?${query}`;
                 }
                 
-                if (pageInfo && !pageInfo.disabled){
-                    query = (query || '');
-                    if (query && query.substr(0, 1) !== '?'){
-                        query = `?${query}`;
+                load(page, query, (title: string, path: string) => {
+                    document.title = `${options.titlePrefix}${title}${options.titleSuffix}`;
+                    if (replace){
+                        history.replaceState({
+                            page: page,
+                            query: query
+                        }, title, buildHistoryPath(path, query));
                     }
-                    
-                    if (`${origin}/${prefix}${pageInfo.path}${query}` === info.url){
-                        window.dispatchEvent(new CustomEvent('router.reload'));
-                        window.dispatchEvent(new CustomEvent('router.page'));
-                        return;
+                    else{
+                        history.pushState({
+                            page: page,
+                            query: query
+                        }, title, buildHistoryPath(path, query));
                     }
-                    
-                    load(page, query, () => {
-                        if (replace){
-                            history.replaceState({
-                                page: page,
-                                query: query
-                            }, pageInfo.title, `${origin}/${(pageInfo.path === '/') ? '' : pageInfo.path}${query}`);
-                        }
-                        else{
-                            history.pushState({
-                                page: page,
-                                query: query
-                            }, pageInfo.title, `${origin}/${(pageInfo.path === '/') ? '' : pageInfo.path}${query}`);
-                        }
-                    });
-                }
-                else{
-                    window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
-                }
+                }, onReload);
             };
             
             let back = () => {
@@ -1278,9 +1294,51 @@ namespace InlineJS{
                 }
             };
 
-            let load = (page: string, query: string, callback?: () => void) => {
+            let load = (page: string, query: string, callback?: (title: string, path: string) => void, onReload?: () => boolean) => {
+                let myRegion = Region.Get(regionId);
                 if (info.currentPage && info.currentPage !== '/'){
                     unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
+                }
+
+                if (info.currentPage !== page){
+                    info.currentPage = page;
+                    ExtendedDirectiveHandlers.Alert(myRegion, 'currentPage', scope);
+                }
+
+                if (info.currentQuery !== query){
+                    info.currentQuery = query;
+                    ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
+                }
+
+                if (!(page in info.pages) || info.pages[page].disabled){//Not found
+                    let targetUrl = buildPath(page, query);
+                    if (targetUrl !== info.targetUrl){
+                        info.targetUrl = targetUrl;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'targetUrl', scope);
+                    }
+                    
+                    let url = buildPath('404', null);
+                    if (url !== info.url){
+                        info.url = url;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'url', scope);
+                        if (info.mount){
+                            info.mount(url);
+                        }
+                    }
+                    
+                    if (targetUrl === info.targetUrl){
+                        if (onReload && !onReload()){
+                            return;
+                        }
+                        window.dispatchEvent(new CustomEvent('router.reload'));
+                    }
+
+                    window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
+                    if (callback){
+                        callback('Page Not Found', page);
+                    }
+                    
+                    return;
                 }
                 
                 let pageInfo = info.pages[page], component = pageInfo.component, handled: any;
@@ -1290,14 +1348,6 @@ namespace InlineJS{
                         return;//Rejected
                     }
                 };
-
-                info.currentPage = page;
-                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'currentPage', scope);
-
-                if (info.currentQuery !== query){
-                    info.currentQuery = query;
-                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'currentQuery', scope);
-                }
 
                 try{
                     if (component){
@@ -1311,25 +1361,34 @@ namespace InlineJS{
                     handled = false;
                 }
 
-                let urlChanged = false;
                 if (handled === false){
-                    let url = `${origin}/${prefix}${info.pages[page].path}${query || ''}`;
+                    let url = buildPath(pageInfo.path, query);
                     if (url !== info.url){
-                        urlChanged = true;
                         info.url = url;
-                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'url', scope);
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'url', scope);
+                    }
+
+                    if (url === info.targetUrl){
+                        if (onReload && !onReload()){
+                            return;
+                        }
+                        window.dispatchEvent(new CustomEvent('router.reload'));
+                    }
+                    else{//New target
+                        info.targetUrl = url;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'targetUrl', scope);
+                    }
+
+                    if (info.mount){
+                        info.mount(url);
                     }
                 }
 
                 if (callback){
-                    callback();
+                    callback(pageInfo.title, pageInfo.path);
                 }
                 
-                if (urlChanged){
-                    window.dispatchEvent(new CustomEvent('router.load'));    
-                }
-
-                window.dispatchEvent(new CustomEvent('router.page'));
+                window.dispatchEvent(new CustomEvent('router.load'));
             };
 
             let unload = (component: string, exit: string) => {
@@ -1337,8 +1396,6 @@ namespace InlineJS{
                     (Region.Find(component, true)[exit])();
                 }
                 catch (err){}
-
-                window.dispatchEvent(new CustomEvent('router.unload'));
             };
 
             let parseQuery = (query: string) => {
@@ -1357,6 +1414,14 @@ namespace InlineJS{
                 }
 
                 return params;
+            };
+
+            let buildPath = (path: string, query: string) => {
+                return `${origin}/${options.urlPrefix}${path}${query || ''}`;
+            };
+            
+            let buildHistoryPath = (path: string, query: string) => {
+                return `${origin}/${(path === '/') ? '' : path}${query || ''}`;
             };
             
             window.addEventListener('popstate', (event) => {
@@ -1380,23 +1445,22 @@ namespace InlineJS{
             });
 
             DirectiveHandlerManager.AddHandler('routerMount', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                let innerRegionId = innerRegion.GetId();
                 if (info.mount){
                     return DirectiveHandlerReturn.Nil;
                 }
                 
-                info.mount = document.createElement('div');
-                innerElement.parentElement.insertBefore(info.mount, innerElement);
-                info.mount.classList.add('router-mount');
+                let mount = document.createElement('div');
+                innerElement.parentElement.insertBefore(mount, innerElement);
+                mount.classList.add('router-mount');
 
-                innerRegion.GetState().TrapGetAccess(() => {
-                    let url = CoreDirectiveHandlers.Evaluate(Region.Get(innerRegionId), innerElement, '$router.url');
-                    ExtendedDirectiveHandlers.FetchLoad(info.mount, url, false, () => {
+                info.mount = (url) => {
+                    ExtendedDirectiveHandlers.FetchLoad(mount, url, false, () => {
+                        window.scrollTo({ top: -window.scrollY, left: 0 });
                         innerElement.dispatchEvent(new CustomEvent('router.mount.load'));
                         Bootstrap.Reattach();
                     });
-                }, true, innerElement);
-                
+                };
+
                 return DirectiveHandlerReturn.Handled;
             });
             
@@ -1434,7 +1498,7 @@ namespace InlineJS{
                     }
                 };
 
-                let innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []);
+                let innerScope = ExtendedDirectiveHandlers.AddScope('router', innerRegion.AddElement(innerElement, true), []), reload = (innerDirective.arg.key === 'reload');
                 let alert = (prop: string) => {
                     let myRegion = Region.Get(innerRegionId);
                     myRegion.GetChanges().Add({
@@ -1509,7 +1573,13 @@ namespace InlineJS{
                         }
                     }
                     
-                    goto(thisPath, thisQuery);
+                    goto(thisPath, thisQuery, false, () => {
+                        if (!reload){//Scroll top
+                            window.scrollTo({ top: -window.scrollY, left: 0, behavior: 'smooth' });
+                            return false;
+                        }
+                        return true;
+                    });
                 });
 
                 let innerProxy = CoreDirectiveHandlers.CreateProxy((prop) => {
