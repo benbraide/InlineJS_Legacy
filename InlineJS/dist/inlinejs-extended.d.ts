@@ -31,12 +31,11 @@ declare namespace InlineJS {
     interface RouterInfo {
         currentPage: string;
         currentQuery: string;
-        targetComponent: string;
-        targetExit: string;
         pages: Record<string, RouterPageInfo>;
         url: string;
         targetUrl: string;
         mount: (url: string) => void;
+        mountElement: HTMLElement;
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
     }
     interface RouterPageInfo {

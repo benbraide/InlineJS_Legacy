@@ -631,7 +631,12 @@ namespace InlineJS{
             }
 
             let info = Region.globals_[key];
-            return ((!info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
+            return ((!regionId || !info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
+        }
+
+        public static GetGlobalValue(regionId: string, key: string, contextElement?: HTMLElement){
+            let global = Region.GetGlobal(regionId, key);
+            return (global ? global(regionId, contextElement) : null);
         }
 
         public static AddPostProcessCallback(callback: () => void){

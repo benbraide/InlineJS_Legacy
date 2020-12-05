@@ -483,7 +483,11 @@ var InlineJS;
                 return null;
             }
             var info = Region.globals_[key];
-            return ((!info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
+            return ((!regionId || !info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
+        };
+        Region.GetGlobalValue = function (regionId, key, contextElement) {
+            var global = Region.GetGlobal(regionId, key);
+            return (global ? global(regionId, contextElement) : null);
         };
         Region.AddPostProcessCallback = function (callback) {
             Region.postProcessCallbacks_.push(callback);

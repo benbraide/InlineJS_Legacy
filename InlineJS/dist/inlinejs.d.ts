@@ -161,6 +161,7 @@ declare namespace InlineJS {
         static AddGlobal(key: string, callback: GlobalCallbackType, accessHandler?: (regionId?: string) => boolean): void;
         static RemoveGlobal(key: string): void;
         static GetGlobal(regionId: string, key: string): GlobalCallbackType;
+        static GetGlobalValue(regionId: string, key: string, contextElement?: HTMLElement): any;
         static AddPostProcessCallback(callback: () => void): void;
         static ExecutePostProcessCallbacks(): void;
         static SetDirectivePrefix(value: string): void;
