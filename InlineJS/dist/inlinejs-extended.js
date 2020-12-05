@@ -1727,7 +1727,7 @@ var InlineJS;
             var logoutUrl = window.location.origin + "/auth/logout";
             var updateUrl = window.location.origin + "/auth/update";
             var deleteUrl = window.location.origin + "/auth/delete";
-            var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData = null, isInit = false;
+            var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData = null, isInit = false, redirectPage = null, redirectQuery = null;
             if (!InlineJS.Region.IsObject(data)) { //Retrieve data
                 fetch(userUrl, {
                     method: 'GET',
@@ -1742,12 +1742,31 @@ var InlineJS;
             }
             else { //Use specified data
                 isInit = true;
-                userData = (data || null);
+                userData = (data.userData || null);
             }
             var alertAll = function () {
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'check', scope);
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'roles', scope);
                 Object.keys(userData || {}).forEach(function (key) { return ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "fields." + key, scope); });
+            };
+            var getRouter = function () {
+                var routerCallback = InlineJS.Region.GetGlobal(regionId, 'router');
+                if (!routerCallback) {
+                    return null;
+                }
+                return routerCallback();
+            };
+            var redirect = function (loggedIn) {
+                var router = getRouter();
+                if (router && loggedIn) {
+                    router.goto((redirectPage || '/'), redirectQuery);
+                }
+                else if (router) {
+                    router.goto('/');
+                }
+            };
+            var rawHasRole = function (name) {
+                return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
             };
             var methods = {
                 check: function () {
@@ -1756,7 +1775,7 @@ var InlineJS;
                 },
                 hasRole: function (name) {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".roles");
-                    return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
+                    return rawHasRole(name);
                 },
                 isAdmin: function () {
                     return methods.hasRole('admin');
@@ -1786,6 +1805,7 @@ var InlineJS;
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
                                 detail: false
                             }));
+                            redirect(false);
                         }
                     });
                 },
@@ -1816,6 +1836,7 @@ var InlineJS;
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
                                 detail: true
                             }));
+                            redirect(true);
                         }
                     })["catch"](function (err) {
                         if (callback) {
@@ -1859,6 +1880,43 @@ var InlineJS;
                 },
                 "delete": function (callback) {
                     methods.desync(false, callback);
+                },
+                addMiddlewares: function (roles) {
+                    var router = getRouter();
+                    if (!router) {
+                        return;
+                    }
+                    var redirectToLogin = function (page, query) {
+                        router.goto('/login');
+                        redirectPage = page;
+                        redirectQuery = query;
+                    };
+                    router.addMiddleware('guest', function (page, query) {
+                        redirectPage = redirectQuery = null;
+                        if (userData) { //Logged in
+                            router.goto('/');
+                            return false;
+                        }
+                        return true;
+                    });
+                    router.addMiddleware('auth', function (page, query) {
+                        redirectPage = redirectQuery = null;
+                        if (!userData) { //Not logged in
+                            redirectToLogin(page, query);
+                            return false;
+                        }
+                        return true;
+                    });
+                    (roles || []).forEach(function (role) {
+                        router.addMiddleware("role:" + role, function (page, query) {
+                            redirectPage = redirectQuery = null;
+                            if (!userData) { //Not logged in
+                                redirectToLogin(page, query);
+                                return false;
+                            }
+                            return (rawHasRole(role) ? true : null);
+                        });
+                    });
                 }
             };
             var scope = ExtendedDirectiveHandlers.AddScope('auth', region.AddElement(element, true), []), regionId = region.GetId();
@@ -1868,6 +1926,7 @@ var InlineJS;
                 }
             }, Object.keys(methods));
             InlineJS.Region.AddGlobal('$auth', function () { return proxy; });
+            methods.addMiddlewares((data || {}).middlewareRoles);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Geolocation = function (region, element, directive) {

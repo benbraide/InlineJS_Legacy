@@ -2115,7 +2115,7 @@ namespace InlineJS{
             const updateUrl = `${window.location.origin}/auth/update`;
             const deleteUrl = `${window.location.origin}/auth/delete`;
 
-            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData: Record<string, any> = null, isInit = false;
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value), userData: Record<string, any> = null, isInit = false, redirectPage: string = null, redirectQuery: string = null;
             if (!Region.IsObject(data)){//Retrieve data
                 fetch(userUrl, {
                     method: 'GET',
@@ -2130,13 +2130,36 @@ namespace InlineJS{
             }
             else{//Use specified data
                 isInit = true;
-                userData = (data || null);
+                userData = (data.userData || null);
             }
 
             let alertAll = () => {
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'check', scope);
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'roles', scope);
                 Object.keys(userData || {}).forEach(key => ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `fields.${key}`, scope));
+            };
+
+            let getRouter = () => {
+                let routerCallback = Region.GetGlobal(regionId, 'router');
+                if (!routerCallback){
+                    return null;
+                }
+
+                return routerCallback();
+            };
+
+            let redirect = (loggedIn: boolean) => {
+                let router = getRouter();
+                if (router && loggedIn){
+                    router.goto((redirectPage || '/'), redirectQuery);
+                }
+                else if (router){
+                    router.goto('/');
+                }
+            };
+
+            let rawHasRole = (name: string) => {
+                return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
             };
 
             let methods = {
@@ -2146,7 +2169,7 @@ namespace InlineJS{
                 },
                 hasRole: (name: string) => {
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.roles`);
-                    return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
+                    return rawHasRole(name);
                 },
                 isAdmin: () => {
                     return methods.hasRole('admin');
@@ -2174,9 +2197,12 @@ namespace InlineJS{
                         if (!callback || callback(data)){
                             alertAll();
                             userData = null;
+
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
                                 detail: false
                             }));
+
+                            redirect(false);
                         }
                     });
                 },
@@ -2206,9 +2232,12 @@ namespace InlineJS{
                         if (!callback || callback(data)){
                             userData = (data || {});
                             alertAll();
+
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
                                 detail: true
                             }));
+
+                            redirect(true);
                         }
                     }).catch((err) => {
                         if (callback){
@@ -2255,6 +2284,50 @@ namespace InlineJS{
                 delete: (callback?: (data: any, err?: any) => boolean) => {
                     methods.desync(false, callback);
                 },
+                addMiddlewares: (roles?: Array<string>) => {
+                    let router = getRouter();
+                    if (!router){
+                        return;
+                    }
+
+                    let redirectToLogin = (page: string, query: string) => {
+                        router.goto('/login');
+                        redirectPage = page;
+                        redirectQuery = query;
+                    };
+                    
+                    router.addMiddleware('guest', (page: string, query: string) => {
+                        redirectPage = redirectQuery = null;
+                        if (userData){//Logged in
+                            router.goto('/');
+                            return false;
+                        }
+
+                        return true;
+                    });
+
+                    router.addMiddleware('auth', (page: string, query: string) => {
+                        redirectPage = redirectQuery = null;
+                        if (!userData){//Not logged in
+                            redirectToLogin(page, query);
+                            return false;
+                        }
+
+                        return true;
+                    });
+
+                    (roles || []).forEach((role) => {
+                        router.addMiddleware(`role:${role}`, (page: string, query: string) => {
+                            redirectPage = redirectQuery = null;
+                            if (!userData){//Not logged in
+                                redirectToLogin(page, query);
+                                return false;
+                            }
+    
+                            return (rawHasRole(role) ? true : null);
+                        });
+                    });
+                },
             };
             
             let scope = ExtendedDirectiveHandlers.AddScope('auth', region.AddElement(element, true), []), regionId = region.GetId();
@@ -2265,6 +2338,8 @@ namespace InlineJS{
             }, Object.keys(methods));
             
             Region.AddGlobal('$auth', () => proxy);
+            methods.addMiddlewares((data || {}).middlewareRoles);
+            
             return DirectiveHandlerReturn.Handled;
         }
 
