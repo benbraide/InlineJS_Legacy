@@ -90,6 +90,11 @@ namespace InlineJS{
         fields: Record<string, boolean>;
     }
     
+    export interface ReporterInfo{
+        report: (info: any) => boolean;
+        reportServerError: (err: any) => boolean;
+    }
+
     export class ExtendedDirectiveHandlers{
         private static scopeId_ = 0;
         private static scopes_: Record<string, ExtendedDirectiveHandlerScope> = {};
@@ -1734,7 +1739,7 @@ namespace InlineJS{
             };
 
             let postUpdate = (item: CartItem) => {
-                if (!item){
+                if (ExtendedDirectiveHandlers.Report(regionId, item) || !item){
                     return;
                 }
 
@@ -1779,7 +1784,9 @@ namespace InlineJS{
                 fetch(`${handlers.updateLink}?sku=${sku}&quantity=${quantity}&incremental=${incremental}`, {
                     method: 'GET',
                     credentials: 'same-origin',
-                }).then(response => response.json()).then(postUpdate);
+                }).then(response => response.json()).then(postUpdate).catch((err) => {
+                    ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                });
             };
 
             let clear = () => update(null, 0, false);
@@ -2120,12 +2127,7 @@ namespace InlineJS{
             };
 
             let getRouter = () => {
-                let routerCallback = Region.GetGlobal(regionId, '$router');
-                if (!routerCallback){
-                    return null;
-                }
-
-                return routerCallback();
+                return Region.GetGlobalValue(regionId, '$router');
             };
 
             let redirect = (loggedIn: boolean) => {
@@ -2164,7 +2166,7 @@ namespace InlineJS{
                 getEmail: () => {
                     return methods.getField('email');
                 },
-                desync: (logout: boolean, callback?: (data: any) => boolean) => {
+                desync: (logout: boolean, callback?: (data: any, err?: any) => boolean) => {
                     if (!userData){
                         return;
                     }
@@ -2174,7 +2176,7 @@ namespace InlineJS{
                         credentials: 'same-origin',
                     }).then(response => response.json()).then((data) => {
                         isInit = true;
-                        if (!callback || callback(data)){
+                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))){
                             alertAll();
                             userData = null;
 
@@ -2184,9 +2186,14 @@ namespace InlineJS{
 
                             redirect(false);
                         }
+                    }).catch((err) => {
+                        ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                        if (callback){
+                            callback(null, err);
+                        }
                     });
                 },
-                logout: (callback?: (data: any) => boolean) => {
+                logout: (callback?: (data: any, err?: any) => boolean) => {
                     methods.desync(true, callback);
                 },
                 authenticate: (login: boolean, form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
@@ -2209,7 +2216,7 @@ namespace InlineJS{
                         body: formData
                     }).then(response => response.json()).then((data) => {
                         isInit = true;
-                        if (!callback || callback(data)){
+                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))){
                             userData = (data || {});
                             alertAll();
 
@@ -2220,6 +2227,7 @@ namespace InlineJS{
                             redirect(true);
                         }
                     }).catch((err) => {
+                        ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback){
                             callback(null, err);
                         }
@@ -2345,7 +2353,6 @@ namespace InlineJS{
             }
             
             let position: Position = null, error: PositionError = null, regionId = region.GetId(), requested = false, tracking = false;
-
             let check = () => {
                 if (navigator.geolocation){
                     error = null;
@@ -2463,6 +2470,26 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Reporter(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$reporter', region.GetId())){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let info = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) as ReporterInfo);
+            if (!Region.IsObject(info) || !('report' in info)){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop in info){
+                    return info[prop];
+                }
+            }, Object.keys(info));
+
+            Region.AddGlobal('$reporter', () => proxy);
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
             let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
@@ -2541,7 +2568,15 @@ namespace InlineJS{
                 }).then(response => response.text()).then((data) => {
                     let parsedData: any;
                     try{
-                        parsedData = (tryJson ? JSON.parse(data) : data);
+                        if (tryJson){
+                            parsedData = JSON.parse(data);    
+                            if (ExtendedDirectiveHandlers.Report(null, parsedData)){
+                                return;
+                            }
+                        }
+                        else{
+                            parsedData = data;
+                        }
                     }
                     catch (err){
                         parsedData = data;
@@ -2552,6 +2587,7 @@ namespace InlineJS{
                         onLoad();
                     }
                 }).catch((err) => {
+                    ExtendedDirectiveHandlers.ReportServerError(null, err);
                     if (onError){
                         onError(err);
                     }
@@ -2633,6 +2669,16 @@ namespace InlineJS{
             });
         }
 
+        public static Report(regionId: string, info: any){
+            let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
+            return (reporter && reporter.report(info));
+        }
+        
+        public static ReportServerError(regionId: string, err: any){
+            let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
+            return (reporter && reporter.reportServerError(err));
+        }
+        
         public static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>) : ExtendedDirectiveHandlerScope{
             let id = `${prefix}<${++ExtendedDirectiveHandlers.scopeId_}>`;
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -2667,7 +2713,9 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
             DirectiveHandlerManager.AddHandler('auth', ExtendedDirectiveHandlers.Auth);
+
             DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
+            DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {

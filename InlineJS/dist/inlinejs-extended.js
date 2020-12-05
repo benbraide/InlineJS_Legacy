@@ -1419,7 +1419,7 @@ var InlineJS;
                 }
             };
             var postUpdate = function (item) {
-                if (!item) {
+                if (ExtendedDirectiveHandlers.Report(regionId, item) || !item) {
                     return;
                 }
                 var sku = item.product.sku;
@@ -1457,7 +1457,9 @@ var InlineJS;
                 fetch(handlers.updateLink + "?sku=" + sku + "&quantity=" + quantity + "&incremental=" + incremental, {
                     method: 'GET',
                     credentials: 'same-origin'
-                }).then(function (response) { return response.json(); }).then(postUpdate);
+                }).then(function (response) { return response.json(); }).then(postUpdate)["catch"](function (err) {
+                    ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                });
             };
             var clear = function () { return update(null, 0, false); };
             var createItemProxy = function (sku) {
@@ -1731,11 +1733,7 @@ var InlineJS;
                 Object.keys(userData || {}).forEach(function (key) { return ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "fields." + key, scope); });
             };
             var getRouter = function () {
-                var routerCallback = InlineJS.Region.GetGlobal(regionId, '$router');
-                if (!routerCallback) {
-                    return null;
-                }
-                return routerCallback();
+                return InlineJS.Region.GetGlobalValue(regionId, '$router');
             };
             var redirect = function (loggedIn) {
                 var router = getRouter();
@@ -1780,13 +1778,18 @@ var InlineJS;
                         credentials: 'same-origin'
                     }).then(function (response) { return response.json(); }).then(function (data) {
                         isInit = true;
-                        if (!callback || callback(data)) {
+                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             alertAll();
                             userData = null;
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
                                 detail: false
                             }));
                             redirect(false);
+                        }
+                    })["catch"](function (err) {
+                        ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                        if (callback) {
+                            callback(null, err);
                         }
                     });
                 },
@@ -1811,7 +1814,7 @@ var InlineJS;
                         body: formData
                     }).then(function (response) { return response.json(); }).then(function (data) {
                         isInit = true;
-                        if (!callback || callback(data)) {
+                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             userData = (data || {});
                             alertAll();
                             window.dispatchEvent(new CustomEvent('auth.authentication', {
@@ -1820,6 +1823,7 @@ var InlineJS;
                             redirect(true);
                         }
                     })["catch"](function (err) {
+                        ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback) {
                             callback(null, err);
                         }
@@ -2026,6 +2030,22 @@ var InlineJS;
             });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Reporter = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal('$reporter', region.GetId())) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var info = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (!InlineJS.Region.IsObject(info) || !('report' in info)) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop in info) {
+                    return info[prop];
+                }
+            }, Object.keys(info));
+            InlineJS.Region.AddGlobal('$reporter', function () { return proxy; });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (InlineJS.Region.IsObject(options)) {
@@ -2093,7 +2113,15 @@ var InlineJS;
                 }).then(function (response) { return response.text(); }).then(function (data) {
                     var parsedData;
                     try {
-                        parsedData = (tryJson ? JSON.parse(data) : data);
+                        if (tryJson) {
+                            parsedData = JSON.parse(data);
+                            if (ExtendedDirectiveHandlers.Report(null, parsedData)) {
+                                return;
+                            }
+                        }
+                        else {
+                            parsedData = data;
+                        }
                     }
                     catch (err) {
                         parsedData = data;
@@ -2103,6 +2131,7 @@ var InlineJS;
                         onLoad();
                     }
                 })["catch"](function (err) {
+                    ExtendedDirectiveHandlers.ReportServerError(null, err);
                     if (onError) {
                         onError(err);
                     }
@@ -2177,6 +2206,14 @@ var InlineJS;
                 origin: region.GetChanges().GetOrigin()
             });
         };
+        ExtendedDirectiveHandlers.Report = function (regionId, info) {
+            var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
+            return (reporter && reporter.report(info));
+        };
+        ExtendedDirectiveHandlers.ReportServerError = function (regionId, err) {
+            var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
+            return (reporter && reporter.reportServerError(err));
+        };
         ExtendedDirectiveHandlers.AddScope = function (prefix, elementScope, callbacks) {
             var id = prefix + "<" + ++ExtendedDirectiveHandlers.scopeId_ + ">";
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -2205,6 +2242,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
             InlineJS.DirectiveHandlerManager.AddHandler('auth', ExtendedDirectiveHandlers.Auth);
             InlineJS.DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
+            InlineJS.DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
                     return function (target) {
