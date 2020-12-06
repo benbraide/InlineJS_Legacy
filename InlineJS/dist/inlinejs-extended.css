@@ -1,4 +1,4 @@
-:root {
+:root{
     --inlinejs-input-border-width: 1px;
     --inlinejs-input-border-width-focus: 2px;
     --inlinejs-input-border-color: gray;
@@ -79,4 +79,28 @@
 
 .inlinejs-input.validate.blurred > input:not(:valid), .inlinejs-input.validate > input:not(:placeholder-shown):not(:valid){
     border-bottom-color: var(--inlinejs-input-border-color-invalid);
+}
+
+div.inlinejs-overlay{
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100vh;
+    backdrop-filter: blur(0.25rem);
+    transition: all;
+}
+
+body.inlinejs-overlay{
+    height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+}
+
+body.inlinejs-overlay.inlinejs-overlay-pad{
+    padding-right: 1rem;
+}
+
+body.inlinejs-overlay > div.inlinejs-overlay{
+    width: 100vw;
 }

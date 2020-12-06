@@ -569,6 +569,9 @@ namespace InlineJS{
                     load(url);
                     info.url = url;
                 }
+                else{
+                    element.dispatchEvent(new CustomEvent(`xhr.reload`));
+                }
             }, true, element);
 
             let elementScope = region.AddElement(element, true);
@@ -2560,6 +2563,115 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Overlay(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$overlay', region.GetId())){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let scope = ExtendedDirectiveHandlers.AddScope('overlay', region.AddElement(element, true), []), regionId = region.GetId();
+            let count = 0, container = document.createElement('div'), zIndex = 1000, visible = false;
+
+            let show = () => {
+                ++count;
+                if (!visible){
+                    visible = true;
+
+                    container.classList.add('inlinejs-overlay');
+                    document.body.classList.add('inlinejs-overlay');
+
+                    if (document.body.clientHeight < document.body.scrollHeight){
+                        document.body.classList.add('inlinejs-overlay-pad');
+                    }
+
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'visible', scope);
+                }
+
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'count', scope);
+            };
+
+            let hide = () => {
+                if (count <= 0){
+                    return;
+                }
+                
+                if (--count <= 0){
+                    count = 0;
+                    if (visible){
+                        visible = false;
+                        if (document.body.classList.contains('inlinejs-overlay-pad')){
+                            document.body.classList.remove('inlinejs-overlay-pad');
+                        }
+        
+                        if (document.body.classList.contains('inlinejs-overlay')){
+                            document.body.classList.remove('inlinejs-overlay');
+                        }
+
+                        if (container.classList.contains('inlinejs-overlay')){
+                            container.classList.remove('inlinejs-overlay');
+                        }
+
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'visible', scope);
+                    }
+                }
+
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'count', scope);
+            };
+
+            container.style.zIndex = zIndex.toString();
+            document.body.appendChild(container);
+            
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'show'){
+                    return show;
+                }
+
+                if (prop === 'hide'){
+                    return hide;
+                }
+
+                if (prop === 'count'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return count;
+                }
+
+                if (prop === 'visible'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return visible;
+                }
+
+                if (prop === 'zIndex'){
+                    return zIndex;
+                }
+
+                if (prop === 'container'){
+                    return container;
+                }
+            }, ['show', 'hide', 'visible', 'zIndex', 'container']);
+
+            Region.AddGlobal('$overlay', () => proxy);
+            DirectiveHandlerManager.AddHandler('overlayBind', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let innerRegionId = innerRegion.GetId(), previousValue: boolean = null;
+                innerRegion.GetState().TrapGetAccess(() => {
+                    let value = !! CoreDirectiveHandlers.Evaluate(Region.Get(innerRegionId), innerElement, innerDirective.value);
+                    if (value === previousValue){
+                        return;
+                    }
+                    
+                    previousValue = value;
+                    if (value){
+                        show();
+                    }
+                    else{
+                        hide();
+                    }
+                }, true, innerElement);
+                
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
             let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
@@ -2799,6 +2911,7 @@ namespace InlineJS{
 
             DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
             DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
+            DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {

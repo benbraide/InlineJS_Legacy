@@ -406,6 +406,9 @@ var InlineJS;
                     load(url);
                     info.url = url;
                 }
+                else {
+                    element.dispatchEvent(new CustomEvent("xhr.reload"));
+                }
             }, true, element);
             var elementScope = region.AddElement(element, true);
             var scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
@@ -2105,6 +2108,91 @@ var InlineJS;
             InlineJS.Region.AddGlobal('$reporter', function () { return proxy; });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Overlay = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal('$overlay', region.GetId())) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var scope = ExtendedDirectiveHandlers.AddScope('overlay', region.AddElement(element, true), []), regionId = region.GetId();
+            var count = 0, container = document.createElement('div'), zIndex = 1000, visible = false;
+            var show = function () {
+                ++count;
+                if (!visible) {
+                    visible = true;
+                    container.classList.add('inlinejs-overlay');
+                    document.body.classList.add('inlinejs-overlay');
+                    if (document.body.clientHeight < document.body.scrollHeight) {
+                        document.body.classList.add('inlinejs-overlay-pad');
+                    }
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'visible', scope);
+                }
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'count', scope);
+            };
+            var hide = function () {
+                if (count <= 0) {
+                    return;
+                }
+                if (--count <= 0) {
+                    count = 0;
+                    if (visible) {
+                        visible = false;
+                        if (document.body.classList.contains('inlinejs-overlay-pad')) {
+                            document.body.classList.remove('inlinejs-overlay-pad');
+                        }
+                        if (document.body.classList.contains('inlinejs-overlay')) {
+                            document.body.classList.remove('inlinejs-overlay');
+                        }
+                        if (container.classList.contains('inlinejs-overlay')) {
+                            container.classList.remove('inlinejs-overlay');
+                        }
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'visible', scope);
+                    }
+                }
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'count', scope);
+            };
+            container.style.zIndex = zIndex.toString();
+            document.body.appendChild(container);
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'show') {
+                    return show;
+                }
+                if (prop === 'hide') {
+                    return hide;
+                }
+                if (prop === 'count') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return count;
+                }
+                if (prop === 'visible') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return visible;
+                }
+                if (prop === 'zIndex') {
+                    return zIndex;
+                }
+                if (prop === 'container') {
+                    return container;
+                }
+            }, ['show', 'hide', 'visible', 'zIndex', 'container']);
+            InlineJS.Region.AddGlobal('$overlay', function () { return proxy; });
+            InlineJS.DirectiveHandlerManager.AddHandler('overlayBind', function (innerRegion, innerElement, innerDirective) {
+                var innerRegionId = innerRegion.GetId(), previousValue = null;
+                innerRegion.GetState().TrapGetAccess(function () {
+                    var value = !!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(innerRegionId), innerElement, innerDirective.value);
+                    if (value === previousValue) {
+                        return;
+                    }
+                    previousValue = value;
+                    if (value) {
+                        show();
+                    }
+                    else {
+                        hide();
+                    }
+                }, true, innerElement);
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (InlineJS.Region.IsObject(options)) {
@@ -2313,6 +2401,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('auth', ExtendedDirectiveHandlers.Auth);
             InlineJS.DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
             InlineJS.DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
+            InlineJS.DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
                     return function (target) {
