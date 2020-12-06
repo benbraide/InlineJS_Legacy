@@ -36,7 +36,7 @@ namespace InlineJS{
     export interface RouterInfo{
         currentPage: string;
         currentQuery: string;
-        pages: Record<string, RouterPageInfo>;
+        pages: Array<RouterPageInfo>;
         url: string;
         targetUrl: string;
         mount: (url: string) => void;
@@ -45,6 +45,7 @@ namespace InlineJS{
     }
 
     export interface RouterPageInfo{
+        pattern: string | RegExp;
         path: string;
         title: string;
         component: string;
@@ -52,6 +53,7 @@ namespace InlineJS{
         exit: string;
         disabled: boolean;
         middlewares: Array<string>;
+        uid: number;
     }
 
     export interface TypewriterInfo{
@@ -1195,7 +1197,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let options = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) as RouterOptions);
+            let options = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) as RouterOptions), uid = 0;
             if (!Region.IsObject(options)){
                 options = {};
             }
@@ -1203,7 +1205,7 @@ namespace InlineJS{
             let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl' ], info: RouterInfo = {
                 currentPage: null,
                 currentQuery: '',
-                pages: {},
+                pages: [],
                 url: null,
                 targetUrl: null,
                 mount: null,
@@ -1213,15 +1215,23 @@ namespace InlineJS{
                 register: (data: Record<string, any>) => {
                     let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
                     if (innerRegion){
-                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares);
+                        register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares, data.uid);
                     }
                 },
-                unregister: (page: string) => {
-                    delete info.pages[page];
+                unregister: (uid: number) => {
+                    for (let i = 0; i < info.pages.length; ++i){
+                        if (info.pages[i].uid == uid){
+                            info.pages.splice(i, 1);
+                            break;
+                        }
+                    }
                 },
-                disable: (page: string, disabled = true) => {
-                    if (page in info.pages){
-                        info.pages[page].disabled = disabled;
+                disable: (uid: number, disabled = true) => {
+                    for (let i = 0; i < info.pages.length; ++i){
+                        if (info.pages[i].uid == uid){
+                            info.pages[i].disabled = disabled;
+                            break;
+                        }
                     }
                 },
                 goto: (page: string, args?: Array<any> | any) => { goto(page, args) },
@@ -1241,24 +1251,26 @@ namespace InlineJS{
             }
 
             let scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
-            let register = (page: string, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean, middlewares: Array<string>) => {
-                if (page.length > 1 && page.startsWith('/')){
+            let register = (page: string | RegExp, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean, middlewares: Array<string>, uid: number) => {
+                if (typeof page === 'string' && page.length > 1 && page.startsWith('/')){
                     page = page.substr(1);
                 }
 
-                if (path.length > 1 && path.startsWith('/')){
+                if (path && path.length > 1 && path.startsWith('/')){
                     path = path.substr(1);
                 }
                 
-                info.pages[page] = {
+                info.pages.push({
+                    pattern: page,
                     path: path,
                     title: title,
                     component: component,
                     entry: entry,
                     exit: exit,
                     disabled: disabled,
-                    middlewares: ((middlewares && Array.isArray(middlewares)) ? middlewares : new Array<string>())
-                };
+                    middlewares: ((middlewares && Array.isArray(middlewares)) ? middlewares : new Array<string>()),
+                    uid: uid,
+                });
             };
 
             let goto = (page: string, query?: string, replace = false, onReload?: () => boolean) => {
@@ -1319,7 +1331,8 @@ namespace InlineJS{
                     ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
                 }
 
-                if (!(page in info.pages) || info.pages[page].disabled){//Not found
+                let pageInfo = findPage(page);
+                if (!pageInfo || pageInfo.disabled){//Not found
                     let targetUrl = buildPath(page, query), isReload = (targetUrl === info.targetUrl);
                     if (!isReload){
                         info.targetUrl = targetUrl;
@@ -1350,7 +1363,7 @@ namespace InlineJS{
                     return;
                 }
                 
-                let pageInfo = info.pages[page], component = pageInfo.component, handled: any;
+                let component = pageInfo.component, handled: any;
                 for (let i = 0; i < (pageInfo.middlewares || []).length; ++i){
                     let middleware = pageInfo.middlewares[i];
                     if (middleware in info.middlewares && !info.middlewares[middleware](page, query)){
@@ -1360,7 +1373,7 @@ namespace InlineJS{
 
                 try{
                     if (component){
-                        handled = (Region.Find(component, true)[info.pages[page].entry])(query);
+                        handled = (Region.Find(component, true)[pageInfo.entry])(query);
                     }
                     else{
                         handled = false;
@@ -1371,7 +1384,7 @@ namespace InlineJS{
                 }
 
                 if (handled === false){
-                    let url = buildPath(pageInfo.path, query);
+                    let url = buildPath((pageInfo.path || page), query);
                     if (url !== info.url){
                         info.url = url;
                         ExtendedDirectiveHandlers.Alert(myRegion, 'url', scope);
@@ -1394,7 +1407,7 @@ namespace InlineJS{
                 }
 
                 if (callback){
-                    callback(pageInfo.title, pageInfo.path);
+                    callback(pageInfo.title, (pageInfo.path || page));
                 }
                 
                 window.dispatchEvent(new CustomEvent('router.load'));
@@ -1423,6 +1436,17 @@ namespace InlineJS{
                 }
 
                 return params;
+            };
+
+            let findPage = (page: string) => {
+                for (let pageInfo of info.pages){
+                    let isString = (typeof pageInfo.pattern === 'string');
+                    if ((isString && page === pageInfo.pattern) || (!isString && (pageInfo.pattern as RegExp).test(page))){
+                        return pageInfo;
+                    }
+                }
+
+                return null;
             };
 
             let buildPath = (path: string, query: string) => {
@@ -1467,8 +1491,18 @@ namespace InlineJS{
             });
             
             DirectiveHandlerManager.AddHandler('routerRegister', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                let data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares);
+                let innerScope = innerRegion.AddElement(innerElement);
+                if (!innerScope){
+                    return DirectiveHandlerReturn.Nil;    
+                }
+                
+                let data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), innerUid: number = (data.uid || uid++);
+                register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares, data.uid);
+
+                innerScope.uninitCallbacks.push(() => {
+                    methods.unregister(uid);
+                });
+                
                 return DirectiveHandlerReturn.Handled;
             });
 

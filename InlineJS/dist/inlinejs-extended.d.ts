@@ -31,7 +31,7 @@ declare namespace InlineJS {
     interface RouterInfo {
         currentPage: string;
         currentQuery: string;
-        pages: Record<string, RouterPageInfo>;
+        pages: Array<RouterPageInfo>;
         url: string;
         targetUrl: string;
         mount: (url: string) => void;
@@ -39,6 +39,7 @@ declare namespace InlineJS {
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
     }
     interface RouterPageInfo {
+        pattern: string | RegExp;
         path: string;
         title: string;
         component: string;
@@ -46,6 +47,7 @@ declare namespace InlineJS {
         exit: string;
         disabled: boolean;
         middlewares: Array<string>;
+        uid: number;
     }
     interface TypewriterInfo {
         list: Array<string>;

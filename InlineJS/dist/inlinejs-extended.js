@@ -958,14 +958,14 @@ var InlineJS;
             if (InlineJS.Region.GetGlobal('$router', region.GetId())) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), uid = 0;
             if (!InlineJS.Region.IsObject(options)) {
                 options = {};
             }
             var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl'], info = {
                 currentPage: null,
                 currentQuery: '',
-                pages: {},
+                pages: [],
                 url: null,
                 targetUrl: null,
                 mount: null,
@@ -975,16 +975,24 @@ var InlineJS;
                 register: function (data) {
                     var innerRegion = InlineJS.Region.Get(InlineJS.RegionMap.scopeRegionIds.Peek());
                     if (innerRegion) {
-                        register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares);
+                        register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares, data.uid);
                     }
                 },
-                unregister: function (page) {
-                    delete info.pages[page];
+                unregister: function (uid) {
+                    for (var i = 0; i < info.pages.length; ++i) {
+                        if (info.pages[i].uid == uid) {
+                            info.pages.splice(i, 1);
+                            break;
+                        }
+                    }
                 },
-                disable: function (page, disabled) {
+                disable: function (uid, disabled) {
                     if (disabled === void 0) { disabled = true; }
-                    if (page in info.pages) {
-                        info.pages[page].disabled = disabled;
+                    for (var i = 0; i < info.pages.length; ++i) {
+                        if (info.pages[i].uid == uid) {
+                            info.pages[i].disabled = disabled;
+                            break;
+                        }
                     }
                 },
                 goto: function (page, args) { goto(page, args); },
@@ -1002,22 +1010,24 @@ var InlineJS;
                 options.urlPrefix = '';
             }
             var scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
-            var register = function (page, path, title, component, entry, exit, disabled, middlewares) {
-                if (page.length > 1 && page.startsWith('/')) {
+            var register = function (page, path, title, component, entry, exit, disabled, middlewares, uid) {
+                if (typeof page === 'string' && page.length > 1 && page.startsWith('/')) {
                     page = page.substr(1);
                 }
-                if (path.length > 1 && path.startsWith('/')) {
+                if (path && path.length > 1 && path.startsWith('/')) {
                     path = path.substr(1);
                 }
-                info.pages[page] = {
+                info.pages.push({
+                    pattern: page,
                     path: path,
                     title: title,
                     component: component,
                     entry: entry,
                     exit: exit,
                     disabled: disabled,
-                    middlewares: ((middlewares && Array.isArray(middlewares)) ? middlewares : new Array())
-                };
+                    middlewares: ((middlewares && Array.isArray(middlewares)) ? middlewares : new Array()),
+                    uid: uid
+                });
             };
             var goto = function (page, query, replace, onReload) {
                 if (replace === void 0) { replace = false; }
@@ -1069,7 +1079,8 @@ var InlineJS;
                     info.currentQuery = query;
                     ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
                 }
-                if (!(page in info.pages) || info.pages[page].disabled) { //Not found
+                var pageInfo = findPage(page);
+                if (!pageInfo || pageInfo.disabled) { //Not found
                     var targetUrl = buildPath(page, query), isReload = (targetUrl === info.targetUrl);
                     if (!isReload) {
                         info.targetUrl = targetUrl;
@@ -1095,7 +1106,7 @@ var InlineJS;
                     }
                     return;
                 }
-                var pageInfo = info.pages[page], component = pageInfo.component, handled;
+                var component = pageInfo.component, handled;
                 for (var i = 0; i < (pageInfo.middlewares || []).length; ++i) {
                     var middleware = pageInfo.middlewares[i];
                     if (middleware in info.middlewares && !info.middlewares[middleware](page, query)) {
@@ -1105,7 +1116,7 @@ var InlineJS;
                 ;
                 try {
                     if (component) {
-                        handled = (InlineJS.Region.Find(component, true)[info.pages[page].entry])(query);
+                        handled = (InlineJS.Region.Find(component, true)[pageInfo.entry])(query);
                     }
                     else {
                         handled = false;
@@ -1115,7 +1126,7 @@ var InlineJS;
                     handled = false;
                 }
                 if (handled === false) {
-                    var url = buildPath(pageInfo.path, query);
+                    var url = buildPath((pageInfo.path || page), query);
                     if (url !== info.url) {
                         info.url = url;
                         ExtendedDirectiveHandlers.Alert(myRegion, 'url', scope);
@@ -1135,7 +1146,7 @@ var InlineJS;
                     }
                 }
                 if (callback) {
-                    callback(pageInfo.title, pageInfo.path);
+                    callback(pageInfo.title, (pageInfo.path || page));
                 }
                 window.dispatchEvent(new CustomEvent('router.load'));
             };
@@ -1158,6 +1169,16 @@ var InlineJS;
                     params[decode(match[1])] = decode(match[2]);
                 }
                 return params;
+            };
+            var findPage = function (page) {
+                for (var _i = 0, _a = info.pages; _i < _a.length; _i++) {
+                    var pageInfo = _a[_i];
+                    var isString = (typeof pageInfo.pattern === 'string');
+                    if ((isString && page === pageInfo.pattern) || (!isString && pageInfo.pattern.test(page))) {
+                        return pageInfo;
+                    }
+                }
+                return null;
             };
             var buildPath = function (path, query) {
                 return origin + "/" + options.urlPrefix + path + (query || '');
@@ -1194,8 +1215,15 @@ var InlineJS;
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {
-                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                register(data.page, (data.path || data.page), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares);
+                var innerScope = innerRegion.AddElement(innerElement);
+                if (!innerScope) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), innerUid = (data.uid || uid++);
+                register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares, data.uid);
+                innerScope.uninitCallbacks.push(function () {
+                    methods.unregister(uid);
+                });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerLink', function (innerRegion, innerElement, innerDirective) {
