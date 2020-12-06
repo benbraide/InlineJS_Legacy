@@ -719,6 +719,8 @@ namespace InlineJS{
         }
 
         public static Animate(region: Region, element: HTMLElement, directive: Directive){
+            const displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table', 'none'];
+            
             let type = (directive.arg.key || 'transition'), showOnly = false, target = '', duration = 300, style = getComputedStyle(element);
             let extractDuration = (option: string) => {
                 if (option === 'slower'){
@@ -965,10 +967,17 @@ namespace InlineJS{
                     endTransition();
                 });
             };
+
+            let showValue: string = null;
+            displays.forEach((item) => {
+                if (directive.arg.options.indexOf(item) != -1){
+                    showValue = item;
+                }
+            });
             
-            let height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth, showValue = style.getPropertyValue('display');
-            if (showValue === 'none'){
-                showValue = 'block';
+            let height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth;
+            if (!showValue || showValue === 'none'){
+                showValue = (style.getPropertyValue('display') || 'block');
             }
             
             if (type === 'transition'){
@@ -1784,7 +1793,16 @@ namespace InlineJS{
                 fetch(`${handlers.updateLink}?sku=${sku}&quantity=${quantity}&incremental=${incremental}`, {
                     method: 'GET',
                     credentials: 'same-origin',
-                }).then(response => response.json()).then(postUpdate).catch((err) => {
+                }).then((response) => {
+                    if (response.ok){
+                        return response.json();
+                    }
+
+                    ExtendedDirectiveHandlers.ReportServerError(null, {
+                        status: response.status,
+                        statusText: response.statusText,
+                    });
+                }).then(postUpdate).catch((err) => {
                     ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                 });
             };
@@ -2174,7 +2192,16 @@ namespace InlineJS{
                     fetch((logout ? logoutUrl : deleteUrl), {
                         method: 'GET',
                         credentials: 'same-origin',
-                    }).then(response => response.json()).then((data) => {
+                    }).then((response) => {
+                        if (response.ok){
+                            return response.json();
+                        }
+    
+                        ExtendedDirectiveHandlers.ReportServerError(null, {
+                            status: response.status,
+                            statusText: response.statusText,
+                        });
+                    }).then((data) => {
                         isInit = true;
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))){
                             alertAll();
@@ -2214,7 +2241,16 @@ namespace InlineJS{
                         method: 'POST',
                         credentials: 'same-origin',
                         body: formData
-                    }).then(response => response.json()).then((data) => {
+                    }).then((response) => {
+                        if (response.ok){
+                            return response.json();
+                        }
+
+                        ExtendedDirectiveHandlers.ReportServerError(null, {
+                            status: response.status,
+                            statusText: response.statusText,
+                        });
+                    }).then((data) => {
                         isInit = true;
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))){
                             userData = (data || {});
@@ -2236,7 +2272,7 @@ namespace InlineJS{
                 login: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
                     methods.authenticate(true, form, callback);
                 },
-                register: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean, errorBag?: Record<string, Array<string>>) => {
+                register: (form: HTMLFormElement | Record<string, string>, errorBag?: Record<string, Array<string>>, callback?: (data: any, err?: any) => boolean) => {
                     methods.authenticate(false, form, (data, err) => {
                         if (errorBag && 'failed' in data){
                             for (let key in errorBag){
@@ -2248,7 +2284,7 @@ namespace InlineJS{
                         return (!callback || callback(data, err));
                     });
                 },
-                update: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean, errorBag?: Record<string, Array<string>>) => {
+                update: (form: HTMLFormElement | Record<string, string>, errorBag?: Record<string, Array<string>>, callback?: (data: any, err?: any) => boolean) => {
                     if (!userData){
                         return;
                     }
@@ -2565,7 +2601,20 @@ namespace InlineJS{
             let fetch = (url: string, tryJson: boolean, callback: (response: any) => void) => {
                 window.fetch(url, {
                     credentials: 'same-origin',
-                }).then(response => response.text()).then((data) => {
+                }).then((response) => {
+                    if (response.ok){
+                        return response.text();
+                    }
+
+                    ExtendedDirectiveHandlers.ReportServerError(null, {
+                        status: response.status,
+                        statusText: response.statusText,
+                    });
+                }).then((data) => {
+                    if (data === undefined){
+                        return;
+                    }
+                    
                     let parsedData: any;
                     try{
                         if (tryJson){

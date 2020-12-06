@@ -529,6 +529,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Animate = function (region, element, directive) {
+            var displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table', 'none'];
             var type = (directive.arg.key || 'transition'), showOnly = false, target = '', duration = 300, style = getComputedStyle(element);
             var extractDuration = function (option) {
                 if (option === 'slower') {
@@ -758,9 +759,15 @@ var InlineJS;
                     endTransition();
                 });
             };
-            var height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth, showValue = style.getPropertyValue('display');
-            if (showValue === 'none') {
-                showValue = 'block';
+            var showValue = null;
+            displays.forEach(function (item) {
+                if (directive.arg.options.indexOf(item) != -1) {
+                    showValue = item;
+                }
+            });
+            var height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth;
+            if (!showValue || showValue === 'none') {
+                showValue = (style.getPropertyValue('display') || 'block');
             }
             if (type === 'transition') {
                 var updateSize_1 = function (show) {
@@ -1457,7 +1464,15 @@ var InlineJS;
                 fetch(handlers.updateLink + "?sku=" + sku + "&quantity=" + quantity + "&incremental=" + incremental, {
                     method: 'GET',
                     credentials: 'same-origin'
-                }).then(function (response) { return response.json(); }).then(postUpdate)["catch"](function (err) {
+                }).then(function (response) {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    ExtendedDirectiveHandlers.ReportServerError(null, {
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                }).then(postUpdate)["catch"](function (err) {
                     ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                 });
             };
@@ -1776,7 +1791,15 @@ var InlineJS;
                     fetch((logout ? logoutUrl : deleteUrl), {
                         method: 'GET',
                         credentials: 'same-origin'
-                    }).then(function (response) { return response.json(); }).then(function (data) {
+                    }).then(function (response) {
+                        if (response.ok) {
+                            return response.json();
+                        }
+                        ExtendedDirectiveHandlers.ReportServerError(null, {
+                            status: response.status,
+                            statusText: response.statusText
+                        });
+                    }).then(function (data) {
                         isInit = true;
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             alertAll();
@@ -1812,7 +1835,15 @@ var InlineJS;
                         method: 'POST',
                         credentials: 'same-origin',
                         body: formData
-                    }).then(function (response) { return response.json(); }).then(function (data) {
+                    }).then(function (response) {
+                        if (response.ok) {
+                            return response.json();
+                        }
+                        ExtendedDirectiveHandlers.ReportServerError(null, {
+                            status: response.status,
+                            statusText: response.statusText
+                        });
+                    }).then(function (data) {
                         isInit = true;
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             userData = (data || {});
@@ -1832,7 +1863,7 @@ var InlineJS;
                 login: function (form, callback) {
                     methods.authenticate(true, form, callback);
                 },
-                register: function (form, callback, errorBag) {
+                register: function (form, errorBag, callback) {
                     methods.authenticate(false, form, function (data, err) {
                         if (errorBag && 'failed' in data) {
                             for (var key in errorBag) {
@@ -1843,7 +1874,7 @@ var InlineJS;
                         return (!callback || callback(data, err));
                     });
                 },
-                update: function (form, callback, errorBag) {
+                update: function (form, errorBag, callback) {
                     if (!userData) {
                         return;
                     }
@@ -2110,7 +2141,18 @@ var InlineJS;
             var fetch = function (url, tryJson, callback) {
                 window.fetch(url, {
                     credentials: 'same-origin'
-                }).then(function (response) { return response.text(); }).then(function (data) {
+                }).then(function (response) {
+                    if (response.ok) {
+                        return response.text();
+                    }
+                    ExtendedDirectiveHandlers.ReportServerError(null, {
+                        status: response.status,
+                        statusText: response.statusText
+                    });
+                }).then(function (data) {
+                    if (data === undefined) {
+                        return;
+                    }
                     var parsedData;
                     try {
                         if (tryJson) {
