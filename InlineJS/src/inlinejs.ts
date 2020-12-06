@@ -363,6 +363,7 @@ namespace InlineJS{
             
             if (!preserve && element === this.rootElement_){//Remove from map
                 this.AddNextTickCallback(() => {//Wait for changes to finalize
+                    Evaluator.RemoveProxyCache(this.id_);
                     if (this.componentKey_ in Region.components_){
                         delete Region.components_[this.componentKey_];
                     }
@@ -1211,6 +1212,8 @@ namespace InlineJS{
     }
 
     export class Evaluator{
+        private static cachedProxy_: Record<string, object> = {};
+        
         public static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow = false, ignoreRemoved = true): any{
             if (!(expression = expression.trim())){
                 return null;
@@ -1236,7 +1239,7 @@ namespace InlineJS{
                     with (${Evaluator.GetContextKey()}){
                         return (${expression});
                     };
-                `)).bind(state.GetElementContext())(useWindow ? window : region.GetRootProxy().GetNativeProxy());
+                `)).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
             }
             catch (err){
                 result = null;
@@ -1255,6 +1258,49 @@ namespace InlineJS{
 
         public static GetContextKey(){
             return '__InlineJS_Context__';
+        }
+
+        public static GetProxy(regionId: string, proxy: object){
+            if (regionId in Evaluator.cachedProxy_){
+                return Evaluator.cachedProxy_[regionId];
+            }
+
+            return (Evaluator.cachedProxy_[regionId] = Evaluator.CreateProxy(proxy));
+        }
+        
+        public static CreateProxy(proxy: object){
+            return new window.Proxy({}, {
+                get(target: object, prop: string | number | symbol): any{
+                    if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)){
+                        return window[prop];//Use window
+                    }
+
+                    return proxy[prop];
+                },
+                set(target: object, prop: string | number | symbol, value: any){
+                    if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)){
+                        return (window[prop] = value);//Use window
+                    }
+
+                    return (proxy[prop] = value);
+                },
+                deleteProperty(target: object, prop: string | number | symbol){
+                    if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)){
+                        return delete window[prop];//Use window
+                    }
+
+                    return delete proxy[prop];
+                },
+                has(target: object, prop: string | number | symbol){
+                    return (Reflect.has(target, prop) || (prop in proxy) || (prop in window));
+                }
+            });
+        }
+
+        public static RemoveProxyCache(regionId: string){
+            if (regionId in Evaluator.cachedProxy_){
+                delete Evaluator.cachedProxy_[regionId];
+            }
         }
     }
 

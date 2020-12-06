@@ -259,6 +259,7 @@ export var InlineJS;
             }
             if (!preserve && element === this.rootElement_) { //Remove from map
                 this.AddNextTickCallback(function () {
+                    Evaluator.RemoveProxyCache(_this.id_);
                     if (_this.componentKey_ in Region.components_) {
                         delete Region.components_[_this.componentKey_];
                     }
@@ -482,7 +483,11 @@ export var InlineJS;
                 return null;
             }
             var info = Region.globals_[key];
-            return ((!info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
+            return ((!regionId || !info.accessHandler || info.accessHandler(regionId)) ? info.handler : null);
+        };
+        Region.GetGlobalValue = function (regionId, key, contextElement) {
+            var global = Region.GetGlobal(regionId, key);
+            return (global ? global(regionId, contextElement) : null);
         };
         Region.AddPostProcessCallback = function (callback) {
             Region.postProcessCallbacks_.push(callback);
@@ -982,7 +987,7 @@ export var InlineJS;
             RegionMap.scopeRegionIds.Push(regionId);
             state.PushElementContext(region.GetElement(elementContext));
             try {
-                result = (new Function(Evaluator.GetContextKey(), "\n                    with (" + Evaluator.GetContextKey() + "){\n                        return (" + expression + ");\n                    };\n                ")).bind(state.GetElementContext())(useWindow ? window : region.GetRootProxy().GetNativeProxy());
+                result = (new Function(Evaluator.GetContextKey(), "\n                    with (" + Evaluator.GetContextKey() + "){\n                        return (" + expression + ");\n                    };\n                ")).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
             }
             catch (err) {
                 result = null;
@@ -997,6 +1002,43 @@ export var InlineJS;
         Evaluator.GetContextKey = function () {
             return '__InlineJS_Context__';
         };
+        Evaluator.GetProxy = function (regionId, proxy) {
+            if (regionId in Evaluator.cachedProxy_) {
+                return Evaluator.cachedProxy_[regionId];
+            }
+            return (Evaluator.cachedProxy_[regionId] = Evaluator.CreateProxy(proxy));
+        };
+        Evaluator.CreateProxy = function (proxy) {
+            return new window.Proxy({}, {
+                get: function (target, prop) {
+                    if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)) {
+                        return window[prop]; //Use window
+                    }
+                    return proxy[prop];
+                },
+                set: function (target, prop, value) {
+                    if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)) {
+                        return (window[prop] = value); //Use window
+                    }
+                    return (proxy[prop] = value);
+                },
+                deleteProperty: function (target, prop) {
+                    if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)) {
+                        return delete window[prop]; //Use window
+                    }
+                    return delete proxy[prop];
+                },
+                has: function (target, prop) {
+                    return (Reflect.has(target, prop) || (prop in proxy) || (prop in window));
+                }
+            });
+        };
+        Evaluator.RemoveProxyCache = function (regionId) {
+            if (regionId in Evaluator.cachedProxy_) {
+                delete Evaluator.cachedProxy_[regionId];
+            }
+        };
+        Evaluator.cachedProxy_ = {};
         return Evaluator;
     }());
     InlineJS.Evaluator = Evaluator;

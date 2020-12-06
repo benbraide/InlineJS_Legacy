@@ -260,8 +260,12 @@ declare namespace InlineJS {
         Log(value: any, ref?: any): void;
     }
     class Evaluator {
+        private static cachedProxy_;
         static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow?: boolean, ignoreRemoved?: boolean): any;
         static GetContextKey(): string;
+        static GetProxy(regionId: string, proxy: object): object;
+        static CreateProxy(proxy: object): {};
+        static RemoveProxyCache(regionId: string): void;
     }
     interface Proxy {
         IsRoot: () => boolean;
