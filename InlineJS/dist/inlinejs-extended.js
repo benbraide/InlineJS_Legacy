@@ -1495,15 +1495,7 @@ var InlineJS;
                 fetch(handlers.updateLink + "?sku=" + sku + "&quantity=" + quantity + "&incremental=" + incremental, {
                     method: 'GET',
                     credentials: 'same-origin'
-                }).then(function (response) {
-                    if (response.ok) {
-                        return response.json();
-                    }
-                    ExtendedDirectiveHandlers.ReportServerError(null, {
-                        status: response.status,
-                        statusText: response.statusText
-                    });
-                }).then(postUpdate)["catch"](function (err) {
+                }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(postUpdate)["catch"](function (err) {
                     ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                 });
             };
@@ -1822,15 +1814,7 @@ var InlineJS;
                     fetch((logout ? logoutUrl : deleteUrl), {
                         method: 'GET',
                         credentials: 'same-origin'
-                    }).then(function (response) {
-                        if (response.ok) {
-                            return response.json();
-                        }
-                        ExtendedDirectiveHandlers.ReportServerError(null, {
-                            status: response.status,
-                            statusText: response.statusText
-                        });
-                    }).then(function (data) {
+                    }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
                         isInit = true;
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             alertAll();
@@ -1866,15 +1850,7 @@ var InlineJS;
                         method: 'POST',
                         credentials: 'same-origin',
                         body: formData
-                    }).then(function (response) {
-                        if (response.ok) {
-                            return response.json();
-                        }
-                        ExtendedDirectiveHandlers.ReportServerError(null, {
-                            status: response.status,
-                            statusText: response.statusText
-                        });
-                    }).then(function (data) {
+                    }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
                         isInit = true;
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             userData = (data || {});
@@ -1921,7 +1897,15 @@ var InlineJS;
                         method: 'POST',
                         credentials: 'same-origin',
                         body: formData
-                    }).then(function (response) { return response.json(); }).then(function (data) {
+                    }).then(function (response) {
+                        if (response.ok) {
+                            return response.json();
+                        }
+                        ExtendedDirectiveHandlers.ReportServerError(null, {
+                            status: response.status,
+                            statusText: response.statusText
+                        });
+                    }).then(function (data) {
                         isInit = true;
                         if (errorBag && 'failed' in data) {
                             for (var key in errorBag) {
@@ -1929,11 +1913,12 @@ var InlineJS;
                                 errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
                         }
-                        if (!callback || callback(data)) {
+                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             userData = (data || {});
                             alertAll();
                         }
                     })["catch"](function (err) {
+                        ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback) {
                             callback(null, err);
                         }
@@ -2193,6 +2178,83 @@ var InlineJS;
             });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Form = function (region, element, directive) {
+            if (!(element instanceof HTMLFormElement)) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var data = (InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), regionId = region.GetId();
+            var info = {
+                action: (data.action || element.action),
+                method: (data.method || element.method),
+                errorBag: data.errorBag,
+                callback: data.callback
+            };
+            if (!info.action) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var submitButtons = new Array();
+            region.AddElement(element, true).locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'addSubmitButton') {
+                    return function (button) {
+                        submitButtons.push(button);
+                    };
+                }
+                if (prop === 'removeSubmitButton') {
+                    return function (button) {
+                        submitButtons = submitButtons.filter(function (btn) { return (btn !== button); });
+                    };
+                }
+            }, ['addSubmitButton', 'removeSubmitButton']);
+            var setDisabledState = function (disable) {
+                submitButtons.forEach(function (button) {
+                    if (disable) {
+                        button.setAttribute('disabled', 'disabled');
+                    }
+                    else {
+                        button.removeAttribute('disabled');
+                    }
+                });
+            };
+            element.addEventListener('submit', function (e) {
+                e.preventDefault();
+                setDisabledState(true);
+                fetch(info.action, {
+                    method: (info.method || 'POST'),
+                    credentials: 'same-origin',
+                    body: new FormData(element)
+                }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
+                    setDisabledState(false);
+                    if (info.errorBag && 'failed' in data) {
+                        for (var key in info.errorBag) {
+                            var value = (data.failed[key] || []);
+                            info.errorBag[key] = (Array.isArray(value) ? value : [value]);
+                        }
+                    }
+                    if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))) {
+                        window.dispatchEvent(new CustomEvent('form.success'));
+                        element.reset();
+                    }
+                })["catch"](function (err) {
+                    setDisabledState(false);
+                    ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                    if (info.callback) {
+                        info.callback(null, err);
+                    }
+                });
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('formSubmit', function (innerRegion, innerElement, innerDirective) {
+                var proxy = innerRegion.GetLocal(innerElement, '$form', true);
+                if (!proxy) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                proxy.addSubmitButton(innerElement);
+                innerRegion.AddElement(innerElement, true).uninitCallbacks.push(function () {
+                    proxy.removeSubmitButton(innerElement);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (InlineJS.Region.IsObject(options)) {
@@ -2257,15 +2319,7 @@ var InlineJS;
             var fetch = function (url, tryJson, callback) {
                 window.fetch(url, {
                     credentials: 'same-origin'
-                }).then(function (response) {
-                    if (response.ok) {
-                        return response.text();
-                    }
-                    ExtendedDirectiveHandlers.ReportServerError(null, {
-                        status: response.status,
-                        statusText: response.statusText
-                    });
-                }).then(function (data) {
+                }).then(ExtendedDirectiveHandlers.HandleTextResponse).then(function (data) {
                     if (data === undefined) {
                         return;
                     }
@@ -2355,6 +2409,24 @@ var InlineJS;
                 });
             }
         };
+        ExtendedDirectiveHandlers.HandleJsonResponse = function (response) {
+            if (response.ok) {
+                return response.json();
+            }
+            ExtendedDirectiveHandlers.ReportServerError(null, {
+                status: response.status,
+                statusText: response.statusText
+            });
+        };
+        ExtendedDirectiveHandlers.HandleTextResponse = function (response) {
+            if (response.ok) {
+                return response.text();
+            }
+            ExtendedDirectiveHandlers.ReportServerError(null, {
+                status: response.status,
+                statusText: response.statusText
+            });
+        };
         ExtendedDirectiveHandlers.Alert = function (region, prop, prefix) {
             region.GetChanges().Add({
                 regionId: region.GetId(),
@@ -2402,6 +2474,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
             InlineJS.DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
             InlineJS.DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
+            InlineJS.DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
                     return function (target) {
@@ -2416,6 +2489,7 @@ var InlineJS;
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
             buildGlobal('db');
+            buildGlobal('form');
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;
         ExtendedDirectiveHandlers.scopes_ = {};

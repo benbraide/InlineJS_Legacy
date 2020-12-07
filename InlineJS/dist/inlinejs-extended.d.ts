@@ -84,6 +84,12 @@ declare namespace InlineJS {
         report: (info: any) => boolean;
         reportServerError: (err: any) => boolean;
     }
+    interface FormInfo {
+        action?: string;
+        method?: string;
+        errorBag?: Record<string, Array<string>>;
+        callback?: (data: any, err?: any) => boolean;
+    }
     class ExtendedDirectiveHandlers {
         private static scopeId_;
         private static scopes_;
@@ -107,9 +113,12 @@ declare namespace InlineJS {
         static Geolocation(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Reporter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Overlay(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Form(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
         static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean): boolean;
         static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void): void;
+        static HandleJsonResponse(response: Response): Promise<any>;
+        static HandleTextResponse(response: Response): Promise<string>;
         static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string): void;
         static Report(regionId: string, info: any): boolean;
         static ReportServerError(regionId: string, err: any): boolean;
