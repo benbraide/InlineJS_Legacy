@@ -1000,11 +1000,19 @@ var InlineJS;
                 },
                 goto: function (page, args) { goto(page, args); },
                 redirect: function (page, args) { goto(page, args, true); },
+                reload: function () {
+                    if (info.mount) {
+                        info.mount(info.url);
+                    }
+                },
                 back: function () { back(); },
                 addMiddleware: function (name, handler) {
                     info.middlewares[name] = handler;
                 },
-                parseQuery: function (query) { return parseQuery(query); }
+                parseQuery: function (query) { return parseQuery(query); },
+                setTitle: function (title) {
+                    document.title = "" + (options.titlePrefix || '') + (title || 'Untitled') + (options.titleSuffix || '');
+                }
             };
             if (options.urlPrefix) {
                 options.urlPrefix += '/';
@@ -1071,8 +1079,11 @@ var InlineJS;
             };
             var load = function (page, query, callback, onReload) {
                 var myRegion = InlineJS.Region.Get(regionId);
-                if (info.currentPage && info.currentPage !== '/' && info.currentPage in info.pages) {
-                    unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
+                if (info.currentPage && info.currentPage !== '/') {
+                    var currentPageInfo = findPage(info.currentPage);
+                    if (currentPageInfo) {
+                        unload(currentPageInfo.component, currentPageInfo.exit);
+                    }
                 }
                 if (info.currentPage !== page) {
                     info.currentPage = page;
@@ -1184,7 +1195,7 @@ var InlineJS;
                 return null;
             };
             var buildPath = function (path, query) {
-                return origin + "/" + options.urlPrefix + path + (query || '');
+                return origin + "/" + options.urlPrefix + ((path === '/') ? '' : path) + (query || '');
             };
             var buildHistoryPath = function (path, query) {
                 return origin + "/" + ((path === '/') ? '' : path) + (query || '');
@@ -2187,12 +2198,13 @@ var InlineJS;
                 action: (data.action || element.action),
                 method: (data.method || element.method),
                 errorBag: data.errorBag,
-                callback: data.callback
+                callback: data.callback,
+                confirmInfo: data.confirmInfo
             };
             if (!info.action) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var submitButtons = new Array();
+            var submitButtons = new Array(), confirm = (directive.arg.options.indexOf('confirm') != -1), reload = (directive.arg.options.indexOf('reload') != -1);
             region.AddElement(element, true).locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'addSubmitButton') {
                     return function (button) {
@@ -2204,7 +2216,13 @@ var InlineJS;
                         submitButtons = submitButtons.filter(function (btn) { return (btn !== button); });
                     };
                 }
-            }, ['addSubmitButton', 'removeSubmitButton']);
+                if (prop === 'element') {
+                    return element;
+                }
+                if (prop === 'submit') {
+                    return submit;
+                }
+            }, ['addSubmitButton', 'removeSubmitButton', 'element']);
             var setDisabledState = function (disable) {
                 submitButtons.forEach(function (button) {
                     if (disable) {
@@ -2215,8 +2233,15 @@ var InlineJS;
                     }
                 });
             };
-            element.addEventListener('submit', function (e) {
-                e.preventDefault();
+            var submit = function (checkConfirm) {
+                if (checkConfirm === void 0) { checkConfirm = true; }
+                if (checkConfirm && confirm) {
+                    var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
+                    if (reporter && reporter.confirm) { //Confirm before proceeding
+                        reporter.confirm((info.confirmInfo || 'Please confirm your action.'), function () { return submit(false); });
+                        return;
+                    }
+                }
                 setDisabledState(true);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
@@ -2231,7 +2256,14 @@ var InlineJS;
                         }
                     }
                     if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))) {
-                        window.dispatchEvent(new CustomEvent('form.success'));
+                        element.dispatchEvent(new CustomEvent('form.success'));
+                        if (reload) {
+                            var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
+                            if (router) {
+                                router.reload();
+                                return;
+                            }
+                        }
                         element.reset();
                     }
                 })["catch"](function (err) {
@@ -2241,6 +2273,10 @@ var InlineJS;
                         info.callback(null, err);
                     }
                 });
+            };
+            element.addEventListener('submit', function (e) {
+                e.preventDefault();
+                submit();
             });
             InlineJS.DirectiveHandlerManager.AddHandler('formSubmit', function (innerRegion, innerElement, innerDirective) {
                 var proxy = innerRegion.GetLocal(innerElement, '$form', true);
@@ -2438,11 +2474,11 @@ var InlineJS;
         };
         ExtendedDirectiveHandlers.Report = function (regionId, info) {
             var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
-            return (reporter && reporter.report(info));
+            return (reporter && reporter.report && reporter.report(info));
         };
         ExtendedDirectiveHandlers.ReportServerError = function (regionId, err) {
             var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
-            return (reporter && reporter.reportServerError(err));
+            return (reporter && reporter.reportServerError && reporter.reportServerError(err));
         };
         ExtendedDirectiveHandlers.AddScope = function (prefix, elementScope, callbacks) {
             var id = prefix + "<" + ++ExtendedDirectiveHandlers.scopeId_ + ">";

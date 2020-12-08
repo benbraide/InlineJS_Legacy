@@ -83,12 +83,15 @@ declare namespace InlineJS {
     interface ReporterInfo {
         report: (info: any) => boolean;
         reportServerError: (err: any) => boolean;
+        confirm: (info: string | Record<string, any>, callback: string | (() => void)) => void;
+        prompt: (info: string | Record<string, any>, callback: (response: string | Array<string>) => void) => void;
     }
     interface FormInfo {
         action?: string;
         method?: string;
         errorBag?: Record<string, Array<string>>;
         callback?: (data: any, err?: any) => boolean;
+        confirmInfo?: string | Record<string, any>;
     }
     class ExtendedDirectiveHandlers {
         private static scopeId_;

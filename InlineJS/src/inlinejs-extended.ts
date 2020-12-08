@@ -95,6 +95,8 @@ namespace InlineJS{
     export interface ReporterInfo{
         report: (info: any) => boolean;
         reportServerError: (err: any) => boolean;
+        confirm: (info: string | Record<string, any>, callback: string | (() => void)) => void;
+        prompt: (info: string | Record<string, any>, callback: (response: string | Array<string>) => void) => void;
     }
 
     export interface FormInfo{
@@ -102,6 +104,7 @@ namespace InlineJS{
         method?: string;
         errorBag?: Record<string, Array<string>>;
         callback?: (data: any, err?: any) => boolean;
+        confirmInfo?: string | Record<string, any>;
     }
 
     export class ExtendedDirectiveHandlers{
@@ -1246,11 +1249,19 @@ namespace InlineJS{
                 },
                 goto: (page: string, args?: Array<any> | any) => { goto(page, args) },
                 redirect: (page: string, args?: Array<any> | any) => { goto(page, args, true) },
+                reload: () => {
+                    if (info.mount){
+                        info.mount(info.url);
+                    }
+                },
                 back: () => { back() },
                 addMiddleware: (name: string, handler: (page?: string, args?: Array<any> | any) => boolean) => {
                     info.middlewares[name] = handler;
                 },
-                parseQuery: (query: string) => parseQuery(query)
+                parseQuery: (query: string) => parseQuery(query),
+                setTitle: (title: string) => {
+                    document.title = `${options.titlePrefix || ''}${title || 'Untitled'}${options.titleSuffix || ''}`;
+                },
             };
 
             if (options.urlPrefix){
@@ -1327,8 +1338,11 @@ namespace InlineJS{
 
             let load = (page: string, query: string, callback?: (title: string, path: string) => void, onReload?: () => boolean) => {
                 let myRegion = Region.Get(regionId);
-                if (info.currentPage && info.currentPage !== '/' && info.currentPage in info.pages){
-                    unload(info.pages[info.currentPage].component, info.pages[info.currentPage].exit);
+                if (info.currentPage && info.currentPage !== '/'){
+                    let currentPageInfo = findPage(info.currentPage);
+                    if (currentPageInfo){
+                        unload(currentPageInfo.component, currentPageInfo.exit);
+                    }
                 }
 
                 if (info.currentPage !== page){
@@ -1460,7 +1474,7 @@ namespace InlineJS{
             };
 
             let buildPath = (path: string, query: string) => {
-                return `${origin}/${options.urlPrefix}${path}${query || ''}`;
+                return `${origin}/${options.urlPrefix}${(path === '/') ? '' : path}${query || ''}`;
             };
             
             let buildHistoryPath = (path: string, query: string) => {
@@ -2673,13 +2687,14 @@ namespace InlineJS{
                 method: (data.method || element.method),
                 errorBag: data.errorBag,
                 callback: data.callback,
+                confirmInfo: data.confirmInfo,
             };
 
             if (!info.action){
                 return DirectiveHandlerReturn.Nil;
             }
             
-            let submitButtons = new Array<HTMLElement>();
+            let submitButtons = new Array<HTMLElement>(), confirm = (directive.arg.options.indexOf('confirm') != -1), reload = (directive.arg.options.indexOf('reload') != -1);
             region.AddElement(element, true).locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                 if (prop === 'addSubmitButton'){
                     return (button: HTMLElement) => {
@@ -2692,7 +2707,15 @@ namespace InlineJS{
                         submitButtons = submitButtons.filter(btn => (btn !== button));
                     };
                 }
-            }, ['addSubmitButton', 'removeSubmitButton']);
+
+                if (prop === 'element'){
+                    return element;
+                }
+
+                if (prop === 'submit'){
+                    return submit;
+                }
+            }, ['addSubmitButton', 'removeSubmitButton', 'element']);
             
             let setDisabledState = (disable: boolean) => {
                 submitButtons.forEach((button) => {
@@ -2704,11 +2727,17 @@ namespace InlineJS{
                     }
                 });
             };
-            
-            element.addEventListener('submit', (e) => {
-                e.preventDefault();
-                setDisabledState(true);
 
+            let submit = (checkConfirm = true) => {
+                if (checkConfirm && confirm){
+                    let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
+                    if (reporter && reporter.confirm){//Confirm before proceeding
+                        reporter.confirm((info.confirmInfo || 'Please confirm your action.'), () => submit(false));
+                        return;
+                    }
+                }
+                
+                setDisabledState(true);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
@@ -2723,7 +2752,15 @@ namespace InlineJS{
                     }
                     
                     if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))){
-                        window.dispatchEvent(new CustomEvent('form.success'));
+                        element.dispatchEvent(new CustomEvent('form.success'));
+                        if (reload){
+                            let router = Region.GetGlobalValue(regionId, '$router');
+                            if (router){
+                                router.reload();
+                                return;
+                            }
+                        }
+
                         element.reset();
                     }
                 }).catch((err) => {
@@ -2733,6 +2770,11 @@ namespace InlineJS{
                         info.callback(null, err);
                     }
                 });
+            };
+            
+            element.addEventListener('submit', (e) => {
+                e.preventDefault();
+                submit();
             });
 
             DirectiveHandlerManager.AddHandler('formSubmit', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
@@ -2959,12 +3001,12 @@ namespace InlineJS{
 
         public static Report(regionId: string, info: any){
             let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
-            return (reporter && reporter.report(info));
+            return (reporter && reporter.report && reporter.report(info));
         }
         
         public static ReportServerError(regionId: string, err: any){
             let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
-            return (reporter && reporter.reportServerError(err));
+            return (reporter && reporter.reportServerError && reporter.reportServerError(err));
         }
         
         public static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>) : ExtendedDirectiveHandlerScope{
