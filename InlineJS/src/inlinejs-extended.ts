@@ -579,7 +579,7 @@ namespace InlineJS{
                     load(url);
                     info.url = url;
                 }
-                else{
+                else if (url !== '::unload::'){
                     element.dispatchEvent(new CustomEvent(`xhr.reload`));
                 }
             }, true, element);
@@ -1250,6 +1250,7 @@ namespace InlineJS{
                 goto: (page: string, args?: Array<any> | any) => { goto(page, args) },
                 redirect: (page: string, args?: Array<any> | any) => { goto(page, args, true) },
                 reload: () => {
+                    window.dispatchEvent(new CustomEvent('router.reload'));
                     if (info.mount){
                         info.mount(info.url);
                     }
@@ -1373,10 +1374,10 @@ namespace InlineJS{
                     }
                     
                     if (isReload){
+                        window.dispatchEvent(new CustomEvent('router.reload'));
                         if (onReload && !onReload()){
                             return;
                         }
-                        window.dispatchEvent(new CustomEvent('router.reload'));
                     }
 
                     window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
@@ -1415,10 +1416,10 @@ namespace InlineJS{
                     }
 
                     if (url === info.targetUrl){
+                        window.dispatchEvent(new CustomEvent('router.reload'));
                         if (onReload && !onReload()){
                             return;
                         }
-                        window.dispatchEvent(new CustomEvent('router.reload'));
                     }
                     else{//New target
                         info.targetUrl = url;
@@ -2420,6 +2421,74 @@ namespace InlineJS{
             
             Region.AddGlobal('$auth', () => proxy);
             methods.addMiddlewares((data || {}).middlewareRoles);
+
+            DirectiveHandlerManager.AddHandler('authRegister', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                if (!(innerElement instanceof HTMLFormElement)){
+                    return DirectiveHandlerReturn.Nil;    
+                }
+                
+                let data = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                if (!Region.IsObject(data)){
+                    data = {};
+                }
+                
+                innerElement.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    methods.register(innerElement, data.errorBag, data.callback);
+                });
+
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            DirectiveHandlerManager.AddHandler('authLogin', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                if (!(innerElement instanceof HTMLFormElement)){
+                    return DirectiveHandlerReturn.Nil;    
+                }
+                
+                let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                innerElement.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    methods.login(innerElement, callback);
+                });
+
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            DirectiveHandlerManager.AddHandler('authUpdate', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                if (!(innerElement instanceof HTMLFormElement)){
+                    return DirectiveHandlerReturn.Nil;    
+                }
+                
+                let data = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                if (!Region.IsObject(data)){
+                    data = {};
+                }
+
+                innerElement.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    methods.update(innerElement, data.errorBag, data.callback);
+                });
+
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            DirectiveHandlerManager.AddHandler('authLogout', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                if (innerElement instanceof HTMLFormElement){
+                    innerElement.addEventListener('submit', (e) => {
+                        e.preventDefault();
+                        methods.logout(callback as (data: any, err?: any) => boolean);
+                    });
+                }
+                else{//Click
+                    innerElement.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        methods.logout(callback as (data: any, err?: any) => boolean);
+                    });
+                }
+                
+                return DirectiveHandlerReturn.Handled;
+            });
             
             return DirectiveHandlerReturn.Handled;
         }
@@ -2777,19 +2846,21 @@ namespace InlineJS{
                 submit();
             });
 
-            DirectiveHandlerManager.AddHandler('formSubmit', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                let proxy = innerRegion.GetLocal(innerElement, '$form', true);
-                if (!proxy){
-                    return DirectiveHandlerReturn.Nil;
-                }
-
-                proxy.addSubmitButton(innerElement);
-                innerRegion.AddElement(innerElement, true).uninitCallbacks.push(() => {
-                    proxy.removeSubmitButton(innerElement);
+            if (!DirectiveHandlerManager.GetHandler('formSubmit')){
+                DirectiveHandlerManager.AddHandler('formSubmit', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                    let proxy = innerRegion.GetLocal(innerElement, '$form', true);
+                    if (!proxy || !proxy.addSubmitButton){
+                        return DirectiveHandlerReturn.Nil;
+                    }
+    
+                    proxy.addSubmitButton(innerElement);
+                    innerRegion.AddElement(innerElement, true).uninitCallbacks.push(() => {
+                        proxy.removeSubmitButton(innerElement);
+                    });
+                    
+                    return DirectiveHandlerReturn.Handled;
                 });
-                
-                return DirectiveHandlerReturn.Handled;
-            });
+            }
             
             return DirectiveHandlerReturn.Handled;
         }

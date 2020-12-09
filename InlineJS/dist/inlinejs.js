@@ -1341,6 +1341,18 @@ var InlineJS;
             Region.AddGlobal('$raw', function () { return function (value) {
                 return ((Region.IsObject(value) && '__InlineJS_Target__' in value) ? value.__InlineJS_Target__ : value);
             }; });
+            Region.AddGlobal('$or', function () { return function () {
+                var values = [];
+                for (var _i = 0; _i < arguments.length; _i++) {
+                    values[_i] = arguments[_i];
+                }
+                for (var i = 0; i < values.length; ++i) {
+                    if (!values[i]) {
+                        return false;
+                    }
+                }
+                return true;
+            }; });
             Region.AddGlobal('$__InlineJS_CallTemp__', function (regionId) { return function (key) {
                 var region = Region.Get(regionId);
                 return (region ? region.CallTemp(key) : null);

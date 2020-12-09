@@ -1682,6 +1682,16 @@ namespace InlineJS{
                 return ((Region.IsObject(value) && '__InlineJS_Target__' in value) ? value.__InlineJS_Target__ : value);
             });
 
+            Region.AddGlobal('$or', () => (...values: boolean[]) => {
+                for (let i = 0; i < values.length; ++i){
+                    if (!values[i]){
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
             Region.AddGlobal('$__InlineJS_CallTemp__', (regionId: string) => (key: string) => {
                 let region = Region.Get(regionId);
                 return (region ? region.CallTemp(key) : null);

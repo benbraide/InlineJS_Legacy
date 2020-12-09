@@ -406,7 +406,7 @@ var InlineJS;
                     load(url);
                     info.url = url;
                 }
-                else {
+                else if (url !== '::unload::') {
                     element.dispatchEvent(new CustomEvent("xhr.reload"));
                 }
             }, true, element);
@@ -1001,6 +1001,7 @@ var InlineJS;
                 goto: function (page, args) { goto(page, args); },
                 redirect: function (page, args) { goto(page, args, true); },
                 reload: function () {
+                    window.dispatchEvent(new CustomEvent('router.reload'));
                     if (info.mount) {
                         info.mount(info.url);
                     }
@@ -1109,10 +1110,10 @@ var InlineJS;
                         }
                     }
                     if (isReload) {
+                        window.dispatchEvent(new CustomEvent('router.reload'));
                         if (onReload && !onReload()) {
                             return;
                         }
-                        window.dispatchEvent(new CustomEvent('router.reload'));
                     }
                     window.dispatchEvent(new CustomEvent('router.404', { detail: page }));
                     if (callback) {
@@ -1146,10 +1147,10 @@ var InlineJS;
                         ExtendedDirectiveHandlers.Alert(myRegion, 'url', scope);
                     }
                     if (url === info.targetUrl) {
+                        window.dispatchEvent(new CustomEvent('router.reload'));
                         if (onReload && !onReload()) {
                             return;
                         }
-                        window.dispatchEvent(new CustomEvent('router.reload'));
                     }
                     else { //New target
                         info.targetUrl = url;
@@ -1984,6 +1985,61 @@ var InlineJS;
             }, Object.keys(methods));
             InlineJS.Region.AddGlobal('$auth', function () { return proxy; });
             methods.addMiddlewares((data || {}).middlewareRoles);
+            InlineJS.DirectiveHandlerManager.AddHandler('authRegister', function (innerRegion, innerElement, innerDirective) {
+                if (!(innerElement instanceof HTMLFormElement)) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                if (!InlineJS.Region.IsObject(data)) {
+                    data = {};
+                }
+                innerElement.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    methods.register(innerElement, data.errorBag, data.callback);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('authLogin', function (innerRegion, innerElement, innerDirective) {
+                if (!(innerElement instanceof HTMLFormElement)) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                innerElement.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    methods.login(innerElement, callback);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('authUpdate', function (innerRegion, innerElement, innerDirective) {
+                if (!(innerElement instanceof HTMLFormElement)) {
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                if (!InlineJS.Region.IsObject(data)) {
+                    data = {};
+                }
+                innerElement.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    methods.update(innerElement, data.errorBag, data.callback);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('authLogout', function (innerRegion, innerElement, innerDirective) {
+                var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                if (innerElement instanceof HTMLFormElement) {
+                    innerElement.addEventListener('submit', function (e) {
+                        e.preventDefault();
+                        methods.logout(callback);
+                    });
+                }
+                else { //Click
+                    innerElement.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        methods.logout(callback);
+                    });
+                }
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Geolocation = function (region, element, directive) {
@@ -2278,17 +2334,19 @@ var InlineJS;
                 e.preventDefault();
                 submit();
             });
-            InlineJS.DirectiveHandlerManager.AddHandler('formSubmit', function (innerRegion, innerElement, innerDirective) {
-                var proxy = innerRegion.GetLocal(innerElement, '$form', true);
-                if (!proxy) {
-                    return InlineJS.DirectiveHandlerReturn.Nil;
-                }
-                proxy.addSubmitButton(innerElement);
-                innerRegion.AddElement(innerElement, true).uninitCallbacks.push(function () {
-                    proxy.removeSubmitButton(innerElement);
+            if (!InlineJS.DirectiveHandlerManager.GetHandler('formSubmit')) {
+                InlineJS.DirectiveHandlerManager.AddHandler('formSubmit', function (innerRegion, innerElement, innerDirective) {
+                    var proxy = innerRegion.GetLocal(innerElement, '$form', true);
+                    if (!proxy || !proxy.addSubmitButton) {
+                        return InlineJS.DirectiveHandlerReturn.Nil;
+                    }
+                    proxy.addSubmitButton(innerElement);
+                    innerRegion.AddElement(innerElement, true).uninitCallbacks.push(function () {
+                        proxy.removeSubmitButton(innerElement);
+                    });
+                    return InlineJS.DirectiveHandlerReturn.Handled;
                 });
-                return InlineJS.DirectiveHandlerReturn.Handled;
-            });
+            }
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
