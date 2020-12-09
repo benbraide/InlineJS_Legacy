@@ -1684,6 +1684,16 @@ namespace InlineJS{
 
             Region.AddGlobal('$or', () => (...values: boolean[]) => {
                 for (let i = 0; i < values.length; ++i){
+                    if (values[i]){
+                        return true;
+                    }
+                }
+
+                return false;
+            });
+
+            Region.AddGlobal('$and', () => (...values: boolean[]) => {
+                for (let i = 0; i < values.length; ++i){
                     if (!values[i]){
                         return false;
                     }
@@ -2756,7 +2766,7 @@ namespace InlineJS{
             Processor.All(region, element);
         }
 
-        public static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean)){
+        public static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean), setter?: (target: object, prop: string | number | symbol, value: any) => boolean){
             let handler = {
                 get(target: object, prop: string | number | symbol): any{
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')){
@@ -2766,7 +2776,7 @@ namespace InlineJS{
                     return getter(prop.toString());
                 },
                 set(target: object, prop: string | number | symbol, value: any){
-                    return false;
+                    return (setter && setter(target, prop, value));
                 },
                 deleteProperty(target: object, prop: string | number | symbol){
                     return false;

@@ -2349,6 +2349,80 @@ var InlineJS;
             }
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Modal = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal('$modal', region.GetId())) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url = null;
+            var countainer = document.createElement('div'), mount = document.createElement('div'), overlay = InlineJS.Region.GetGlobalValue(regionId, '$overlay');
+            countainer.classList.add('inlinejs-modal');
+            if (element.style.zIndex) {
+                countainer.style.zIndex = element.style.zIndex;
+            }
+            else { //Compute z-index
+                countainer.style.zIndex = (overlay ? ((overlay.zIndex || 1000) + 9) : 1009);
+            }
+            countainer.setAttribute('x-data', '');
+            countainer.setAttribute('x-animate.opacity', '$modal.show');
+            countainer.setAttribute('x-overlay-bind', '$modal.show');
+            mount.setAttribute('x-xhr-load', '$modal.url');
+            mount.setAttribute('x-on:click.outside', '$modal.show = false');
+            countainer.appendChild(mount);
+            document.body.appendChild(countainer);
+            var setShow = function (value) {
+                show = value;
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'show', scope);
+            };
+            var setUrl = function (value) {
+                url = value;
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'url', scope);
+            };
+            var reload = function () {
+                setShow(false);
+                setUrl('::unload::');
+            };
+            mount.addEventListener('xhr.load', function () { return setShow(true); });
+            mount.addEventListener('xhr.reload', function () { return setShow(true); });
+            window.addEventListener('router.load', reload);
+            window.addEventListener('router.reload', reload);
+            region.AddOutsideEventCallback(mount, 'click', function () {
+                setShow(false);
+            });
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'show') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return show;
+                }
+                if (prop === 'url') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return url;
+                }
+            }, ['show', 'url'], function (target, prop, value) {
+                if (prop === 'show') {
+                    setShow(!!value);
+                    return true;
+                }
+                if (prop === 'url') {
+                    setUrl(value || '');
+                    return true;
+                }
+                return false;
+            });
+            InlineJS.Region.AddGlobal('$modal', function () { return proxy; });
+            InlineJS.DirectiveHandlerManager.AddHandler('modalUrl', function (innerRegion, innerElement, innerDirective) {
+                var url = null;
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    setUrl(url);
+                });
+                var innerRegionId = innerRegion.GetId();
+                innerRegion.GetState().TrapGetAccess(function () {
+                    url = InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(innerRegionId), innerElement, innerDirective.value);
+                }, true, innerElement);
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (InlineJS.Region.IsObject(options)) {
@@ -2569,6 +2643,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
             InlineJS.DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
             InlineJS.DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
+            InlineJS.DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
                     return function (target) {

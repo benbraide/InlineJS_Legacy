@@ -1347,6 +1347,18 @@ var InlineJS;
                     values[_i] = arguments[_i];
                 }
                 for (var i = 0; i < values.length; ++i) {
+                    if (values[i]) {
+                        return true;
+                    }
+                }
+                return false;
+            }; });
+            Region.AddGlobal('$and', function () { return function () {
+                var values = [];
+                for (var _i = 0; _i < arguments.length; _i++) {
+                    values[_i] = arguments[_i];
+                }
+                for (var i = 0; i < values.length; ++i) {
                     if (!values[i]) {
                         return false;
                     }
@@ -2219,7 +2231,7 @@ var InlineJS;
             }
             Processor.All(region, element);
         };
-        CoreDirectiveHandlers.CreateProxy = function (getter, contains) {
+        CoreDirectiveHandlers.CreateProxy = function (getter, contains, setter) {
             var handler = {
                 get: function (target, prop) {
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
@@ -2228,7 +2240,7 @@ var InlineJS;
                     return getter(prop.toString());
                 },
                 set: function (target, prop, value) {
-                    return false;
+                    return (setter && setter(target, prop, value));
                 },
                 deleteProperty: function (target, prop) {
                     return false;

@@ -2865,6 +2865,99 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Modal(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal('$modal', region.GetId())){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url: string = null;
+            let countainer = document.createElement('div'), mount = document.createElement('div'), overlay = Region.GetGlobalValue(regionId, '$overlay');
+            
+            countainer.classList.add('inlinejs-modal');
+            if (element.style.zIndex){
+                countainer.style.zIndex = element.style.zIndex;
+            }
+            else{//Compute z-index
+                countainer.style.zIndex = (overlay ? ((overlay.zIndex || 1000) + 9) : 1009);
+            }
+
+            countainer.setAttribute('x-data', '');
+            countainer.setAttribute('x-animate.opacity', '$modal.show');
+            countainer.setAttribute('x-overlay-bind', '$modal.show');
+
+            mount.setAttribute('x-xhr-load', '$modal.url');
+            mount.setAttribute('x-on:click.outside', '$modal.show = false');
+            
+            countainer.appendChild(mount);
+            document.body.appendChild(countainer);
+
+            let setShow = (value: boolean) => {
+                show = value;
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'show', scope);
+            };
+
+            let setUrl = (value: string) => {
+                url = value;
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'url', scope);
+            };
+
+            let reload = () => {
+                setShow(false);
+                setUrl('::unload::');
+            };
+            
+            mount.addEventListener('xhr.load', () => setShow(true));
+            mount.addEventListener('xhr.reload', () => setShow(true));
+
+            window.addEventListener('router.load', reload);
+            window.addEventListener('router.reload', reload);
+            region.AddOutsideEventCallback(mount, 'click', () => {
+                setShow(false);
+            });
+
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'show'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return show;
+                }
+
+                if (prop === 'url'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return url;
+                }
+            }, ['show', 'url'], (target: object, prop: string | number | symbol, value: any) => {
+                if (prop === 'show'){
+                    setShow(!! value);
+                    return true;
+                }
+
+                if (prop === 'url'){
+                    setUrl(value || '');
+                    return true;
+                }
+
+                return false;
+            });
+
+            Region.AddGlobal('$modal', () => proxy);
+            DirectiveHandlerManager.AddHandler('modalUrl', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let url: string = null;
+                innerElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    setUrl(url);
+                });
+
+                let innerRegionId = innerRegion.GetId();
+                innerRegion.GetState().TrapGetAccess(() => {
+                    url = CoreDirectiveHandlers.Evaluate(Region.Get(innerRegionId), innerElement, innerDirective.value);
+                }, true, innerElement);
+                
+                return DirectiveHandlerReturn.Handled;
+            });
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
             let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
@@ -3119,6 +3212,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
             DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
             DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
+            DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {
