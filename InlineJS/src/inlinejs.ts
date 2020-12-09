@@ -1926,14 +1926,26 @@ namespace InlineJS{
             }
 
             let target = proxy['__InlineJS_Target__'];
-            Object.keys(data).filter(key => (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds')).forEach(key => target[key] = data[key]);
+            let addedKeys = Object.keys(data).filter(key => (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds' && key !== '$init'));
+
+            addedKeys.forEach((key) => {
+                target[key] = data[key];
+            });
+            
+            if (region.GetRootElement() !== element){
+                region.AddElement(element).uninitCallbacks.push(() => {
+                    addedKeys.forEach((key) => {
+                        delete proxy[key];
+                    });
+                });
+            }
             
             if (data.$init){
                 RegionMap.scopeRegionIds.Push(region.GetId());
                 region.GetState().PushElementContext(element);
                 
                 try{
-                    (proxy as DataOptions).$init(region);
+                    data.$init.call(proxy, region);
                 }
                 catch (err){}
 

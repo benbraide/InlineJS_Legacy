@@ -1526,12 +1526,22 @@ var InlineJS;
                 Region.AddComponent(region, element, data.$component);
             }
             var target = proxy['__InlineJS_Target__'];
-            Object.keys(data).filter(function (key) { return (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds'); }).forEach(function (key) { return target[key] = data[key]; });
+            var addedKeys = Object.keys(data).filter(function (key) { return (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds' && key !== '$init'); });
+            addedKeys.forEach(function (key) {
+                target[key] = data[key];
+            });
+            if (region.GetRootElement() !== element) {
+                region.AddElement(element).uninitCallbacks.push(function () {
+                    addedKeys.forEach(function (key) {
+                        delete proxy[key];
+                    });
+                });
+            }
             if (data.$init) {
                 RegionMap.scopeRegionIds.Push(region.GetId());
                 region.GetState().PushElementContext(element);
                 try {
-                    proxy.$init(region);
+                    data.$init.call(proxy, region);
                 }
                 catch (err) { }
                 region.GetState().PopElementContext();
