@@ -74,6 +74,7 @@ var InlineJS;
             this.localHandlers_ = new Array();
             this.nextTickCallbacks_ = new Array();
             this.tempCallbacks_ = {};
+            this.scopeId_ = 0;
             this.tempCallbacksId_ = 0;
             this.enableOptimizedBinds_ = true;
             this.state_ = new State(this.id_);
@@ -85,6 +86,9 @@ var InlineJS;
         };
         Region.prototype.GetDoneInit = function () {
             return this.doneInit_;
+        };
+        Region.prototype.GenerateScopeId = function () {
+            return this.id_ + "_scope_" + this.scopeId_++;
         };
         Region.prototype.GetId = function () {
             return this.id_;
@@ -1511,32 +1515,63 @@ var InlineJS;
         };
         CoreDirectiveHandlers.Data = function (region, element, directive) {
             var proxy = region.GetRootProxy().GetNativeProxy(), data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
-            if (!data) {
-                return DirectiveHandlerReturn.Handled;
+            if (!Region.IsObject(data)) {
+                data = {};
             }
             if (data.$locals) { //Add local fields
                 for (var field in data.$locals) {
                     region.AddLocal(element, field, data.$locals[field]);
                 }
             }
-            if (data.$enableOptimizedBinds === true || data.$enableOptimizedBinds === false) {
+            if ((data.$enableOptimizedBinds === true || data.$enableOptimizedBinds === false) && region.GetRootElement() === element) {
                 region.SetOptimizedBindsState(data.$enableOptimizedBinds);
             }
-            if (data.$component) {
+            if (data.$component && region.GetRootElement() === element) {
                 Region.AddComponent(region, element, data.$component);
             }
-            var target = proxy['__InlineJS_Target__'];
+            var target;
             var addedKeys = Object.keys(data).filter(function (key) { return (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds' && key !== '$init'); });
+            if (region.GetRootElement() !== element) {
+                var key_1 = region.GenerateScopeId();
+                target = {};
+                proxy[key_1] = target;
+                region.AddElement(element).uninitCallbacks.push(function () {
+                    delete proxy[key_1];
+                });
+                var regionId_1 = region.GetId();
+                region.AddLocal(element, '$scope', CoreDirectiveHandlers.CreateProxy(function (prop) {
+                    var myRegion = Region.Get(regionId_1), myProxy = myRegion.GetRootProxy().GetNativeProxy();
+                    if (prop in target) {
+                        return myProxy[key_1][prop];
+                    }
+                    if (prop === 'parent') {
+                        return myRegion.GetLocal(myRegion.GetElementAncestor(element, 0), '$scope', true);
+                    }
+                    if (prop === 'key') {
+                        return key_1;
+                    }
+                    return myProxy[key_1][prop];
+                }, ['parent', 'key'], function (target, prop, value) {
+                    if (prop in target || typeof prop !== 'string') {
+                        return target[prop];
+                    }
+                    var myRegion = Region.Get(regionId_1), myProxy = myRegion.GetRootProxy().GetNativeProxy();
+                    if ('__InlineJS_Target__' in myProxy[key_1] && prop in myProxy[key_1]['__InlineJS_Target__']) {
+                        return (myProxy[key_1][prop] = value);
+                    }
+                    if (prop === 'parent' || prop === 'key') {
+                        return false;
+                    }
+                    return (myProxy[key_1][prop] = value);
+                }));
+            }
+            else {
+                target = proxy['__InlineJS_Target__'];
+                region.AddLocal(element, '$scope', proxy);
+            }
             addedKeys.forEach(function (key) {
                 target[key] = data[key];
             });
-            if (region.GetRootElement() !== element) {
-                region.AddElement(element).uninitCallbacks.push(function () {
-                    addedKeys.forEach(function (key) {
-                        delete proxy[key];
-                    });
-                });
-            }
             if (data.$init) {
                 RegionMap.scopeRegionIds.Push(region.GetId());
                 region.GetState().PushElementContext(element);

@@ -67,6 +67,53 @@ describe('x-data directive', () => {
         await waitFor(() => { expect(document.querySelector('span').textContent).toEqual('baz') });
     });
 
+    it('can be nested as scopes', () => {
+        document.body.innerHTML = `
+            <div x-data="{ foo: 'bar' }">
+              <span x-text="foo"></span>
+              <div x-data="{ foo: 'baz', other: 'value' }">
+                <span x-text="foo"></span>
+                <span x-text="$scope.foo"></span>
+                <span x-text="$scope.other"></span>
+                <span x-text="$scope.parent.foo"></span>
+              </div>
+            </div>
+        `;
+    
+        InlineJS.Bootstrap.Attach();
+    
+        expect(document.querySelectorAll('span')[0].textContent).toEqual('bar');
+        expect(document.querySelectorAll('span')[1].textContent).toEqual('bar');
+        expect(document.querySelectorAll('span')[2].textContent).toEqual('baz');
+        expect(document.querySelectorAll('span')[3].textContent).toEqual('value');
+        expect(document.querySelectorAll('span')[4].textContent).toEqual('bar');
+    });
+
+    it('should contain reactive scopes', async () => {
+        document.body.innerHTML = `
+            <div x-data="{ foo: 'bar' }">
+                <span x-text="foo"></span>
+                <div x-data="{ foo: 'baz' }">
+                    <span x-text="foo"></span>
+                    <span x-text="$scope.foo"></span>
+                    <button x-on:click="$scope.foo = 'changed'"></button>
+                </div>
+            </div>
+        `;
+
+        debugger;
+
+        InlineJS.Bootstrap.Attach();
+
+        expect(document.querySelectorAll('span')[0].textContent).toEqual('bar');
+        expect(document.querySelectorAll('span')[1].textContent).toEqual('bar');
+        expect(document.querySelectorAll('span')[2].textContent).toEqual('baz');
+
+        userEvent.click(document.querySelector('button'));
+
+        await waitFor(() => { expect(document.querySelectorAll('span')[2].textContent).toEqual('changed') });
+    });
+
     it('Proxies are not nested and duplicated when manipulating an array', async () => {
         document.body.innerHTML = `
             <div x-data="{ list: [ {name: 'foo'}, {name: 'bar'} ] }">

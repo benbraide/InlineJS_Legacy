@@ -110,11 +110,13 @@ declare namespace InlineJS {
         private localHandlers_;
         private nextTickCallbacks_;
         private tempCallbacks_;
+        private scopeId_;
         private tempCallbacksId_;
         private enableOptimizedBinds_;
         constructor(id_: string, rootElement_: HTMLElement, rootProxy_: RootProxy);
         SetDoneInit(): void;
         GetDoneInit(): boolean;
+        GenerateScopeId(): string;
         GetId(): string;
         GetComponentKey(): string;
         GetRootElement(): HTMLElement;

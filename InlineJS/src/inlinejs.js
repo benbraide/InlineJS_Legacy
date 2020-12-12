@@ -73,6 +73,7 @@ export var InlineJS;
             this.localHandlers_ = new Array();
             this.nextTickCallbacks_ = new Array();
             this.tempCallbacks_ = {};
+            this.scopeId_ = 0;
             this.tempCallbacksId_ = 0;
             this.enableOptimizedBinds_ = true;
             this.state_ = new State(this.id_);
@@ -84,6 +85,9 @@ export var InlineJS;
         };
         Region.prototype.GetDoneInit = function () {
             return this.doneInit_;
+        };
+        Region.prototype.GenerateScopeId = function () {
+            return this.id_ + "_scope_" + this.scopeId_++;
         };
         Region.prototype.GetId = function () {
             return this.id_;
@@ -1340,6 +1344,30 @@ export var InlineJS;
             Region.AddGlobal('$raw', function () { return function (value) {
                 return ((Region.IsObject(value) && '__InlineJS_Target__' in value) ? value.__InlineJS_Target__ : value);
             }; });
+            Region.AddGlobal('$or', function () { return function () {
+                var values = [];
+                for (var _i = 0; _i < arguments.length; _i++) {
+                    values[_i] = arguments[_i];
+                }
+                for (var i = 0; i < values.length; ++i) {
+                    if (values[i]) {
+                        return true;
+                    }
+                }
+                return false;
+            }; });
+            Region.AddGlobal('$and', function () { return function () {
+                var values = [];
+                for (var _i = 0; _i < arguments.length; _i++) {
+                    values[_i] = arguments[_i];
+                }
+                for (var i = 0; i < values.length; ++i) {
+                    if (!values[i]) {
+                        return false;
+                    }
+                }
+                return true;
+            }; });
             Region.AddGlobal('$__InlineJS_CallTemp__', function (regionId) { return function (key) {
                 var region = Region.Get(regionId);
                 return (region ? region.CallTemp(key) : null);
@@ -1486,27 +1514,68 @@ export var InlineJS;
         };
         CoreDirectiveHandlers.Data = function (region, element, directive) {
             var proxy = region.GetRootProxy().GetNativeProxy(), data = CoreDirectiveHandlers.Evaluate(region, element, directive.value, true);
-            if (!data) {
-                return DirectiveHandlerReturn.Handled;
+            if (!Region.IsObject(data)) {
+                data = {};
             }
             if (data.$locals) { //Add local fields
                 for (var field in data.$locals) {
                     region.AddLocal(element, field, data.$locals[field]);
                 }
             }
-            if (data.$enableOptimizedBinds === true || data.$enableOptimizedBinds === false) {
+            if ((data.$enableOptimizedBinds === true || data.$enableOptimizedBinds === false) && region.GetRootElement() === element) {
                 region.SetOptimizedBindsState(data.$enableOptimizedBinds);
             }
-            if (data.$component) {
+            if (data.$component && region.GetRootElement() === element) {
                 Region.AddComponent(region, element, data.$component);
             }
-            var target = proxy['__InlineJS_Target__'];
-            Object.keys(data).filter(function (key) { return (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds'); }).forEach(function (key) { return target[key] = data[key]; });
+            var target;
+            var addedKeys = Object.keys(data).filter(function (key) { return (key !== '$locals' && key !== '$component' && key !== '$enableOptimizedBinds' && key !== '$init'); });
+            if (region.GetRootElement() !== element) {
+                var key_1 = region.GenerateScopeId();
+                target = {};
+                proxy[key_1] = target;
+                region.AddElement(element).uninitCallbacks.push(function () {
+                    delete proxy[key_1];
+                });
+                var regionId_1 = region.GetId();
+                region.AddLocal(element, '$scope', CoreDirectiveHandlers.CreateProxy(function (prop) {
+                    var myRegion = Region.Get(regionId_1), myProxy = myRegion.GetRootProxy().GetNativeProxy();
+                    if (prop in target) {
+                        return myProxy[key_1][prop];
+                    }
+                    if (prop === 'parent') {
+                        return myRegion.GetLocal(myRegion.GetElementAncestor(element, 0), '$scope', true);
+                    }
+                    if (prop === 'key') {
+                        return key_1;
+                    }
+                    return myProxy[key_1][prop];
+                }, ['parent', 'key'], function (target, prop, value) {
+                    if (prop in target || typeof prop !== 'string') {
+                        return target[prop];
+                    }
+                    var myRegion = Region.Get(regionId_1), myProxy = myRegion.GetRootProxy().GetNativeProxy();
+                    if ('__InlineJS_Target__' in myProxy[key_1] && prop in myProxy[key_1]['__InlineJS_Target__']) {
+                        return (myProxy[key_1][prop] = value);
+                    }
+                    if (prop === 'parent' || prop === 'key') {
+                        return false;
+                    }
+                    return (myProxy[key_1][prop] = value);
+                }));
+            }
+            else {
+                target = proxy['__InlineJS_Target__'];
+                region.AddLocal(element, '$scope', proxy);
+            }
+            addedKeys.forEach(function (key) {
+                target[key] = data[key];
+            });
             if (data.$init) {
                 RegionMap.scopeRegionIds.Push(region.GetId());
                 region.GetState().PushElementContext(element);
                 try {
-                    proxy.$init(region);
+                    data.$init.call(proxy, region);
                 }
                 catch (err) { }
                 region.GetState().PopElementContext();
@@ -2206,7 +2275,7 @@ export var InlineJS;
             }
             Processor.All(region, element);
         };
-        CoreDirectiveHandlers.CreateProxy = function (getter, contains) {
+        CoreDirectiveHandlers.CreateProxy = function (getter, contains, setter) {
             var handler = {
                 get: function (target, prop) {
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
@@ -2215,7 +2284,7 @@ export var InlineJS;
                     return getter(prop.toString());
                 },
                 set: function (target, prop, value) {
-                    return false;
+                    return (setter && setter(target, prop, value));
                 },
                 deleteProperty: function (target, prop) {
                     return false;
