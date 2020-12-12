@@ -212,6 +212,9 @@ var InlineJS;
                         return function (callback) { return scope.callbacks['isValid'].push(callback); };
                     }
                 }, __spreadArrays(Object.keys(info.value), ['reset', 'onDirtyChange', 'onTypingChange', 'onValidChange']));
+                region.AddElement(element).uninitCallbacks.push(function () {
+                    info = null;
+                });
             }
             var finalize = function () {
                 if (info.doneInit) {
@@ -912,7 +915,7 @@ var InlineJS;
                     info.showCursor = true;
                 }
             });
-            var lineIndex = -1, index = 0, line, isDeleting = false, span = document.createElement('span'), duration, startTimestamp = null;
+            var lineIndex = -1, index = 0, line, isDeleting = false, span = document.createElement('span'), duration, startTimestamp = null, stopped = false;
             var pass = function (timestamp) {
                 if (lineIndex == -1 || line.length <= index) {
                     index = 0;
@@ -947,7 +950,9 @@ var InlineJS;
                     span.innerText = line.substring(0, index);
                     duration = info.delay;
                 }
-                requestAnimationFrame(pass);
+                if (!stopped) {
+                    requestAnimationFrame(pass);
+                }
             };
             span.classList.add('typewriter-text');
             if (info.showCursor) {
@@ -955,6 +960,9 @@ var InlineJS;
             }
             element.appendChild(span);
             requestAnimationFrame(pass);
+            region.AddElement(element).uninitCallbacks.push(function () {
+                stopped = true;
+            });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Router = function (region, element, directive) {
@@ -1213,7 +1221,7 @@ var InlineJS;
                 info.mountElement = document.createElement('div');
                 innerElement.parentElement.insertBefore(info.mountElement, innerElement);
                 info.mountElement.classList.add('router-mount');
-                info.mount = function (url) {
+                var mount = function (url) {
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, function () {
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
@@ -1227,6 +1235,12 @@ var InlineJS;
                         }));
                     });
                 };
+                info.mount = mount;
+                innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
+                    if (info.mount === mount) {
+                        info.mount = null;
+                    }
+                });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('routerRegister', function (innerRegion, innerElement, innerDirective) {

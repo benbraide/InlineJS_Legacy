@@ -2309,6 +2309,9 @@ namespace InlineJS{
                 stoppable = true;
                 if (options.window){
                     window.addEventListener(event, onEvent);
+                    region.AddElement(element).uninitCallbacks.push(() => {
+                        window.removeEventListener(event, onEvent);
+                    });
                 }
                 else{
                     (options.document ? document : element).addEventListener(event, onEvent);

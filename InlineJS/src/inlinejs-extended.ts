@@ -345,6 +345,10 @@ namespace InlineJS{
                         return (callback: (state: boolean) => boolean) => (scope.callbacks['isValid'] as Array<(value?: any) => boolean>).push(callback);
                     }
                 }, [...Object.keys(info.value), 'reset', 'onDirtyChange','onTypingChange','onValidChange']);
+
+                region.AddElement(element).uninitCallbacks.push(() => {
+                    info = null;
+                });
             }
 
             let finalize = () => {
@@ -1150,7 +1154,7 @@ namespace InlineJS{
                 }
             });
             
-            let lineIndex = -1, index = 0, line: string, isDeleting = false, span = document.createElement('span'), duration: number, startTimestamp: DOMHighResTimeStamp = null;
+            let lineIndex = -1, index = 0, line: string, isDeleting = false, span = document.createElement('span'), duration: number, startTimestamp: DOMHighResTimeStamp = null, stopped = false;
             let pass = (timestamp: DOMHighResTimeStamp) => {
                 if (lineIndex == -1 || line.length <= index){
                     index = 0;
@@ -1191,7 +1195,9 @@ namespace InlineJS{
                     duration = info.delay;
                 }
 
-                requestAnimationFrame(pass);
+                if (!stopped){
+                    requestAnimationFrame(pass);
+                }
             };
 
             span.classList.add('typewriter-text');
@@ -1201,6 +1207,10 @@ namespace InlineJS{
             
             element.appendChild(span);
             requestAnimationFrame(pass);
+
+            region.AddElement(element).uninitCallbacks.push(() => {
+                stopped = true;
+            });
             
             return DirectiveHandlerReturn.Handled;
         }
@@ -1497,7 +1507,7 @@ namespace InlineJS{
                 innerElement.parentElement.insertBefore(info.mountElement, innerElement);
                 info.mountElement.classList.add('router-mount');
 
-                info.mount = (url) => {
+                let mount = (url: string) => {
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, () => {
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
@@ -1511,6 +1521,13 @@ namespace InlineJS{
                         }));
                     });
                 };
+
+                info.mount = mount;
+                innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
+                    if (info.mount === mount){
+                        info.mount = null;
+                    }
+                });
 
                 return DirectiveHandlerReturn.Handled;
             });
@@ -2877,7 +2894,7 @@ namespace InlineJS{
                         element.dispatchEvent(new CustomEvent('form.success', {
                             detail: data
                         }));
-                        
+
                         if (options.reload){
                             let router = Region.GetGlobalValue(regionId, '$router');
                             if (router){
