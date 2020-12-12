@@ -2199,13 +2199,15 @@ namespace InlineJS{
             };
 
             let redirect = (loggedIn: boolean) => {
-                let router = getRouter();
-                if (router && loggedIn){
-                    router.goto((redirectPage || '/'), redirectQuery);
-                }
-                else if (router){
-                    router.goto('/');
-                }
+                Region.Get(regionId).AddNextTickCallback(() => {
+                    let router = getRouter();
+                    if (router && loggedIn){
+                        router.goto((redirectPage || '/'), redirectQuery);
+                    }
+                    else if (router){
+                        router.goto('/');
+                    }
+                });
             };
 
             let rawHasRole = (name: string) => {
@@ -2233,6 +2235,16 @@ namespace InlineJS{
                 },
                 getEmail: () => {
                     return methods.getField('email');
+                },
+                refresh: () => {
+                    fetch(userUrl, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                    }).then(response => response.json()).then((data) => {
+                        isInit = true;
+                        alertAll();
+                        userData = (data || null);
+                    });
                 },
                 desync: (logout: boolean, callback?: (data: any, err?: any) => boolean) => {
                     if (!userData){
@@ -2762,8 +2774,20 @@ namespace InlineJS{
             if (!info.action){
                 return DirectiveHandlerReturn.Nil;
             }
+
+            let options = {
+                confirm: false,
+                reload: false,
+                files: false,
+            };
+
+            Object.keys(options).forEach((key) => {
+                if (directive.arg.options.indexOf(key) != -1){
+                    options[key] = true;
+                }
+            });
             
-            let submitButtons = new Array<HTMLElement>(), confirm = (directive.arg.options.indexOf('confirm') != -1), reload = (directive.arg.options.indexOf('reload') != -1);
+            let submitButtons = new Array<HTMLElement>();
             region.AddElement(element, true).locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                 if (prop === 'addSubmitButton'){
                     return (button: HTMLElement) => {
@@ -2797,8 +2821,9 @@ namespace InlineJS{
                 });
             };
 
+            options.files = (options.files || !! element.querySelector('input[type="file"]'));
             let submit = (checkConfirm = true) => {
-                if (checkConfirm && confirm){
+                if (checkConfirm && options.confirm){
                     let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
                     if (reporter && reporter.confirm){//Confirm before proceeding
                         reporter.confirm((info.confirmInfo || 'Please confirm your action.'), () => submit(false));
@@ -2806,11 +2831,39 @@ namespace InlineJS{
                     }
                 }
                 
+                let body: any = null;
+                if (options.files){
+                    body = new FormData();
+                    for (let i = 0; i < element.elements.length; ++i){
+                        let key = element.elements[i].getAttribute('name');
+                        if (!key){
+                            continue;
+                        }
+
+                        if (element.elements[i] instanceof HTMLInputElement && (element.elements[i] as HTMLInputElement).type === 'file'){
+                            if (element.elements[i].getAttribute('multiple')){
+                                for (let j = 0; j < (element.elements[i] as HTMLInputElement).files.length; ++j){
+                                    body.append(key, (element.elements[i] as HTMLInputElement).files[j]);
+                                }
+                            }
+                            else if (0 < (element.elements[i] as HTMLInputElement).files.length){
+                                body.append(key, (element.elements[i] as HTMLInputElement).files[0]);
+                            }
+                        }
+                        else if ('value' in element.elements[i]){
+                            body.append(key, (element.elements[i] as any).value);
+                        }
+                    }
+                }
+                else{//No files embedded
+                    body = new FormData(element);
+                }
+                
                 setDisabledState(true);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
-                    body: new FormData(element),
+                    body: body,
                 }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
                     setDisabledState(false);
                     if (info.errorBag && 'failed' in data){
@@ -2821,8 +2874,11 @@ namespace InlineJS{
                     }
                     
                     if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))){
-                        element.dispatchEvent(new CustomEvent('form.success'));
-                        if (reload){
+                        element.dispatchEvent(new CustomEvent('form.success', {
+                            detail: data
+                        }));
+                        
+                        if (options.reload){
                             let router = Region.GetGlobalValue(regionId, '$router');
                             if (router){
                                 router.reload();

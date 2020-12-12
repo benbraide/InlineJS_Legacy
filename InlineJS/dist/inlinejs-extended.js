@@ -1786,13 +1786,15 @@ var InlineJS;
                 return InlineJS.Region.GetGlobalValue(regionId, '$router');
             };
             var redirect = function (loggedIn) {
-                var router = getRouter();
-                if (router && loggedIn) {
-                    router.goto((redirectPage || '/'), redirectQuery);
-                }
-                else if (router) {
-                    router.goto('/');
-                }
+                InlineJS.Region.Get(regionId).AddNextTickCallback(function () {
+                    var router = getRouter();
+                    if (router && loggedIn) {
+                        router.goto((redirectPage || '/'), redirectQuery);
+                    }
+                    else if (router) {
+                        router.goto('/');
+                    }
+                });
             };
             var rawHasRole = function (name) {
                 return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
@@ -1818,6 +1820,16 @@ var InlineJS;
                 },
                 getEmail: function () {
                     return methods.getField('email');
+                },
+                refresh: function () {
+                    fetch(userUrl, {
+                        method: 'GET',
+                        credentials: 'same-origin'
+                    }).then(function (response) { return response.json(); }).then(function (data) {
+                        isInit = true;
+                        alertAll();
+                        userData = (data || null);
+                    });
                 },
                 desync: function (logout, callback) {
                     if (!userData) {
@@ -2260,7 +2272,17 @@ var InlineJS;
             if (!info.action) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var submitButtons = new Array(), confirm = (directive.arg.options.indexOf('confirm') != -1), reload = (directive.arg.options.indexOf('reload') != -1);
+            var options = {
+                confirm: false,
+                reload: false,
+                files: false
+            };
+            Object.keys(options).forEach(function (key) {
+                if (directive.arg.options.indexOf(key) != -1) {
+                    options[key] = true;
+                }
+            });
+            var submitButtons = new Array();
             region.AddElement(element, true).locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'addSubmitButton') {
                     return function (button) {
@@ -2289,20 +2311,47 @@ var InlineJS;
                     }
                 });
             };
+            options.files = (options.files || !!element.querySelector('input[type="file"]'));
             var submit = function (checkConfirm) {
                 if (checkConfirm === void 0) { checkConfirm = true; }
-                if (checkConfirm && confirm) {
+                if (checkConfirm && options.confirm) {
                     var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
                     if (reporter && reporter.confirm) { //Confirm before proceeding
                         reporter.confirm((info.confirmInfo || 'Please confirm your action.'), function () { return submit(false); });
                         return;
                     }
                 }
+                var body = null;
+                if (options.files) {
+                    body = new FormData();
+                    for (var i = 0; i < element.elements.length; ++i) {
+                        var key = element.elements[i].getAttribute('name');
+                        if (!key) {
+                            continue;
+                        }
+                        if (element.elements[i] instanceof HTMLInputElement && element.elements[i].type === 'file') {
+                            if (element.elements[i].getAttribute('multiple')) {
+                                for (var j = 0; j < element.elements[i].files.length; ++j) {
+                                    body.append(key, element.elements[i].files[j]);
+                                }
+                            }
+                            else if (0 < element.elements[i].files.length) {
+                                body.append(key, element.elements[i].files[0]);
+                            }
+                        }
+                        else if ('value' in element.elements[i]) {
+                            body.append(key, element.elements[i].value);
+                        }
+                    }
+                }
+                else { //No files embedded
+                    body = new FormData(element);
+                }
                 setDisabledState(true);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
-                    body: new FormData(element)
+                    body: body
                 }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
                     setDisabledState(false);
                     if (info.errorBag && 'failed' in data) {
@@ -2312,8 +2361,10 @@ var InlineJS;
                         }
                     }
                     if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))) {
-                        element.dispatchEvent(new CustomEvent('form.success'));
-                        if (reload) {
+                        element.dispatchEvent(new CustomEvent('form.success', {
+                            detail: data
+                        }));
+                        if (options.reload) {
                             var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
                             if (router) {
                                 router.reload();
