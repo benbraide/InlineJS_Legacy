@@ -1799,16 +1799,27 @@ var InlineJS;
             var getRouter = function () {
                 return InlineJS.Region.GetGlobalValue(regionId, '$router');
             };
-            var redirect = function (loggedIn) {
-                InlineJS.Region.Get(regionId).AddNextTickCallback(function () {
-                    var router = getRouter();
-                    if (router && loggedIn) {
-                        router.goto((redirectPage || '/'), redirectQuery);
+            var redirect = function (loggedIn, refresh) {
+                if (refresh === void 0) { refresh = false; }
+                if (refresh) {
+                    if (loggedIn) {
+                        window.location.href = "" + (redirectPage || '/') + (redirectQuery ? ('?' + redirectQuery) : '');
                     }
-                    else if (router) {
-                        router.goto('/');
+                    else {
+                        window.location.href = (redirectPage || '/');
                     }
-                });
+                }
+                else {
+                    InlineJS.Region.Get(regionId).AddNextTickCallback(function () {
+                        var router = getRouter();
+                        if (router && loggedIn) {
+                            router.goto((redirectPage || '/'), redirectQuery);
+                        }
+                        else if (router) {
+                            router.goto('/');
+                        }
+                    });
+                }
             };
             var rawHasRole = function (name) {
                 return (userData && Array.isArray(userData.roles) && userData.roles.indexOf(name) != -1);
@@ -2015,13 +2026,26 @@ var InlineJS;
                 if (!(innerElement instanceof HTMLFormElement)) {
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
-                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url = null;
                 if (!InlineJS.Region.IsObject(data)) {
                     data = {};
                 }
                 innerElement.addEventListener('submit', function (e) {
                     e.preventDefault();
+                    url = window.location.href;
                     methods.register(innerElement, data.errorBag, data.callback);
+                });
+                var redirectWatch = function (e) {
+                    setTimeout(function () {
+                        if (url && url === window.location.href) {
+                            redirect(e.detail, true);
+                        }
+                        url = null;
+                    }, 3000);
+                };
+                window.addEventListener('auth.authentication', redirectWatch);
+                innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
+                    window.removeEventListener('auth.authentication', redirectWatch);
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
@@ -2029,10 +2053,23 @@ var InlineJS;
                 if (!(innerElement instanceof HTMLFormElement)) {
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
-                var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url = null;
                 innerElement.addEventListener('submit', function (e) {
                     e.preventDefault();
+                    url = window.location.href;
                     methods.login(innerElement, callback);
+                });
+                var redirectWatch = function (e) {
+                    setTimeout(function () {
+                        if (url && url === window.location.href) {
+                            redirect(e.detail, true);
+                        }
+                        url = null;
+                    }, 3000);
+                };
+                window.addEventListener('auth.authentication', redirectWatch);
+                innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
+                    window.removeEventListener('auth.authentication', redirectWatch);
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });

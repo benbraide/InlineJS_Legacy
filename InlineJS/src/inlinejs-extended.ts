@@ -2215,16 +2215,26 @@ namespace InlineJS{
                 return Region.GetGlobalValue(regionId, '$router');
             };
 
-            let redirect = (loggedIn: boolean) => {
-                Region.Get(regionId).AddNextTickCallback(() => {
-                    let router = getRouter();
-                    if (router && loggedIn){
-                        router.goto((redirectPage || '/'), redirectQuery);
+            let redirect = (loggedIn: boolean, refresh = false) => {
+                if (refresh){
+                    if (loggedIn){
+                        window.location.href = `${(redirectPage || '/')}${redirectQuery ? ('?' + redirectQuery) : ''}`;
                     }
-                    else if (router){
-                        router.goto('/');
+                    else{
+                        window.location.href = (redirectPage || '/');
                     }
-                });
+                }
+                else{
+                    Region.Get(regionId).AddNextTickCallback(() => {
+                        let router = getRouter();
+                        if (router && loggedIn){
+                            router.goto((redirectPage || '/'), redirectQuery);
+                        }
+                        else if (router){
+                            router.goto('/');
+                        }
+                    });
+                }
             };
 
             let rawHasRole = (name: string) => {
@@ -2456,14 +2466,29 @@ namespace InlineJS{
                     return DirectiveHandlerReturn.Nil;    
                 }
                 
-                let data = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                let data = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url: string = null;
                 if (!Region.IsObject(data)){
                     data = {};
                 }
                 
                 innerElement.addEventListener('submit', (e) => {
                     e.preventDefault();
+                    url = window.location.href;
                     methods.register(innerElement, data.errorBag, data.callback);
+                });
+
+                let redirectWatch = (e: Event) => {
+                    setTimeout(() => {
+                        if (url && url === window.location.href){
+                            redirect((e as CustomEvent).detail, true);
+                        }
+                        url = null;
+                    }, 3000);
+                };
+
+                window.addEventListener('auth.authentication', redirectWatch);
+                innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
+                    window.removeEventListener('auth.authentication', redirectWatch);
                 });
 
                 return DirectiveHandlerReturn.Handled;
@@ -2474,10 +2499,25 @@ namespace InlineJS{
                     return DirectiveHandlerReturn.Nil;    
                 }
                 
-                let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url: string = null;
                 innerElement.addEventListener('submit', (e) => {
                     e.preventDefault();
+                    url = window.location.href;
                     methods.login(innerElement, callback);
+                });
+
+                let redirectWatch = (e: Event) => {
+                    setTimeout(() => {
+                        if (url && url === window.location.href){
+                            redirect((e as CustomEvent).detail, true);
+                        }
+                        url = null;
+                    }, 3000);
+                };
+
+                window.addEventListener('auth.authentication', redirectWatch);
+                innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
+                    window.removeEventListener('auth.authentication', redirectWatch);
                 });
 
                 return DirectiveHandlerReturn.Handled;
