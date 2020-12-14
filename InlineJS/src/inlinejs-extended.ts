@@ -1457,6 +1457,10 @@ namespace InlineJS{
 
             let parseQuery = (query: string) => {
                 let params: Record<string, string> = {};
+                if (query && query.startsWith('?')){
+                    query = query.substr(1);
+                }
+                
                 if (!query){
                     return params;
                 }
@@ -2466,29 +2470,28 @@ namespace InlineJS{
                     return DirectiveHandlerReturn.Nil;    
                 }
                 
-                let data = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url: string = null;
+                let data = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 if (!Region.IsObject(data)){
                     data = {};
                 }
                 
                 innerElement.addEventListener('submit', (e) => {
                     e.preventDefault();
-                    url = window.location.href;
                     methods.register(innerElement, data.errorBag, data.callback);
                 });
 
                 let redirectWatch = (e: Event) => {
                     setTimeout(() => {
-                        if (url && url === window.location.href){
+                        if (redirectWatch){
                             redirect((e as CustomEvent).detail, true);
                         }
-                        url = null;
                     }, 3000);
                 };
 
                 window.addEventListener('auth.authentication', redirectWatch);
                 innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
                     window.removeEventListener('auth.authentication', redirectWatch);
+                    redirectWatch = null;
                 });
 
                 return DirectiveHandlerReturn.Handled;
@@ -2499,25 +2502,24 @@ namespace InlineJS{
                     return DirectiveHandlerReturn.Nil;    
                 }
                 
-                let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url: string = null;
+                let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 innerElement.addEventListener('submit', (e) => {
                     e.preventDefault();
-                    url = window.location.href;
                     methods.login(innerElement, callback);
                 });
 
                 let redirectWatch = (e: Event) => {
                     setTimeout(() => {
-                        if (url && url === window.location.href){
+                        if (redirectWatch){
                             redirect((e as CustomEvent).detail, true);
                         }
-                        url = null;
                     }, 3000);
                 };
 
                 window.addEventListener('auth.authentication', redirectWatch);
                 innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
                     window.removeEventListener('auth.authentication', redirectWatch);
+                    redirectWatch = null;
                 });
 
                 return DirectiveHandlerReturn.Handled;
@@ -3071,6 +3073,53 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Counter(region: Region, element: HTMLElement, directive: Directive){
+            let value = CoreDirectiveHandlers.Evaluate(region, element, directive.value), regionId = region.GetId();
+            if (!Number.isInteger(value)){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let isDown = (directive.arg.key === 'down'), stop = false;
+            if (isDown && value <= 0){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let counter = () => {
+                if (stop || (isDown && value <= 0)){
+                    return;
+                }
+
+                if (isDown){
+                    --value;
+                    CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, `${directive.value} -= 1`);
+                }
+                else{
+                    CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, `${directive.value} += 1`);
+                }
+
+                setTimeout(counter, 1000);
+            };
+
+            region.AddElement(element, true).locals['$counter'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop === 'stop'){
+                    return () => {
+                        stop = true;
+                    };
+                }
+
+                if (prop === 'resume'){
+                    return () => {
+                        if (stop){
+                            stop = false;
+                            setTimeout(counter, 1000);
+                        }
+                    };
+                }
+            }, ['stop', 'resume']);
+
+            setTimeout(counter, 1000);
+        }
+
         public static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string){
             let options = CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (Region.IsObject(options)){
@@ -3132,13 +3181,8 @@ namespace InlineJS{
             let removeAll = (force: boolean = false) => {
                 if (force || !append){
                     while (element.firstElementChild){
-                        let child = (element.firstElementChild as HTMLElement);
-                        let region = Region.Infer(child);
-                        
+                        Region.RemoveElementStatic(element.firstElementChild as HTMLElement);
                         element.removeChild(element.firstElementChild);
-                        if (region){
-                            region.RemoveElement(child as HTMLElement);
-                        }
                     }
                 }
             };
@@ -3326,6 +3370,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
             DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
             DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
+            DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
 
             let buildGlobal = (name: string) => {
                 Region.AddGlobal(`$$${name}`, (regionId: string) => {
@@ -3343,6 +3388,7 @@ namespace InlineJS{
             buildGlobal('intersection');
             buildGlobal('db');
             buildGlobal('form');
+            buildGlobal('counter');
         }
     }
 

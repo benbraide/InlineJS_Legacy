@@ -118,6 +118,7 @@ declare namespace InlineJS {
         static Overlay(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Form(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Modal(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Counter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
         static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean): boolean;
         static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void): void;

@@ -158,6 +158,7 @@ declare namespace InlineJS {
         static GetCurrent(id: string): Region;
         static Infer(element: HTMLElement | string): Region;
         static AddComponent(region: Region, element: HTMLElement, key: string): boolean;
+        static RemoveElementStatic(element: HTMLElement, preserve?: boolean): void;
         static Find(key: string, getNativeProxy: false): Region;
         static Find(key: string, getNativeProxy: true): any;
         static AddGlobal(key: string, callback: GlobalCallbackType, accessHandler?: (regionId?: string) => boolean): void;

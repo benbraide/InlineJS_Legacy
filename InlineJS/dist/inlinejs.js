@@ -235,6 +235,7 @@ var InlineJS;
                         _this.state_.ReportError(err, "InlineJs.Region<" + _this.id_ + ">.$uninit");
                     }
                 });
+                scope.uninitCallbacks = [];
                 if (!preserve && !scope.preserve) {
                     scope.changeRefs.forEach(function (info) {
                         var region = Region.Get(info.regionId);
@@ -242,8 +243,10 @@ var InlineJS;
                             region.changes_.Unsubscribe(info.subscriptionId);
                         }
                     });
+                    scope.changeRefs = [];
                     scope.element.removeAttribute(Region.GetElementKeyName());
                     Object.keys(scope.intersectionObservers).forEach(function (key) { return scope.intersectionObservers[key].unobserve(scope.element); });
+                    scope.intersectionObservers = {};
                 }
                 else {
                     scope.preserve = !(preserve = true);
@@ -466,6 +469,16 @@ var InlineJS;
                 Region.components_[key] = region.GetId();
             }
             return true;
+        };
+        Region.RemoveElementStatic = function (element, preserve) {
+            if (preserve === void 0) { preserve = false; }
+            var region = Region.Infer(element);
+            if (!region) {
+                Array.from(element.children).forEach(function (child) { return Region.RemoveElementStatic(child); });
+            }
+            else {
+                region.RemoveElement(element, preserve);
+            }
         };
         Region.Find = function (key, getNativeProxy) {
             if (!key || !(key in Region.components_)) {

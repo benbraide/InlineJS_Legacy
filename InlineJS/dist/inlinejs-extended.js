@@ -1181,6 +1181,9 @@ var InlineJS;
             };
             var parseQuery = function (query) {
                 var params = {};
+                if (query && query.startsWith('?')) {
+                    query = query.substr(1);
+                }
                 if (!query) {
                     return params;
                 }
@@ -2026,26 +2029,25 @@ var InlineJS;
                 if (!(innerElement instanceof HTMLFormElement)) {
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
-                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url = null;
+                var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 if (!InlineJS.Region.IsObject(data)) {
                     data = {};
                 }
                 innerElement.addEventListener('submit', function (e) {
                     e.preventDefault();
-                    url = window.location.href;
                     methods.register(innerElement, data.errorBag, data.callback);
                 });
                 var redirectWatch = function (e) {
                     setTimeout(function () {
-                        if (url && url === window.location.href) {
+                        if (redirectWatch) {
                             redirect(e.detail, true);
                         }
-                        url = null;
                     }, 3000);
                 };
                 window.addEventListener('auth.authentication', redirectWatch);
                 innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
                     window.removeEventListener('auth.authentication', redirectWatch);
+                    redirectWatch = null;
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
@@ -2053,23 +2055,22 @@ var InlineJS;
                 if (!(innerElement instanceof HTMLFormElement)) {
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
-                var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), url = null;
+                var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 innerElement.addEventListener('submit', function (e) {
                     e.preventDefault();
-                    url = window.location.href;
                     methods.login(innerElement, callback);
                 });
                 var redirectWatch = function (e) {
                     setTimeout(function () {
-                        if (url && url === window.location.href) {
+                        if (redirectWatch) {
                             redirect(e.detail, true);
                         }
-                        url = null;
                     }, 3000);
                 };
                 window.addEventListener('auth.authentication', redirectWatch);
                 innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
                     window.removeEventListener('auth.authentication', redirectWatch);
+                    redirectWatch = null;
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
@@ -2525,6 +2526,45 @@ var InlineJS;
             });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Counter = function (region, element, directive) {
+            var value = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), regionId = region.GetId();
+            if (!Number.isInteger(value)) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var isDown = (directive.arg.key === 'down'), stop = false;
+            if (isDown && value <= 0) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var counter = function () {
+                if (stop || (isDown && value <= 0)) {
+                    return;
+                }
+                if (isDown) {
+                    --value;
+                    InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value + " -= 1");
+                }
+                else {
+                    InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value + " += 1");
+                }
+                setTimeout(counter, 1000);
+            };
+            region.AddElement(element, true).locals['$counter'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'stop') {
+                    return function () {
+                        stop = true;
+                    };
+                }
+                if (prop === 'resume') {
+                    return function () {
+                        if (stop) {
+                            stop = false;
+                            setTimeout(counter, 1000);
+                        }
+                    };
+                }
+            }, ['stop', 'resume']);
+            setTimeout(counter, 1000);
+        };
         ExtendedDirectiveHandlers.GetIntersectionOptions = function (region, element, expression) {
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, expression);
             if (InlineJS.Region.IsObject(options)) {
@@ -2577,12 +2617,8 @@ var InlineJS;
                 if (force === void 0) { force = false; }
                 if (force || !append) {
                     while (element.firstElementChild) {
-                        var child = element.firstElementChild;
-                        var region = InlineJS.Region.Infer(child);
+                        InlineJS.Region.RemoveElementStatic(element.firstElementChild);
                         element.removeChild(element.firstElementChild);
-                        if (region) {
-                            region.RemoveElement(child);
-                        }
                     }
                 }
             };
@@ -2746,6 +2782,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
             InlineJS.DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
             InlineJS.DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
+            InlineJS.DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
             var buildGlobal = function (name) {
                 InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
                     return function (target) {
@@ -2761,6 +2798,7 @@ var InlineJS;
             buildGlobal('intersection');
             buildGlobal('db');
             buildGlobal('form');
+            buildGlobal('counter');
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;
         ExtendedDirectiveHandlers.scopes_ = {};

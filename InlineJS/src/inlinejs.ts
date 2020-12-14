@@ -335,6 +335,7 @@ namespace InlineJS{
                     }
                 });
 
+                scope.uninitCallbacks = [];
                 if (!preserve && !scope.preserve){
                     scope.changeRefs.forEach((info) => {
                         let region = Region.Get(info.regionId);
@@ -343,8 +344,11 @@ namespace InlineJS{
                         }
                     });
     
+                    scope.changeRefs = [];
                     scope.element.removeAttribute(Region.GetElementKeyName());
+                    
                     Object.keys(scope.intersectionObservers).forEach(key => scope.intersectionObservers[key].unobserve(scope.element));
+                    scope.intersectionObservers = {};
                 }
                 else{
                     scope.preserve = !(preserve = true);
@@ -607,6 +611,16 @@ namespace InlineJS{
             }
             
             return true;
+        }
+
+        public static RemoveElementStatic(element: HTMLElement, preserve = false){
+            let region = Region.Infer(element);
+            if (!region){
+                Array.from(element.children).forEach(child => Region.RemoveElementStatic((child as HTMLElement)));
+            }
+            else{
+                region.RemoveElement(element, preserve);
+            }
         }
 
         public static Find(key: string, getNativeProxy: false): Region;
