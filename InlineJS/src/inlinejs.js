@@ -212,6 +212,7 @@ export var InlineJS;
                 trapInfoList: new Array(),
                 removed: false,
                 preserve: false,
+                preserveSubscriptions: false,
                 paused: false
             };
             element.setAttribute(Region.GetElementKeyName(), key);
@@ -234,15 +235,13 @@ export var InlineJS;
                         _this.state_.ReportError(err, "InlineJs.Region<" + _this.id_ + ">.$uninit");
                     }
                 });
-                if (!preserve && !scope.preserve) {
-                    scope.changeRefs.forEach(function (info) {
-                        var region = Region.Get(info.regionId);
-                        if (region) {
-                            region.changes_.Unsubscribe(info.subscriptionId);
-                        }
-                    });
+                scope.uninitCallbacks = [];
+                if (!preserve && !scope.preserve && !scope.preserveSubscriptions) {
+                    Region.UnsubscribeAll(scope.changeRefs);
+                    scope.changeRefs = [];
                     scope.element.removeAttribute(Region.GetElementKeyName());
                     Object.keys(scope.intersectionObservers).forEach(function (key) { return scope.intersectionObservers[key].unobserve(scope.element); });
+                    scope.intersectionObservers = {};
                 }
                 else {
                     scope.preserve = !(preserve = true);
@@ -466,6 +465,16 @@ export var InlineJS;
             }
             return true;
         };
+        Region.RemoveElementStatic = function (element, preserve) {
+            if (preserve === void 0) { preserve = false; }
+            var region = Region.Infer(element);
+            if (!region) {
+                Array.from(element.children).forEach(function (child) { return Region.RemoveElementStatic(child); });
+            }
+            else {
+                region.RemoveElement(element, preserve);
+            }
+        };
         Region.Find = function (key, getNativeProxy) {
             if (!key || !(key in Region.components_)) {
                 return null;
@@ -585,6 +594,14 @@ export var InlineJS;
         };
         Region.IsObject = function (target) {
             return (target !== null && typeof target === 'object' && (('__InlineJS_Target__' in target) || target.__proto__.constructor.name === 'Object'));
+        };
+        Region.UnsubscribeAll = function (list) {
+            (list || []).forEach(function (info) {
+                var region = Region.Get(info.regionId);
+                if (region) {
+                    region.changes_.Unsubscribe(info.subscriptionId);
+                }
+            });
         };
         Region.components_ = {};
         Region.globals_ = {};
@@ -1845,6 +1862,9 @@ export var InlineJS;
                 stoppable = true;
                 if (options.window) {
                     window.addEventListener(event, onEvent);
+                    region.AddElement(element).uninitCallbacks.push(function () {
+                        window.removeEventListener(event, onEvent);
+                    });
                 }
                 else {
                     (options.document ? document : element).addEventListener(event, onEvent);
@@ -2047,6 +2067,7 @@ export var InlineJS;
                     myScope.falseIfCondition.splice(myScope.falseIfCondition.indexOf(falseIfCondition), 1);
                 }
             };
+            scope.preserveSubscriptions = true;
             if (scope.falseIfCondition) {
                 scope.falseIfCondition.push(falseIfCondition);
             }
@@ -2218,7 +2239,7 @@ export var InlineJS;
                 }
                 return true;
             };
-            var handler = null;
+            var handler = null, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
             region.GetState().TrapGetAccess(function () {
                 if (element.parentElement) {
                     element.parentElement.removeChild(element);
@@ -2241,6 +2262,10 @@ export var InlineJS;
             }, function () {
                 return (handler && handler(Region.Get(info.regionId)));
             }, null);
+            info.parent.appendChild(tmpl);
+            region.AddElement(tmpl).uninitCallbacks.push(function () {
+                Region.UnsubscribeAll(subscriptions);
+            });
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {

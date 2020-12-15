@@ -213,6 +213,7 @@ var InlineJS;
                 trapInfoList: new Array(),
                 removed: false,
                 preserve: false,
+                preserveSubscriptions: false,
                 paused: false
             };
             element.setAttribute(Region.GetElementKeyName(), key);
@@ -236,13 +237,8 @@ var InlineJS;
                     }
                 });
                 scope.uninitCallbacks = [];
-                if (!preserve && !scope.preserve) {
-                    scope.changeRefs.forEach(function (info) {
-                        var region = Region.Get(info.regionId);
-                        if (region) {
-                            region.changes_.Unsubscribe(info.subscriptionId);
-                        }
-                    });
+                if (!preserve && !scope.preserve && !scope.preserveSubscriptions) {
+                    Region.UnsubscribeAll(scope.changeRefs);
                     scope.changeRefs = [];
                     scope.element.removeAttribute(Region.GetElementKeyName());
                     Object.keys(scope.intersectionObservers).forEach(function (key) { return scope.intersectionObservers[key].unobserve(scope.element); });
@@ -599,6 +595,14 @@ var InlineJS;
         };
         Region.IsObject = function (target) {
             return (target !== null && typeof target === 'object' && (('__InlineJS_Target__' in target) || target.__proto__.constructor.name === 'Object'));
+        };
+        Region.UnsubscribeAll = function (list) {
+            (list || []).forEach(function (info) {
+                var region = Region.Get(info.regionId);
+                if (region) {
+                    region.changes_.Unsubscribe(info.subscriptionId);
+                }
+            });
         };
         Region.components_ = {};
         Region.globals_ = {};
@@ -2064,6 +2068,7 @@ var InlineJS;
                     myScope.falseIfCondition.splice(myScope.falseIfCondition.indexOf(falseIfCondition), 1);
                 }
             };
+            scope.preserveSubscriptions = true;
             if (scope.falseIfCondition) {
                 scope.falseIfCondition.push(falseIfCondition);
             }
@@ -2235,7 +2240,7 @@ var InlineJS;
                 }
                 return true;
             };
-            var handler = null;
+            var handler = null, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
             region.GetState().TrapGetAccess(function () {
                 if (element.parentElement) {
                     element.parentElement.removeChild(element);
@@ -2258,6 +2263,10 @@ var InlineJS;
             }, function () {
                 return (handler && handler(Region.Get(info.regionId)));
             }, null);
+            info.parent.appendChild(tmpl);
+            region.AddElement(tmpl).uninitCallbacks.push(function () {
+                Region.UnsubscribeAll(subscriptions);
+            });
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {

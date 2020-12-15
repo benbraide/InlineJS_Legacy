@@ -38,6 +38,7 @@ declare namespace InlineJS {
         trapInfoList: Array<TrapInfo>;
         removed: boolean;
         preserve: boolean;
+        preserveSubscriptions: boolean;
         paused: boolean;
     }
     interface LocalHandler {
@@ -172,6 +173,7 @@ declare namespace InlineJS {
         static DeepCopy(target: any): any;
         static GetElementKeyName(): string;
         static IsObject(target: any): boolean;
+        static UnsubscribeAll(list: Array<ChangeRefInfo>): void;
     }
     interface Change {
         regionId: string;

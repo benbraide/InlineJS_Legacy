@@ -56,6 +56,7 @@ namespace InlineJS{
         trapInfoList: Array<TrapInfo>;
         removed: boolean;
         preserve: boolean;
+        preserveSubscriptions: boolean;
         paused: boolean;
     }
 
@@ -311,6 +312,7 @@ namespace InlineJS{
                 trapInfoList: new Array<TrapInfo>(),
                 removed: false,
                 preserve: false,
+                preserveSubscriptions: false,
                 paused: false
             };
 
@@ -336,13 +338,8 @@ namespace InlineJS{
                 });
 
                 scope.uninitCallbacks = [];
-                if (!preserve && !scope.preserve){
-                    scope.changeRefs.forEach((info) => {
-                        let region = Region.Get(info.regionId);
-                        if (region){
-                            region.changes_.Unsubscribe(info.subscriptionId);
-                        }
-                    });
+                if (!preserve && !scope.preserve && !scope.preserveSubscriptions){
+                    Region.UnsubscribeAll(scope.changeRefs);
     
                     scope.changeRefs = [];
                     scope.element.removeAttribute(Region.GetElementKeyName());
@@ -776,6 +773,15 @@ namespace InlineJS{
 
         public static IsObject(target: any){
             return (target !== null && typeof target === 'object' && (('__InlineJS_Target__' in target) || target.__proto__.constructor.name === 'Object'));
+        }
+
+        public static UnsubscribeAll(list: Array<ChangeRefInfo>){
+            (list || []).forEach((info) => {
+                let region = Region.Get(info.regionId);
+                if (region){
+                    region.changes_.Unsubscribe(info.subscriptionId);
+                }
+            });
         }
     }
 
@@ -2572,6 +2578,7 @@ namespace InlineJS{
                 }
             };
 
+            scope.preserveSubscriptions = true;
             if (scope.falseIfCondition){
                 scope.falseIfCondition.push(falseIfCondition);
             }
@@ -2773,7 +2780,7 @@ namespace InlineJS{
                 return true;
             };
             
-            let handler: (myRegion: Region, items?: Array<any>, shouldEvaluate?: boolean) => boolean = null;
+            let handler: (myRegion: Region, items?: Array<any>, shouldEvaluate?: boolean) => boolean = null, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
             region.GetState().TrapGetAccess(() => {
                 if (element.parentElement){
                     element.parentElement.removeChild(element);
@@ -2799,6 +2806,11 @@ namespace InlineJS{
             }, () => {
                 return (handler && handler(Region.Get(info.regionId)));
             }, null);
+
+            info.parent.appendChild(tmpl);
+            region.AddElement(tmpl).uninitCallbacks.push(() => {
+                Region.UnsubscribeAll(subscriptions);
+            });
             
             return DirectiveHandlerReturn.QuitAll;
         }
