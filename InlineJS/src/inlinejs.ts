@@ -1926,6 +1926,8 @@ namespace InlineJS{
     }
 
     export class CoreDirectiveHandlers{
+        public static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, callback?: () => boolean, animate?: boolean) => void) = null;
+        
         public static Noop(region: Region, element: HTMLElement, directive: Directive){
             return DirectiveHandlerReturn.Handled;
         }
@@ -2505,6 +2507,15 @@ namespace InlineJS{
                 return result;
             };
             
+            let animator = ((CoreDirectiveHandlers.PrepareAnimation && directive.arg.key === 'animate') ? CoreDirectiveHandlers.PrepareAnimation(element, directive.arg.options) : null);
+            if (!animator){
+                animator = (show: boolean, callback?: () => boolean, animate?: boolean) => {
+                    if (callback){
+                        callback();
+                    }
+                };
+            }
+            
             region.GetState().TrapGetAccess(() => {
                 let myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition){
@@ -2520,7 +2531,10 @@ namespace InlineJS{
                             scope.removed = false;
                         }
                         
-                        CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info);//Execute directives
+                        animator(true, () => {
+                            CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info);//Execute directives
+                            return true;
+                        });
                     }
                     else if (ifFirstEntry){//Execute directives
                         CoreDirectiveHandlers.InsertIfOrEach(region, element, info);
@@ -2528,17 +2542,21 @@ namespace InlineJS{
                 }
                 else if (isInserted){
                     isInserted = false;
-                    scope.preserve = true;//Don't remove scope
-                    [...scope.falseIfCondition].forEach(callback => callback());
+                    animator(false, () => {
+                        scope.preserve = true;//Don't remove scope
+                        [...scope.falseIfCondition].forEach(callback => callback());
 
-                    if (!ifFirstEntry){
-                        info.attributes.forEach(attr => element.removeAttribute(attr.name));
-                    }
+                        if (!ifFirstEntry){
+                            info.attributes.forEach(attr => element.removeAttribute(attr.name));
+                        }
 
-                    if (element.parentElement){
-                        element.parentElement.removeChild(element);
-                        scope.removed = true;
-                    }
+                        if (element.parentElement){
+                            element.parentElement.removeChild(element);
+                            scope.removed = true;
+                        }
+
+                        return true;
+                    }, !ifFirstEntry);
                 }
                 
                 ifFirstEntry = false;

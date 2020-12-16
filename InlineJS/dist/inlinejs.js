@@ -2008,6 +2008,14 @@ var InlineJS;
                 }
                 return result;
             };
+            var animator = ((CoreDirectiveHandlers.PrepareAnimation && directive.arg.key === 'animate') ? CoreDirectiveHandlers.PrepareAnimation(element, directive.arg.options) : null);
+            if (!animator) {
+                animator = function (show, callback, animate) {
+                    if (callback) {
+                        callback();
+                    }
+                };
+            }
             region.GetState().TrapGetAccess(function () {
                 var myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition) {
@@ -2021,7 +2029,10 @@ var InlineJS;
                             CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker); //Temporarily insert element into DOM
                             scope.removed = false;
                         }
-                        CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info); //Execute directives
+                        animator(true, function () {
+                            CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info); //Execute directives
+                            return true;
+                        });
                     }
                     else if (ifFirstEntry) { //Execute directives
                         CoreDirectiveHandlers.InsertIfOrEach(region, element, info);
@@ -2029,15 +2040,18 @@ var InlineJS;
                 }
                 else if (isInserted) {
                     isInserted = false;
-                    scope.preserve = true; //Don't remove scope
-                    __spreadArrays(scope.falseIfCondition).forEach(function (callback) { return callback(); });
-                    if (!ifFirstEntry) {
-                        info.attributes.forEach(function (attr) { return element.removeAttribute(attr.name); });
-                    }
-                    if (element.parentElement) {
-                        element.parentElement.removeChild(element);
-                        scope.removed = true;
-                    }
+                    animator(false, function () {
+                        scope.preserve = true; //Don't remove scope
+                        __spreadArrays(scope.falseIfCondition).forEach(function (callback) { return callback(); });
+                        if (!ifFirstEntry) {
+                            info.attributes.forEach(function (attr) { return element.removeAttribute(attr.name); });
+                        }
+                        if (element.parentElement) {
+                            element.parentElement.removeChild(element);
+                            scope.removed = true;
+                        }
+                        return true;
+                    }, !ifFirstEntry);
                 }
                 ifFirstEntry = false;
             }, true, null, function () { region.GetElementScope(element).preserve = false; });
@@ -2459,6 +2473,7 @@ var InlineJS;
             DirectiveHandlerManager.AddHandler('if', CoreDirectiveHandlers.If);
             DirectiveHandlerManager.AddHandler('each', CoreDirectiveHandlers.Each);
         };
+        CoreDirectiveHandlers.PrepareAnimation = null;
         return CoreDirectiveHandlers;
     }());
     InlineJS.CoreDirectiveHandlers = CoreDirectiveHandlers;

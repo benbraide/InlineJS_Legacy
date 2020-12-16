@@ -55,7 +55,7 @@
             <strong x-text="state"></strong>
         </div>
         <p x-uninit="$console.log('State was changed to false', $self)" x-if="state">State is true</p>
-        <p x-uninit="$console.log('State was changed to true', $self)" x-if="!state">State is false</p>
+        <p x-uninit="$console.log('State was changed to true', $self)" x-if:animate="!state">State is false</p>
     </div>
     <div x-data="{list: ['First', 'Second', 'Third', 'Last']}">
         <h2>Array Loop</h2>
@@ -184,7 +184,7 @@
     <div x-component="animate" x-data="{ show: false }">
         <h2 x-style:color="color" x-on:click="color = 'red'">Animate Component</h2>
         <label><input type="checkbox" x-model.out="show"> Toggle form</label>
-        <div style="padding: 10px 0; border: 1px solid gray;" x-animate:transition.faster="show" x-cloak="hide">
+        <div style="padding: 10px 0; border: 1px solid gray;" x-cloak="hide" x-animate.fast="show">
             <div>
                 <span>Name: </span>
                 <input type="text">

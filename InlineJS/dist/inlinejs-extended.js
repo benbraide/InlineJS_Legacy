@@ -8,6 +8,19 @@ var __spreadArrays = (this && this.__spreadArrays) || function () {
 };
 var InlineJS;
 (function (InlineJS) {
+    var OpacityAnimator = /** @class */ (function () {
+        function OpacityAnimator(element, css) {
+            this.delta_ = (Number.parseInt((css || getComputedStyle(element)).opacity) || 1);
+        }
+        OpacityAnimator.prototype.step = function (element, show, ellapsed, duration, ease) {
+            element.style.opacity = (show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration))).toString();
+        };
+        return OpacityAnimator;
+    }());
+    InlineJS.OpacityAnimator = OpacityAnimator;
+    InlineJS.Animators = {
+        opacity: function (element, css) { return new OpacityAnimator(element, css); }
+    };
     var ExtendedDirectiveHandlers = /** @class */ (function () {
         function ExtendedDirectiveHandlers() {
         }
@@ -535,323 +548,16 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Animate = function (region, element, directive) {
-            var displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table', 'none'];
-            var type = (directive.arg.key || 'transition'), showOnly = false, target = '', duration = 300, style = getComputedStyle(element);
-            var extractDuration = function (option) {
-                if (option === 'slower') {
-                    return 1000;
-                }
-                if (option === 'slow') {
-                    return 750;
-                }
-                if (option === 'normal') {
-                    return 500;
-                }
-                if (option === 'fast') {
-                    return 300;
-                }
-                if (option === 'faster') {
-                    return 200;
-                }
-                return InlineJS.CoreDirectiveHandlers.ExtractDuration(option, null);
-            };
-            var extractors = {
-                transition: function (options) {
-                    options.forEach(function (option) {
-                        if ((duration = extractDuration(option)) === null) {
-                            if (option === 'show') {
-                                showOnly = true;
-                            }
-                            else {
-                                target = option;
-                            }
-                        }
-                    });
-                },
-                unknown: function (options) {
-                    options.forEach(function (option) { return duration = extractDuration(option); });
-                }
-            };
-            var animationMap = {
-                backUp: {
-                    "in": 'backInUp',
-                    out: 'backOutUp'
-                },
-                backRight: {
-                    "in": 'backInRight',
-                    out: 'backOutRight'
-                },
-                backDown: {
-                    "in": 'backInDown',
-                    out: 'backOutDown'
-                },
-                backLeft: {
-                    "in": 'backInLeft',
-                    out: 'backOutLeft'
-                },
-                bounce: {
-                    "in": 'bounceIn',
-                    out: 'bounceOut'
-                },
-                bounceUp: {
-                    "in": 'bounceInUp',
-                    out: 'bounceOutUp'
-                },
-                bounceRight: {
-                    "in": 'bounceInRight',
-                    out: 'bounceOutRight'
-                },
-                bounceDown: {
-                    "in": 'bounceInDown',
-                    out: 'bounceOutDown'
-                },
-                bounceLeft: {
-                    "in": 'bounceInLeft',
-                    out: 'bounceOutLeft'
-                },
-                fade: {
-                    "in": 'fadeIn',
-                    out: 'fadeOut'
-                },
-                fadeUp: {
-                    "in": 'fadeInUp',
-                    out: 'fadeOutUp'
-                },
-                fadeRight: {
-                    "in": 'fadeInRight',
-                    out: 'fadeOutRight'
-                },
-                fadeDown: {
-                    "in": 'fadeInDown',
-                    out: 'fadeOutDown'
-                },
-                fadeLeft: {
-                    "in": 'fadeInLeft',
-                    out: 'fadeOutLeft'
-                },
-                zoom: {
-                    "in": 'zoomIn',
-                    out: 'zoomOut'
-                },
-                zoomUp: {
-                    "in": 'zoomInUp',
-                    out: 'zoomOutUp'
-                },
-                zoomRight: {
-                    "in": 'zoomInRight',
-                    out: 'zoomOutRight'
-                },
-                zoomDown: {
-                    "in": 'zoomInDown',
-                    out: 'zoomOutDown'
-                },
-                zoomLeft: {
-                    "in": 'zoomInLeft',
-                    out: 'zoomOutLeft'
-                },
-                slideUp: {
-                    "in": 'slideInUp',
-                    out: 'slideOutUp'
-                },
-                slideRight: {
-                    "in": 'slideInRight',
-                    out: 'slideOutRight'
-                },
-                slideDown: {
-                    "in": 'slideInDown',
-                    out: 'slideOutDown'
-                },
-                slideLeft: {
-                    "in": 'slideInLeft',
-                    out: 'slideOutLeft'
-                },
-                rotate: {
-                    "in": 'rotateIn',
-                    out: 'rotateOut'
-                },
-                rotateUpRight: {
-                    "in": 'rotateInUpRight',
-                    out: 'rotateOutUpRight'
-                },
-                rotateDownRight: {
-                    "in": 'rotateInDownRight',
-                    out: 'rotateOutDownRight'
-                },
-                rotateDownLeft: {
-                    "in": 'rotateInDownLeft',
-                    out: 'rotateOutDownLeft'
-                },
-                rotateUpLeft: {
-                    "in": 'rotateInUpLeft',
-                    out: 'rotateOutUpLeft'
-                },
-                roll: {
-                    "in": 'rollIn',
-                    out: 'rollOut'
-                },
-                flipX: {
-                    "in": 'flipInX',
-                    out: 'flipOutX'
-                },
-                flipY: {
-                    "in": 'flipInY',
-                    out: 'flipOutY'
-                },
-                lightSpeedLeft: {
-                    "in": 'lightSpeedInLeft',
-                    out: 'lightSpeedOutLeft'
-                },
-                lightSpeedRight: {
-                    "in": 'lightSpeedInRight',
-                    out: 'lightSpeedOutRight'
-                }
-            };
-            if (type in extractors) {
-                extractors[type](directive.arg.options);
-            }
-            else {
-                extractors.unknown(directive.arg.options);
-            }
-            var update;
-            var isShown = false, isTransitioning = false, checkpoint = 0;
-            var endTransition = function () {
-                if (!isTransitioning) {
-                    return;
-                }
-                isTransitioning = false;
-                if (!isShown) {
-                    if (showValue) {
-                        element.style.display = 'none';
-                    }
-                    element.dispatchEvent(new CustomEvent('animate.hide'));
-                }
-                else {
-                    element.dispatchEvent(new CustomEvent('animate.show'));
-                }
-            };
-            var preUpdate = function (show) {
-                isShown = show;
-                isTransitioning = true;
-                if (show) {
-                    if (showValue) {
-                        element.style.display = showValue;
-                    }
-                    element.dispatchEvent(new CustomEvent('animate.showing'));
-                }
-                else {
-                    element.dispatchEvent(new CustomEvent('animate.hiding'));
-                }
-                if (showOnly && !isShown) {
-                    return;
-                }
-                if (showValue) {
-                    var thisCheckpoint_1 = ++checkpoint;
-                    setTimeout(function () {
-                        if (thisCheckpoint_1 == checkpoint) {
-                            endTransition();
-                        }
-                    }, (duration || 300));
-                }
-            };
-            var setTransitions = function (list) {
-                var reduced = list.reduce(function (previous, current) { return (previous ? previous + ", " + current + " " + (duration || 300) + "ms ease" : current + " " + (duration || 300) + "ms ease"); }, '');
-                if (element.style.transition) {
-                    element.style.transition += ", " + reduced;
-                }
-                else {
-                    element.style.transition = reduced;
-                }
-                element.addEventListener('transitionend', function () {
-                    endTransition();
-                });
-            };
-            var showValue = null;
-            displays.forEach(function (item) {
-                if (directive.arg.options.indexOf(item) != -1) {
-                    showValue = item;
-                }
-            });
-            var height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth;
-            if (!showValue || showValue === 'none') {
-                showValue = (style.getPropertyValue('display') || 'block');
-            }
-            if (type === 'transition') {
-                var updateSize_1 = function (show) {
-                    element.style.padding = (show ? padding : '0');
-                    element.style.borderWidth = (show ? borderWidth : '0');
-                    if (target === 'height' || target !== 'width') {
-                        element.style.height = (show ? height : '0');
-                    }
-                    if (target === 'width' || target !== 'height') {
-                        element.style.width = (show ? width : '0');
-                    }
-                };
-                var updateOpacity_1 = function (show) {
-                    element.style.opacity = (show ? '1' : '0');
-                };
-                if (!target || target === 'all') {
-                    showValue = null;
-                    element.style.overflow = 'hidden';
-                    setTransitions(['height', 'width', 'padding', 'border', 'opacity']);
-                    update = function (show) {
-                        preUpdate(show);
-                        updateSize_1(show);
-                        updateOpacity_1(show);
-                        if (showOnly && !isShown) {
-                            endTransition();
-                        }
-                    };
-                }
-                else if (target === 'height' || target === 'width' || target === 'size') {
-                    showValue = null;
-                    element.style.overflow = 'hidden';
-                    setTransitions(['height', 'width', 'padding', 'border']);
-                    update = function (show) {
-                        preUpdate(show);
-                        updateSize_1(show);
-                        if (showOnly && !isShown) {
-                            endTransition();
-                        }
-                    };
-                }
-                else if (target === 'opacity') {
-                    setTransitions(['opacity']);
-                    update = function (show) {
-                        preUpdate(show);
-                        updateOpacity_1(show);
-                        if (showOnly && !isShown) {
-                            endTransition();
-                        }
-                    };
-                }
-            }
-            else if (type in animationMap) { //Use Animate.css
-                var inTarget_1 = "animate__" + animationMap[type]["in"], outTarget_1 = "animate__" + animationMap[type].out, lastTarget_1 = '';
-                update = function (show) {
-                    preUpdate(show);
-                    if (element.classList.contains(lastTarget_1)) {
-                        element.classList.remove(lastTarget_1);
-                    }
-                    element.classList.add('animate__animated');
-                    if (show) {
-                        element.classList.add(lastTarget_1 = inTarget_1);
-                    }
-                    else { //Hide
-                        element.classList.add(lastTarget_1 = outTarget_1);
-                    }
-                };
-                element.style.animationDuration = (duration || 300) + "ms";
-                element.addEventListener('animationend', function () {
-                    endTransition();
-                });
-            }
-            else {
+            var animator = ExtendedDirectiveHandlers.PrepareAnimation(element, directive.arg.options);
+            if (!animator) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var regionId = region.GetId();
             region.GetState().TrapGetAccess(function () {
-                update(!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value));
-            }, true, element);
+                animator(!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value), null, false);
+            }, function () {
+                animator(!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value));
+            }, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Typewriter = function (region, element, directive) {
@@ -2750,6 +2456,112 @@ var InlineJS;
             var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
             return (reporter && reporter.reportServerError && reporter.reportServerError(err));
         };
+        ExtendedDirectiveHandlers.InitAnimation = function (element, options, css, callback) {
+            var animators = {};
+            css = (css || getComputedStyle(element));
+            options.forEach(function (key) {
+                if (key in InlineJS.Animators) {
+                    animators[key] = InlineJS.Animators[key](element, css);
+                }
+                else if (callback) {
+                    callback(key);
+                }
+            });
+            return animators;
+        };
+        ExtendedDirectiveHandlers.PrepareAnimation = function (element, options) {
+            var displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table'];
+            var css = getComputedStyle(element), display = null;
+            var duration = null, animators = ExtendedDirectiveHandlers.InitAnimation(element, options, css, function (key) {
+                if (displays.includes(key)) {
+                    display = key;
+                    return;
+                }
+                switch (key) {
+                    case 'slower':
+                        duration = 1000;
+                        break;
+                    case 'slow':
+                        duration = 750;
+                        break;
+                    case 'normal':
+                        duration = 500;
+                        break;
+                    case 'fast':
+                        duration = 300;
+                        break;
+                    case 'faster':
+                        duration = 200;
+                        break;
+                    default:
+                        duration = InlineJS.CoreDirectiveHandlers.ExtractDuration(key, null);
+                        break;
+                }
+            });
+            duration = (duration || 300);
+            display = (display || css.display || 'block');
+            var keys = Object.keys(animators);
+            if (keys.length == 0) { //Default
+                animators['opacity'] = InlineJS.Animators.opacity(element, css);
+                keys.push('opacity');
+            }
+            var ease = function (time, start, value, duration) {
+                return ((time < duration) ? (-value * Math.cos(time / duration * (Math.PI / 2)) + value + start) : value);
+            };
+            var checkpoint = 0;
+            return function (show, callback, animate) {
+                if (animate === void 0) { animate = true; }
+                if (!animate) {
+                    if (show) {
+                        element.style.display = display;
+                        if (callback) {
+                            callback();
+                        }
+                    }
+                    else if (!callback || callback()) {
+                        element.style.display = 'none';
+                    }
+                    return;
+                }
+                var lastCheckpoint = ++checkpoint, startTimestamp = null, done = false;
+                var end = function () {
+                    done = true;
+                    keys.forEach(function (key) { return animators[key].step(element, show, duration, duration, ease); });
+                    element.dispatchEvent(new CustomEvent('animation.leaving'));
+                    if ((!callback || callback()) && !show) {
+                        element.style.display = 'none';
+                    }
+                    element.dispatchEvent(new CustomEvent('animation.leave'));
+                };
+                var pass = function (timestamp) {
+                    if (startTimestamp === null) {
+                        startTimestamp = timestamp;
+                    }
+                    if (done || lastCheckpoint != checkpoint) {
+                        return;
+                    }
+                    var ellapsed = (timestamp - startTimestamp);
+                    if (ellapsed < duration) {
+                        keys.forEach(function (key) { return animators[key].step(element, show, ellapsed, duration, ease); });
+                        requestAnimationFrame(pass);
+                    }
+                    else { //End
+                        end();
+                    }
+                };
+                setTimeout(function () {
+                    if (!done && lastCheckpoint == checkpoint) {
+                        end();
+                    }
+                }, (duration + 100));
+                requestAnimationFrame(pass);
+                element.dispatchEvent(new CustomEvent('animation.entering'));
+                if (show) {
+                    element.style.display = display;
+                }
+                element.dispatchEvent(new CustomEvent('animation.entered'));
+            };
+        };
         ExtendedDirectiveHandlers.AddScope = function (prefix, elementScope, callbacks) {
             var id = prefix + "<" + ++ExtendedDirectiveHandlers.scopeId_ + ">";
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -2761,6 +2573,7 @@ var InlineJS;
             return ExtendedDirectiveHandlers.scopes_[id];
         };
         ExtendedDirectiveHandlers.AddAll = function () {
+            InlineJS.CoreDirectiveHandlers.PrepareAnimation = ExtendedDirectiveHandlers.PrepareAnimation;
             InlineJS.DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             InlineJS.DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             InlineJS.DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);

@@ -56,6 +56,31 @@ namespace InlineJS{
         uid: number;
     }
 
+    export interface AnimatorRange{
+        from: number;
+        to: number;
+    }
+    
+    export interface Animator{
+        step: (element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
+    }
+
+    export class OpacityAnimator implements Animator{
+        private delta_: number;
+
+        public constructor(element: HTMLElement, css?: CSSStyleDeclaration){
+            this.delta_ = (Number.parseInt((css || getComputedStyle(element)).opacity) || 1);
+        }
+        
+        public step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            element.style.opacity = (show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration))).toString();
+        }
+    }
+
+    export let Animators = {
+        opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => new OpacityAnimator(element, css),
+    };
+
     export interface TypewriterInfo{
         list: Array<string>;
         delay: number;
@@ -738,350 +763,17 @@ namespace InlineJS{
         }
 
         public static Animate(region: Region, element: HTMLElement, directive: Directive){
-            const displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table', 'none'];
-            
-            let type = (directive.arg.key || 'transition'), showOnly = false, target = '', duration = 300, style = getComputedStyle(element);
-            let extractDuration = (option: string) => {
-                if (option === 'slower'){
-                    return 1000;
-                }
-
-                if (option === 'slow'){
-                    return 750;
-                }
-
-                if (option === 'normal'){
-                    return 500;
-                }
-
-                if (option === 'fast'){
-                    return 300;
-                }
-
-                if (option === 'faster'){
-                    return 200;
-                }
-
-                return CoreDirectiveHandlers.ExtractDuration(option, null);
-            };
-            
-            let extractors = {
-                transition: (options: Array<string>) => {
-                    options.forEach((option) => {
-                        if ((duration = extractDuration(option)) === null){
-                            if (option === 'show'){
-                                showOnly = true;
-                            }
-                            else{
-                                target = option;
-                            }
-                        }
-                    });
-                },
-                unknown: (options: Array<string>) => {
-                    options.forEach(option => duration = extractDuration(option));
-                }
-            };
-
-            let animationMap = {
-                backUp: {
-                    in: 'backInUp',
-                    out: 'backOutUp',
-                },
-                backRight: {
-                    in: 'backInRight',
-                    out: 'backOutRight',
-                },
-                backDown: {
-                    in: 'backInDown',
-                    out: 'backOutDown',
-                },
-                backLeft: {
-                    in: 'backInLeft',
-                    out: 'backOutLeft',
-                },
-                bounce: {
-                    in: 'bounceIn',
-                    out: 'bounceOut',
-                },
-                bounceUp: {
-                    in: 'bounceInUp',
-                    out: 'bounceOutUp',
-                },
-                bounceRight: {
-                    in: 'bounceInRight',
-                    out: 'bounceOutRight',
-                },
-                bounceDown: {
-                    in: 'bounceInDown',
-                    out: 'bounceOutDown',
-                },
-                bounceLeft: {
-                    in: 'bounceInLeft',
-                    out: 'bounceOutLeft',
-                },
-                fade: {
-                    in: 'fadeIn',
-                    out: 'fadeOut',
-                },
-                fadeUp: {
-                    in: 'fadeInUp',
-                    out: 'fadeOutUp',
-                },
-                fadeRight: {
-                    in: 'fadeInRight',
-                    out: 'fadeOutRight',
-                },
-                fadeDown: {
-                    in: 'fadeInDown',
-                    out: 'fadeOutDown',
-                },
-                fadeLeft: {
-                    in: 'fadeInLeft',
-                    out: 'fadeOutLeft',
-                },
-                zoom: {
-                    in: 'zoomIn',
-                    out: 'zoomOut',
-                },
-                zoomUp: {
-                    in: 'zoomInUp',
-                    out: 'zoomOutUp',
-                },
-                zoomRight: {
-                    in: 'zoomInRight',
-                    out: 'zoomOutRight',
-                },
-                zoomDown: {
-                    in: 'zoomInDown',
-                    out: 'zoomOutDown',
-                },
-                zoomLeft: {
-                    in: 'zoomInLeft',
-                    out: 'zoomOutLeft',
-                },
-                slideUp: {
-                    in: 'slideInUp',
-                    out: 'slideOutUp',
-                },
-                slideRight: {
-                    in: 'slideInRight',
-                    out: 'slideOutRight',
-                },
-                slideDown: {
-                    in: 'slideInDown',
-                    out: 'slideOutDown',
-                },
-                slideLeft: {
-                    in: 'slideInLeft',
-                    out: 'slideOutLeft',
-                },
-                rotate: {
-                    in: 'rotateIn',
-                    out: 'rotateOut',
-                },
-                rotateUpRight: {
-                    in: 'rotateInUpRight',
-                    out: 'rotateOutUpRight',
-                },
-                rotateDownRight: {
-                    in: 'rotateInDownRight',
-                    out: 'rotateOutDownRight',
-                },
-                rotateDownLeft: {
-                    in: 'rotateInDownLeft',
-                    out: 'rotateOutDownLeft',
-                },
-                rotateUpLeft: {
-                    in: 'rotateInUpLeft',
-                    out: 'rotateOutUpLeft',
-                },
-                roll: {
-                    in: 'rollIn',
-                    out: 'rollOut',
-                },
-                flipX: {
-                    in: 'flipInX',
-                    out: 'flipOutX',
-                },
-                flipY: {
-                    in: 'flipInY',
-                    out: 'flipOutY',
-                },
-                lightSpeedLeft: {
-                    in: 'lightSpeedInLeft',
-                    out: 'lightSpeedOutLeft',
-                },
-                lightSpeedRight: {
-                    in: 'lightSpeedInRight',
-                    out: 'lightSpeedOutRight',
-                },
-            };
-            
-            if (type in extractors){
-                extractors[type](directive.arg.options);
-            }
-            else{
-                extractors.unknown(directive.arg.options);
-            }
-
-            let update: (show: boolean) => void;
-            let isShown = false, isTransitioning = false, checkpoint = 0;
-            
-            let endTransition = () => {
-                if (!isTransitioning){
-                    return;
-                }
-                
-                isTransitioning = false;
-                if (!isShown){
-                    if (showValue){
-                        element.style.display = 'none';
-                    }
-                    element.dispatchEvent(new CustomEvent('animate.hide'));
-                }
-                else{
-                    element.dispatchEvent(new CustomEvent('animate.show'));
-                }
-            };
-
-            let preUpdate = (show: boolean) => {
-                isShown = show;
-                isTransitioning = true;
-                
-                if (show){
-                    if (showValue){
-                        element.style.display = showValue;
-                    }
-                    element.dispatchEvent(new CustomEvent('animate.showing'));
-                }
-                else{
-                    element.dispatchEvent(new CustomEvent('animate.hiding'));
-                }
-
-                if (showOnly && !isShown){
-                    return;
-                }
-
-                if (showValue){
-                    let thisCheckpoint = ++checkpoint;
-                    setTimeout(() => {
-                        if (thisCheckpoint == checkpoint){
-                            endTransition();
-                        }
-                    }, (duration || 300));
-                }
-            };
-            
-            let setTransitions = (list: Array<string>) => {
-                let reduced = list.reduce((previous, current) => (previous ? `${previous}, ${current} ${duration || 300}ms ease` : `${current} ${duration || 300}ms ease`), '');
-                if (element.style.transition){
-                    element.style.transition += `, ${reduced}`;
-                }
-                else{
-                    element.style.transition = reduced;
-                }
-
-                element.addEventListener('transitionend', () => {
-                    endTransition();
-                });
-            };
-
-            let showValue: string = null;
-            displays.forEach((item) => {
-                if (directive.arg.options.indexOf(item) != -1){
-                    showValue = item;
-                }
-            });
-            
-            let height = style.height, width = style.width, padding = style.padding, borderWidth = style.borderWidth;
-            if (!showValue || showValue === 'none'){
-                showValue = (style.getPropertyValue('display') || 'block');
-            }
-            
-            if (type === 'transition'){
-                let updateSize = (show: boolean) => {
-                    element.style.padding = (show ? padding : '0');
-                    element.style.borderWidth = (show ? borderWidth : '0');
-                    if (target === 'height' || target !== 'width'){
-                        element.style.height = (show ? height : '0');
-                    }
-
-                    if (target === 'width' || target !== 'height'){
-                        element.style.width = (show ? width : '0');
-                    }
-                };
-
-                let updateOpacity = (show: boolean) => {
-                    element.style.opacity = (show ? '1' : '0');
-                };
-                
-                if (!target || target === 'all'){
-                    showValue = null;
-                    element.style.overflow = 'hidden';
-                    setTransitions(['height', 'width', 'padding', 'border', 'opacity']);
-                    update = (show: boolean) => {
-                        preUpdate(show);
-                        updateSize(show);
-                        updateOpacity(show);
-                        if (showOnly && !isShown){
-                            endTransition();
-                        }
-                    };
-                }
-                else if (target === 'height' || target === 'width' || target === 'size'){
-                    showValue = null;
-                    element.style.overflow = 'hidden';
-                    setTransitions(['height', 'width', 'padding', 'border']);
-                    update = (show: boolean) => {
-                        preUpdate(show);
-                        updateSize(show);
-                        if (showOnly && !isShown){
-                            endTransition();
-                        }
-                    };
-                }
-                else if (target === 'opacity'){
-                    setTransitions(['opacity']);
-                    update = (show: boolean) => {
-                        preUpdate(show);
-                        updateOpacity(show);
-                        if (showOnly && !isShown){
-                            endTransition();
-                        }
-                    };
-                }
-            }
-            else if (type in animationMap){//Use Animate.css
-                let inTarget = `animate__${animationMap[type].in}`,  outTarget = `animate__${animationMap[type].out}`, lastTarget = '';
-                update = (show: boolean) => {
-                    preUpdate(show);
-                    if (element.classList.contains(lastTarget)){
-                        element.classList.remove(lastTarget);
-                    }
-
-                    element.classList.add('animate__animated');
-                    if (show){
-                        element.classList.add(lastTarget = inTarget);
-                    }
-                    else{//Hide
-                        element.classList.add(lastTarget = outTarget);
-                    }
-                };
-                
-                element.style.animationDuration = `${duration || 300}ms`;
-                element.addEventListener('animationend', () => {
-                    endTransition();
-                });
-            }
-            else{
+            let animator = ExtendedDirectiveHandlers.PrepareAnimation(element, directive.arg.options);
+            if (!animator){
                 return DirectiveHandlerReturn.Nil;
             }
 
             let regionId = region.GetId();
             region.GetState().TrapGetAccess(() => {
-                update(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
-            }, true, element);
+                animator(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value), null, false);
+            }, () => {
+                animator(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+            }, element);
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -3329,7 +3021,132 @@ namespace InlineJS{
             let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
             return (reporter && reporter.reportServerError && reporter.reportServerError(err));
         }
-        
+
+        public static InitAnimation(element: HTMLElement, options: Array<string>, css?: CSSStyleDeclaration, callback?: (key: string) => void){
+            let animators: Record<string, Animator> = {};
+
+            css = (css || getComputedStyle(element));
+            options.forEach((key) => {
+                if (key in Animators){
+                    animators[key] = Animators[key](element, css);
+                }
+                else if (callback){
+                    callback(key);
+                }
+            });
+
+            return animators;
+        }
+
+        public static PrepareAnimation(element: HTMLElement, options: Array<string>){
+            const displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table'];
+            
+            let css = getComputedStyle(element), display: string = null;
+            let duration: number = null, animators = ExtendedDirectiveHandlers.InitAnimation(element, options, css, (key) => {
+                if (displays.includes(key)){
+                    display = key;
+                    return;
+                }
+                
+                switch (key) {
+                case 'slower':
+                    duration = 1000;
+                    break;
+                case 'slow':
+                    duration = 750;
+                    break;
+                case 'normal':
+                    duration = 500;
+                    break;
+                case 'fast':
+                    duration = 300;
+                    break;
+                case 'faster':
+                    duration = 200;
+                    break;
+                default:
+                    duration = CoreDirectiveHandlers.ExtractDuration(key, null);
+                    break;
+                }
+            });
+
+            duration = (duration || 300);
+            display = (display || css.display || 'block');
+
+            let keys = Object.keys(animators);
+            if (keys.length == 0){//Default
+                animators['opacity'] = Animators.opacity(element, css);
+                keys.push('opacity');
+            }
+
+            let ease = (time: number, start: number, value: number, duration: number) => {
+                return ((time < duration) ? (-value * Math.cos(time / duration * (Math.PI / 2)) + value + start) : value);
+            };
+
+            let checkpoint = 0;
+            return (show: boolean, callback?: () => boolean, animate = true) => {
+                if (!animate){
+                    if (show){
+                        element.style.display = display;
+                        if (callback){
+                            callback();
+                        }
+                    }
+                    else if (!callback || callback()){
+                        element.style.display = 'none';
+                    }
+                    return;
+                }
+                
+                let lastCheckpoint = ++checkpoint, startTimestamp: DOMHighResTimeStamp = null, done = false;
+                let end = () => {
+                    done = true;
+                    keys.forEach(key => animators[key].step(element, show, duration, duration, ease));
+                    element.dispatchEvent(new CustomEvent('animation.leaving'));
+
+                    if ((!callback || callback()) && !show){
+                        element.style.display = 'none';
+                    }
+
+                    element.dispatchEvent(new CustomEvent('animation.leave'));
+                };
+                
+                let pass = (timestamp: DOMHighResTimeStamp) => {
+                    if (startTimestamp === null){
+                        startTimestamp = timestamp;
+                    }
+    
+                    if (done || lastCheckpoint != checkpoint){
+                        return;
+                    }
+
+                    let ellapsed = (timestamp - startTimestamp);
+                    if (ellapsed < duration){
+                        keys.forEach(key => animators[key].step(element, show, ellapsed, duration, ease));
+                        requestAnimationFrame(pass);
+                    }
+                    else{//End
+                        end();
+                    }
+                };
+
+                setTimeout(() => {//Watcher
+                    if (!done && lastCheckpoint == checkpoint){
+                        end();
+                    }
+                }, (duration + 100));
+
+                requestAnimationFrame(pass);
+                element.dispatchEvent(new CustomEvent('animation.entering'));
+
+                if (show){
+                    element.style.display = display;
+                }
+
+                element.dispatchEvent(new CustomEvent('animation.entered'));
+            };
+        }
+
         public static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>) : ExtendedDirectiveHandlerScope{
             let id = `${prefix}<${++ExtendedDirectiveHandlers.scopeId_}>`;
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -3343,6 +3160,8 @@ namespace InlineJS{
         }
 
         public static AddAll(){
+            CoreDirectiveHandlers.PrepareAnimation = ExtendedDirectiveHandlers.PrepareAnimation;
+            
             DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);

@@ -49,6 +49,21 @@ declare namespace InlineJS {
         middlewares: Array<string>;
         uid: number;
     }
+    interface AnimatorRange {
+        from: number;
+        to: number;
+    }
+    interface Animator {
+        step: (element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
+    }
+    class OpacityAnimator implements Animator {
+        private delta_;
+        constructor(element: HTMLElement, css?: CSSStyleDeclaration);
+        step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
+    }
+    let Animators: {
+        opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => OpacityAnimator;
+    };
     interface TypewriterInfo {
         list: Array<string>;
         delay: number;
@@ -127,6 +142,8 @@ declare namespace InlineJS {
         static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string): void;
         static Report(regionId: string, info: any): boolean;
         static ReportServerError(regionId: string, err: any): boolean;
+        static InitAnimation(element: HTMLElement, options: Array<string>, css?: CSSStyleDeclaration, callback?: (key: string) => void): Record<string, Animator>;
+        static PrepareAnimation(element: HTMLElement, options: Array<string>): (show: boolean, callback?: () => boolean, animate?: boolean) => void;
         static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>): ExtendedDirectiveHandlerScope;
         static AddAll(): void;
     }

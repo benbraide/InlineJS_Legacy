@@ -374,6 +374,7 @@ declare namespace InlineJS {
         $init?: (region?: Region) => void;
     }
     class CoreDirectiveHandlers {
+        static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, callback?: () => boolean, animate?: boolean) => void);
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Locals(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
