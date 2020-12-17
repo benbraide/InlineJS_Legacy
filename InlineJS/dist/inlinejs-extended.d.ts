@@ -161,7 +161,7 @@ declare namespace InlineJS {
         static Report(regionId: string, info: any): boolean;
         static ReportServerError(regionId: string, err: any): boolean;
         static InitAnimation(element: HTMLElement, options: Array<string>, css?: CSSStyleDeclaration, callback?: (key: string) => void): Record<string, Animator>;
-        static PrepareAnimation(element: HTMLElement, options: Array<string>): (show: boolean, callback?: () => boolean, animate?: boolean) => void;
+        static PrepareAnimation(element: HTMLElement, options: Array<string>): (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
         static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>): ExtendedDirectiveHandlerScope;
         static AddAll(): void;
     }

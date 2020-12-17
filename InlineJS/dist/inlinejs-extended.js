@@ -2567,7 +2567,7 @@ var InlineJS;
                             callback();
                         }
                     }
-                    else if (!callback || callback()) {
+                    else if (!callback || callback() !== false) {
                         element.style.display = 'none';
                     }
                     return;
@@ -2577,7 +2577,7 @@ var InlineJS;
                     done = true;
                     keys.forEach(function (key) { return animators[key].step(element, show, duration, duration, ease); });
                     element.dispatchEvent(new CustomEvent('animation.leaving'));
-                    if ((!callback || callback()) && !show) {
+                    if ((!callback || callback() !== false) && !show) {
                         element.style.display = 'none';
                     }
                     element.dispatchEvent(new CustomEvent('animation.leave'));

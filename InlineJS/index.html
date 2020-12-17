@@ -115,7 +115,7 @@
         </form>
         <hr>
         <ul style="transition: all 0.3s ease;">
-            <li style="margin-top: 5px;" x-each="list">
+            <li style="margin-top: 5px;" x-each:animate="list">
                 <span style="text-transform: uppercase" x-text="$each.value.text" x-show="!$each.value.editing"></span>
                 <input type="text" x-model="$each.value.text" x-animate:transition.width="$each.value.editing" x-on:keydown.enter="$each.value.editing = false">
                 <button style="background-color: transparent; color: gray; border: 1px solid gray" x-on:click="$each.value.editing = true" x-show="!$each.value.editing">...</button>

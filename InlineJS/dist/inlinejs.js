@@ -2008,14 +2008,7 @@ var InlineJS;
                 }
                 return result;
             };
-            var animator = ((CoreDirectiveHandlers.PrepareAnimation && directive.arg.key === 'animate') ? CoreDirectiveHandlers.PrepareAnimation(element, directive.arg.options) : null);
-            if (!animator) {
-                animator = function (show, callback, animate) {
-                    if (callback) {
-                        callback();
-                    }
-                };
-            }
+            var animator = CoreDirectiveHandlers.GetAnimator((directive.arg.key === 'animate'), element, directive.arg.options);
             region.GetState().TrapGetAccess(function () {
                 var myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition) {
@@ -2031,7 +2024,6 @@ var InlineJS;
                         }
                         animator(true, function () {
                             CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info); //Execute directives
-                            return true;
                         });
                     }
                     else if (ifFirstEntry) { //Execute directives
@@ -2050,7 +2042,6 @@ var InlineJS;
                             element.parentElement.removeChild(element);
                             scope.removed = true;
                         }
-                        return true;
                     }, !ifFirstEntry);
                 }
                 ifFirstEntry = false;
@@ -2094,7 +2085,7 @@ var InlineJS;
                 items: null,
                 count: 0
             };
-            var valueKey = '', matches = directive.value.match(/^(.+)? as[ ]+([A-Za-z_][0-9A-Za-z_$]*)[ ]*$/), expression;
+            var valueKey = '', matches = directive.value.match(/^(.+)? as[ ]+([A-Za-z_][0-9A-Za-z_$]*)[ ]*$/), expression, animate = (directive.arg.key === 'animate');
             if (matches && 2 < matches.length) {
                 expression = matches[1];
                 valueKey = matches[2];
@@ -2112,7 +2103,7 @@ var InlineJS;
                 });
             };
             var indexOf = function (clone) {
-                return options.clones.indexOf(clone);
+                return options.clones.findIndex(function (info) { return (info.element === clone); });
             };
             var locals = function (myRegion, clone, key) {
                 myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy(function (prop) {
@@ -2141,27 +2132,39 @@ var InlineJS;
                 }
             };
             var append = function (myRegion, key) {
-                var clone = element.cloneNode(true);
+                var clone = element.cloneNode(true), animator = CoreDirectiveHandlers.GetAnimator(animate, clone, directive.arg.options);
                 if (key) {
-                    options.clones[key] = clone;
+                    options.clones[key] = {
+                        element: clone,
+                        animator: animator
+                    };
                     CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, clone, key); }, (Object.keys(options.clones).length - 1));
                 }
                 else { //Array
-                    options.clones.push(clone);
+                    options.clones.push({
+                        element: clone,
+                        animator: animator
+                    });
                     CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, clone); }, (options.clones.length - 1));
                 }
+                animator(true);
             };
             var empty = function (myRegion) {
                 if (Array.isArray(options.clones)) {
-                    (options.clones || []).forEach(function (clone) {
-                        info.parent.removeChild(clone);
-                        myRegion.MarkElementAsRemoved(clone);
+                    (options.clones || []).forEach(function (myInfo) {
+                        myInfo.animator(false, function () {
+                            info.parent.removeChild(myInfo.element);
+                            myRegion.MarkElementAsRemoved(myInfo.element);
+                        });
                     });
                 }
                 else { //Map
                     Object.keys(options.clones || {}).forEach(function (key) {
-                        info.parent.removeChild(options.clones[key]);
-                        myRegion.MarkElementAsRemoved(options.clones[key]);
+                        var myInfo = options.clones[key];
+                        myInfo.animator(false, function () {
+                            info.parent.removeChild(myInfo.element);
+                            myRegion.MarkElementAsRemoved(myInfo.element);
+                        });
                     });
                 }
                 options.clones = null;
@@ -2203,9 +2206,11 @@ var InlineJS;
                     if (targetItems.length < options.count) { //Item(s) removed
                         options.count = targetItems.length;
                         addSizeChange(Region.Get(info.regionId));
-                        options.clones.splice(targetItems.length).forEach(function (clone) {
-                            info.parent.removeChild(clone);
-                            myRegion.MarkElementAsRemoved(clone);
+                        options.clones.splice(targetItems.length).forEach(function (myInfo) {
+                            myInfo.animator(false, function () {
+                                info.parent.removeChild(myInfo.element);
+                                myRegion.MarkElementAsRemoved(myInfo.element);
+                            });
                         });
                     }
                     else if (options.count < targetItems.length) { //Item(s) added
@@ -2236,9 +2241,12 @@ var InlineJS;
                     var newKeys = Object.keys(items), oldKeys = Object.keys(options.clones);
                     newKeys.filter(function (key) { return !(key in options.clones); }).forEach(function (key) { append(myRegion, key); }); //Add new items
                     oldKeys.filter(function (key) { return !(key in items); }).forEach(function (key) {
-                        info.parent.removeChild(options.clones[key]);
-                        myRegion.MarkElementAsRemoved(options.clones[key]);
-                        delete options.clones[key];
+                        var myInfo = options.clones[key];
+                        myInfo.animator(false, function () {
+                            info.parent.removeChild(myInfo.element);
+                            myRegion.MarkElementAsRemoved(myInfo.element);
+                            delete options.clones[key];
+                        });
                     });
                     if (newKeys.length != oldKeys.length) {
                         addSizeChange(myRegion);
@@ -2450,6 +2458,17 @@ var InlineJS;
             else { //Append
                 parent.appendChild(element);
             }
+        };
+        CoreDirectiveHandlers.GetAnimator = function (animate, element, options) {
+            var animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(element, options) : null);
+            if (!animator) { //Use a dummy animator
+                animator = function (show, callback, animate) {
+                    if (callback) {
+                        callback();
+                    }
+                };
+            }
+            return animator;
         };
         CoreDirectiveHandlers.AddAll = function () {
             DirectiveHandlerManager.AddHandler('cloak', CoreDirectiveHandlers.Noop);

@@ -362,8 +362,12 @@ declare namespace InlineJS {
         marker: number;
         attributes: Array<LiteAttr>;
     }
+    interface EachCloneInfo {
+        element: HTMLElement;
+        animator: (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
+    }
     interface EachOptions {
-        clones: Array<HTMLElement> | Record<string, HTMLElement>;
+        clones: Array<EachCloneInfo> | Record<string, EachCloneInfo>;
         items: Array<any> | Record<string, any> | number;
         count: number;
     }
@@ -374,7 +378,7 @@ declare namespace InlineJS {
         $init?: (region?: Region) => void;
     }
     class CoreDirectiveHandlers {
-        static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, callback?: () => boolean, animate?: boolean) => void);
+        static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, callback?: () => boolean | void, animate?: boolean) => void);
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Locals(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -409,6 +413,7 @@ declare namespace InlineJS {
         static GetChildElementIndex(element: HTMLElement): number;
         static GetChildElementAt(parent: HTMLElement, index: number): HTMLElement;
         static InsertOrAppendChildElement(parent: HTMLElement, element: HTMLElement, index: number): void;
+        static GetAnimator(animate: boolean, element: HTMLElement, options: Array<string>): (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
         static AddAll(): void;
     }
     interface ProcessorOptions {

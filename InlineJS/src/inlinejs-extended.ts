@@ -3142,7 +3142,7 @@ namespace InlineJS{
             };
 
             let checkpoint = 0;
-            return (show: boolean, callback?: () => boolean, animate = true) => {
+            return (show: boolean, callback?: () => boolean | void, animate = true) => {
                 if (!animate){
                     if (show){
                         element.style.display = display;
@@ -3150,7 +3150,7 @@ namespace InlineJS{
                             callback();
                         }
                     }
-                    else if (!callback || callback()){
+                    else if (!callback || callback() !== false){
                         element.style.display = 'none';
                     }
                     return;
@@ -3162,7 +3162,7 @@ namespace InlineJS{
                     keys.forEach(key => animators[key].step(element, show, duration, duration, ease));
                     element.dispatchEvent(new CustomEvent('animation.leaving'));
 
-                    if ((!callback || callback()) && !show){
+                    if ((!callback || callback() !== false) && !show){
                         element.style.display = 'none';
                     }
 
