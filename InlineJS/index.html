@@ -184,18 +184,36 @@
     <div x-component="animate" x-data="{ show: false }">
         <h2 x-style:color="color" x-on:click="color = 'red'">Animate Component</h2>
         <label><input type="checkbox" x-model.out="show"> Toggle form</label>
-        <div style="padding: 10px 0; border: 1px solid gray;" x-cloak="hide" x-animate.fast="show">
-            <div>
-                <span>Name: </span>
-                <input type="text">
+        <div style="overflow: hidden;" x-cloak="hide" x-animate.height="show">
+            <div style="padding: 10px 5px; border: 1px solid gray;">
+                <div>
+                    <span>Name: </span>
+                    <input type="text">
+                </div>
+                <div>
+                    <span>Email: </span>
+                    <input type="email">
+                </div>
+                <div>
+                    <span>Password: </span>
+                    <input type="password">
+                </div>
             </div>
-            <div>
-                <span>Email: </span>
-                <input type="email">
-            </div>
-            <div>
-                <span>Password: </span>
-                <input type="password">
+        </div>
+        <div style="overflow: hidden;" x-cloak="hide" x-animate.height-reverse="!show">
+            <div style="padding: 10px 5px; border: 1px solid gray;">
+                <div>
+                    <span>Name: </span>
+                    <input type="text">
+                </div>
+                <div>
+                    <span>Email: </span>
+                    <input type="email">
+                </div>
+                <div>
+                    <span>Password: </span>
+                    <input type="password">
+                </div>
             </div>
         </div>
     </div>

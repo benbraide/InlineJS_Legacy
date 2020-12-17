@@ -13,13 +13,58 @@ var InlineJS;
             this.delta_ = (Number.parseInt((css || getComputedStyle(element)).opacity) || 1);
         }
         OpacityAnimator.prototype.step = function (element, show, ellapsed, duration, ease) {
+            if (this.delta_ <= 0) {
+                this.delta_ = (Number.parseInt(getComputedStyle(element).opacity) || 1);
+            }
             element.style.opacity = (show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration))).toString();
         };
         return OpacityAnimator;
     }());
     InlineJS.OpacityAnimator = OpacityAnimator;
+    var HeightAnimator = /** @class */ (function () {
+        function HeightAnimator(reversed_, element, css) {
+            this.reversed_ = reversed_;
+            this.delta_ = Math.round(element.clientHeight);
+            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginTop) || 0);
+        }
+        HeightAnimator.prototype.step = function (element, show, ellapsed, duration, ease) {
+            if (this.delta_ <= 0) {
+                this.delta_ = Math.round(element.clientHeight);
+            }
+            var value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
+            element.style.height = value + "px";
+            if (this.reversed_) {
+                element.style.marginTop = (this.margin_ + (this.delta_ - value)) + "px";
+            }
+        };
+        return HeightAnimator;
+    }());
+    InlineJS.HeightAnimator = HeightAnimator;
+    var WidthAnimator = /** @class */ (function () {
+        function WidthAnimator(reversed_, element, css) {
+            this.reversed_ = reversed_;
+            this.delta_ = Math.round(element.clientWidth);
+            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginLeft) || 0);
+        }
+        WidthAnimator.prototype.step = function (element, show, ellapsed, duration, ease) {
+            if (this.delta_ <= 0) {
+                this.delta_ = Math.round(element.clientWidth);
+            }
+            var value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
+            element.style.width = value + "px";
+            if (this.reversed_) {
+                element.style.marginLeft = (this.margin_ + (this.delta_ - value)) + "px";
+            }
+        };
+        return WidthAnimator;
+    }());
+    InlineJS.WidthAnimator = WidthAnimator;
     InlineJS.Animators = {
-        opacity: function (element, css) { return new OpacityAnimator(element, css); }
+        opacity: function (element, css) { return new OpacityAnimator(element, css); },
+        height: function (element, css) { return new HeightAnimator(false, element, css); },
+        'height-reverse': function (element, css) { return new HeightAnimator(true, element, css); },
+        width: function (element, css) { return new WidthAnimator(false, element, css); },
+        'width-reverse': function (element, css) { return new WidthAnimator(true, element, css); }
     };
     var ExtendedDirectiveHandlers = /** @class */ (function () {
         function ExtendedDirectiveHandlers() {
@@ -552,11 +597,15 @@ var InlineJS;
             if (!animator) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var regionId = region.GetId();
+            var regionId = region.GetId(), lastValue = null;
             region.GetState().TrapGetAccess(function () {
-                animator(!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value), null, false);
+                lastValue = !!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value);
+                animator(lastValue, null, false);
             }, function () {
-                animator(!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value));
+                if (lastValue != (!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value))) {
+                    lastValue = !lastValue;
+                    animator(lastValue);
+                }
             }, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };

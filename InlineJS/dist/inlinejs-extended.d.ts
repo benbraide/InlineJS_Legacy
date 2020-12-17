@@ -61,8 +61,26 @@ declare namespace InlineJS {
         constructor(element: HTMLElement, css?: CSSStyleDeclaration);
         step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
     }
+    class HeightAnimator implements Animator {
+        private reversed_;
+        private delta_;
+        private margin_;
+        constructor(reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration);
+        step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
+    }
+    class WidthAnimator implements Animator {
+        private reversed_;
+        private delta_;
+        private margin_;
+        constructor(reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration);
+        step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
+    }
     let Animators: {
         opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => OpacityAnimator;
+        height: (element: HTMLElement, css?: CSSStyleDeclaration) => HeightAnimator;
+        'height-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => HeightAnimator;
+        width: (element: HTMLElement, css?: CSSStyleDeclaration) => WidthAnimator;
+        'width-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => WidthAnimator;
     };
     interface TypewriterInfo {
         list: Array<string>;

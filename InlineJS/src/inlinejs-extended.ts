@@ -73,12 +73,66 @@ namespace InlineJS{
         }
         
         public step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            if (this.delta_ <= 0){
+                this.delta_ = (Number.parseInt(getComputedStyle(element).opacity) || 1);
+            }
+            
             element.style.opacity = (show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration))).toString();
+        }
+    }
+
+    export class HeightAnimator implements Animator{
+        private delta_: number;
+        private margin_: number;
+
+        public constructor(private reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration){
+            this.delta_ = Math.round(element.clientHeight);
+            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginTop) || 0);
+        }
+        
+        public step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            if (this.delta_ <= 0){
+                this.delta_ = Math.round(element.clientHeight);
+            }
+            
+            let value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
+            element.style.height = `${value}px`;
+            
+            if (this.reversed_){
+                element.style.marginTop = `${(this.margin_ + (this.delta_ - value))}px`;
+            }
+        }
+    }
+
+    export class WidthAnimator implements Animator{
+        private delta_: number;
+        private margin_: number;
+
+        public constructor(private reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration){
+            this.delta_ = Math.round(element.clientWidth);
+            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginLeft) || 0);
+        }
+        
+        public step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            if (this.delta_ <= 0){
+                this.delta_ = Math.round(element.clientWidth);
+            }
+            
+            let value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
+            element.style.width = `${value}px`;
+            
+            if (this.reversed_){
+                element.style.marginLeft = `${(this.margin_ + (this.delta_ - value))}px`;
+            }
         }
     }
 
     export let Animators = {
         opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => new OpacityAnimator(element, css),
+        height: (element: HTMLElement, css?: CSSStyleDeclaration) => new HeightAnimator(false, element, css),
+        'height-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => new HeightAnimator(true, element, css),
+        width: (element: HTMLElement, css?: CSSStyleDeclaration) => new WidthAnimator(false, element, css),
+        'width-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => new WidthAnimator(true, element, css),
     };
 
     export interface TypewriterInfo{
@@ -768,11 +822,15 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let regionId = region.GetId();
+            let regionId = region.GetId(), lastValue: boolean = null;
             region.GetState().TrapGetAccess(() => {
-                animator(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value), null, false);
+                lastValue = !! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                animator(lastValue, null, false);
             }, () => {
-                animator(!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                if (lastValue != (!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value))){
+                    lastValue = !lastValue;
+                    animator(lastValue);
+                }
             }, element);
 
             return DirectiveHandlerReturn.Handled;
