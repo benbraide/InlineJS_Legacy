@@ -12,8 +12,8 @@ var InlineJS;
         function OpacityAnimator(element, css) {
             this.delta_ = (Number.parseInt((css || getComputedStyle(element)).opacity) || 1);
         }
-        OpacityAnimator.prototype.step = function (element, show, ellapsed, duration, ease) {
-            if (this.delta_ <= 0) {
+        OpacityAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
+            if (sync || this.delta_ <= 0) {
                 this.delta_ = (Number.parseInt(getComputedStyle(element).opacity) || 1);
             }
             element.style.opacity = (show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration))).toString();
@@ -27,8 +27,8 @@ var InlineJS;
             this.delta_ = Math.round(element.clientHeight);
             this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginTop) || 0);
         }
-        HeightAnimator.prototype.step = function (element, show, ellapsed, duration, ease) {
-            if (this.delta_ <= 0) {
+        HeightAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
+            if (sync || this.delta_ <= 0) {
                 this.delta_ = Math.round(element.clientHeight);
             }
             var value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
@@ -46,8 +46,8 @@ var InlineJS;
             this.delta_ = Math.round(element.clientWidth);
             this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginLeft) || 0);
         }
-        WidthAnimator.prototype.step = function (element, show, ellapsed, duration, ease) {
-            if (this.delta_ <= 0) {
+        WidthAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
+            if (sync || this.delta_ <= 0) {
                 this.delta_ = Math.round(element.clientWidth);
             }
             var value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
@@ -59,12 +59,44 @@ var InlineJS;
         return WidthAnimator;
     }());
     InlineJS.WidthAnimator = WidthAnimator;
+    var SlideAnimator = /** @class */ (function () {
+        function SlideAnimator(direction_, element, css) {
+            this.direction_ = direction_;
+            this.isWidth_ = (direction_ === 'left' || direction_ === 'right');
+            this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
+        }
+        SlideAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
+            if (sync || this.delta_ <= 0) {
+                this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
+            }
+            var value = ease(ellapsed, 0, this.delta_, duration);
+            if (this.direction_ === 'down') {
+                element.style.top = (show ? (value - this.delta_) : -value) + "px";
+            }
+            else if (this.direction_ === 'left') {
+                element.style.right = (show ? (value - this.delta_) : -value) + "px";
+            }
+            else if (this.direction_ === 'up') {
+                element.style.bottom = (show ? (value - this.delta_) : -value) + "px";
+            }
+            else if (this.direction_ === 'right') {
+                element.style.left = (show ? (value - this.delta_) : -value) + "px";
+            }
+        };
+        return SlideAnimator;
+    }());
+    InlineJS.SlideAnimator = SlideAnimator;
     InlineJS.Animators = {
         opacity: function (element, css) { return new OpacityAnimator(element, css); },
         height: function (element, css) { return new HeightAnimator(false, element, css); },
         'height-reverse': function (element, css) { return new HeightAnimator(true, element, css); },
         width: function (element, css) { return new WidthAnimator(false, element, css); },
-        'width-reverse': function (element, css) { return new WidthAnimator(true, element, css); }
+        'width-reverse': function (element, css) { return new WidthAnimator(true, element, css); },
+        slide: function (element, css) { return new SlideAnimator('down', element, css); },
+        'slide-down': function (element, css) { return new SlideAnimator('down', element, css); },
+        'slide-left': function (element, css) { return new SlideAnimator('left', element, css); },
+        'slide-up': function (element, css) { return new SlideAnimator('up', element, css); },
+        'slide-right': function (element, css) { return new SlideAnimator('right', element, css); }
     };
     var ExtendedDirectiveHandlers = /** @class */ (function () {
         function ExtendedDirectiveHandlers() {
@@ -721,7 +753,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Router = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$router', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$router')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), uid = 0;
@@ -1150,7 +1182,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Screen = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$screen', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$screen')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var computeBreakpoint = function (width) {
@@ -1211,7 +1243,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Cart = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$cart', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$cart')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var handlers = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
@@ -1523,7 +1555,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Auth = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$auth', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$auth')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var userUrl = window.location.origin + "/auth/user";
@@ -1557,9 +1589,10 @@ var InlineJS;
             var getRouter = function () {
                 return InlineJS.Region.GetGlobalValue(regionId, '$router');
             };
+            var shouldRefresh = directive.arg.options.includes('refresh');
             var redirect = function (loggedIn, refresh) {
                 if (refresh === void 0) { refresh = false; }
-                if (refresh) {
+                if (shouldRefresh || refresh) {
                     if (loggedIn) {
                         window.location.href = "" + (redirectPage || '/') + (redirectQuery ? ('?' + redirectQuery) : '');
                     }
@@ -1684,6 +1717,7 @@ var InlineJS;
                                 var value = (data.failed[key] || []);
                                 errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
+                            return false;
                         }
                         return (!callback || callback(data, err));
                     });
@@ -1720,7 +1754,7 @@ var InlineJS;
                                 errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
                         }
-                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
+                        else if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             userData = (data || {});
                             alertAll();
                         }
@@ -1799,11 +1833,13 @@ var InlineJS;
                         }
                     }, 3000);
                 };
-                window.addEventListener('auth.authentication', redirectWatch);
-                innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
-                    window.removeEventListener('auth.authentication', redirectWatch);
-                    redirectWatch = null;
-                });
+                if (!shouldRefresh) {
+                    window.addEventListener('auth.authentication', redirectWatch);
+                    innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
+                        window.removeEventListener('auth.authentication', redirectWatch);
+                        redirectWatch = null;
+                    });
+                }
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('authLogin', function (innerRegion, innerElement, innerDirective) {
@@ -1862,7 +1898,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Geolocation = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$geolocation', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$geolocation')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var position = null, error = null, regionId = region.GetId(), requested = false, tracking = false;
@@ -1964,7 +2000,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Reporter = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$reporter', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$reporter')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var info = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
@@ -1980,7 +2016,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Overlay = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$overlay', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$overlay')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var scope = ExtendedDirectiveHandlers.AddScope('overlay', region.AddElement(element, true), []), regionId = region.GetId();
@@ -1992,7 +2028,10 @@ var InlineJS;
                     container.classList.add('inlinejs-overlay');
                     document.body.classList.add('inlinejs-overlay');
                     if (document.body.clientHeight < document.body.scrollHeight) {
-                        document.body.classList.add('inlinejs-overlay-pad');
+                        var screen_1 = InlineJS.Region.GetGlobalValue(region.GetId(), '$screen');
+                        if (!screen_1 || screen_1.checkpoint > 1) {
+                            document.body.classList.add('inlinejs-overlay-pad');
+                        }
                     }
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'visible', scope);
                 }
@@ -2208,7 +2247,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Modal = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal('$modal', region.GetId())) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$modal')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url = null;
@@ -2223,6 +2262,7 @@ var InlineJS;
             countainer.setAttribute('x-data', '');
             countainer.setAttribute('x-animate.opacity', '$modal.show');
             countainer.setAttribute('x-overlay-bind', '$modal.show');
+            mount.classList.add('inlinejs-modal-mount');
             mount.setAttribute('x-xhr-load', '$modal.url');
             mount.setAttribute('x-on:click.outside', '$modal.show = false');
             countainer.appendChild(mount);
@@ -2520,7 +2560,7 @@ var InlineJS;
         };
         ExtendedDirectiveHandlers.PrepareAnimation = function (element, options) {
             var displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table'];
-            var css = getComputedStyle(element), display = null;
+            var css = getComputedStyle(element), display = null, sync = options.includes('sync');
             var duration = null, animators = ExtendedDirectiveHandlers.InitAnimation(element, options, css, function (key) {
                 if (displays.includes(key)) {
                     display = key;
@@ -2575,7 +2615,7 @@ var InlineJS;
                 var lastCheckpoint = ++checkpoint, startTimestamp = null, done = false;
                 var end = function () {
                     done = true;
-                    keys.forEach(function (key) { return animators[key].step(element, show, duration, duration, ease); });
+                    keys.forEach(function (key) { return animators[key].step(element, show, sync, duration, duration, ease); });
                     element.dispatchEvent(new CustomEvent('animation.leaving'));
                     if ((!callback || callback() !== false) && !show) {
                         element.style.display = 'none';
@@ -2591,7 +2631,7 @@ var InlineJS;
                     }
                     var ellapsed = (timestamp - startTimestamp);
                     if (ellapsed < duration) {
-                        keys.forEach(function (key) { return animators[key].step(element, show, ellapsed, duration, ease); });
+                        keys.forEach(function (key) { return animators[key].step(element, show, sync, ellapsed, duration, ease); });
                         requestAnimationFrame(pass);
                     }
                     else { //End
@@ -2607,6 +2647,7 @@ var InlineJS;
                 element.dispatchEvent(new CustomEvent('animation.entering'));
                 if (show) {
                     element.style.display = display;
+                    getComputedStyle(element);
                 }
                 element.dispatchEvent(new CustomEvent('animation.entered'));
             };

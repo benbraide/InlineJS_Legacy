@@ -54,26 +54,33 @@ declare namespace InlineJS {
         to: number;
     }
     interface Animator {
-        step: (element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
+        step: (element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
     }
     class OpacityAnimator implements Animator {
         private delta_;
         constructor(element: HTMLElement, css?: CSSStyleDeclaration);
-        step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
+        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
     }
     class HeightAnimator implements Animator {
         private reversed_;
         private delta_;
         private margin_;
         constructor(reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration);
-        step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
+        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
     }
     class WidthAnimator implements Animator {
         private reversed_;
         private delta_;
         private margin_;
         constructor(reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration);
-        step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
+        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
+    }
+    class SlideAnimator implements Animator {
+        private direction_;
+        private delta_;
+        private isWidth_;
+        constructor(direction_: string, element: HTMLElement, css?: CSSStyleDeclaration);
+        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
     }
     let Animators: {
         opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => OpacityAnimator;
@@ -81,6 +88,11 @@ declare namespace InlineJS {
         'height-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => HeightAnimator;
         width: (element: HTMLElement, css?: CSSStyleDeclaration) => WidthAnimator;
         'width-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => WidthAnimator;
+        slide: (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
+        'slide-down': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
+        'slide-left': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
+        'slide-up': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
+        'slide-right': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
     };
     interface TypewriterInfo {
         list: Array<string>;

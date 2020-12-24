@@ -62,7 +62,7 @@ namespace InlineJS{
     }
     
     export interface Animator{
-        step: (element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
+        step: (element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
     }
 
     export class OpacityAnimator implements Animator{
@@ -72,8 +72,8 @@ namespace InlineJS{
             this.delta_ = (Number.parseInt((css || getComputedStyle(element)).opacity) || 1);
         }
         
-        public step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
-            if (this.delta_ <= 0){
+        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            if (sync || this.delta_ <= 0){
                 this.delta_ = (Number.parseInt(getComputedStyle(element).opacity) || 1);
             }
             
@@ -90,8 +90,8 @@ namespace InlineJS{
             this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginTop) || 0);
         }
         
-        public step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
-            if (this.delta_ <= 0){
+        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            if (sync || this.delta_ <= 0){
                 this.delta_ = Math.round(element.clientHeight);
             }
             
@@ -113,8 +113,8 @@ namespace InlineJS{
             this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginLeft) || 0);
         }
         
-        public step(element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
-            if (this.delta_ <= 0){
+        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            if (sync || this.delta_ <= 0){
                 this.delta_ = Math.round(element.clientWidth);
             }
             
@@ -127,12 +127,47 @@ namespace InlineJS{
         }
     }
 
+    export class SlideAnimator implements Animator{
+        private delta_: number;
+        private isWidth_: boolean;
+
+        public constructor(private direction_: string, element: HTMLElement, css?: CSSStyleDeclaration){
+            this.isWidth_ = (direction_ === 'left' || direction_ === 'right');
+            this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
+        }
+        
+        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
+            if (sync || this.delta_ <= 0){
+                this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
+            }
+            
+            let value = ease(ellapsed, 0, this.delta_, duration);
+            if (this.direction_ === 'down'){
+                element.style.top = `${show ? (value - this.delta_) : -value}px`;
+            }
+            else if (this.direction_ === 'left'){
+                element.style.right = `${show ? (value - this.delta_) : -value}px`;
+            }
+            else if (this.direction_ === 'up'){
+                element.style.bottom = `${show ? (value - this.delta_) : -value}px`;
+            }
+            else if (this.direction_ === 'right'){
+                element.style.left = `${show ? (value - this.delta_) : -value}px`;
+            }
+        }
+    }
+
     export let Animators = {
         opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => new OpacityAnimator(element, css),
         height: (element: HTMLElement, css?: CSSStyleDeclaration) => new HeightAnimator(false, element, css),
         'height-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => new HeightAnimator(true, element, css),
         width: (element: HTMLElement, css?: CSSStyleDeclaration) => new WidthAnimator(false, element, css),
         'width-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => new WidthAnimator(true, element, css),
+        slide: (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('down', element, css),
+        'slide-down': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('down', element, css),
+        'slide-left': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('left', element, css),
+        'slide-up': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('up', element, css),
+        'slide-right': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('right', element, css),
     };
 
     export interface TypewriterInfo{
@@ -966,7 +1001,7 @@ namespace InlineJS{
         }
 
         public static Router(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$router', region.GetId())){
+            if (Region.GetGlobal(region.GetId(), '$router')){
                 return DirectiveHandlerReturn.Nil;
             }
 
@@ -1465,7 +1500,7 @@ namespace InlineJS{
         }
 
         public static Screen(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$screen', region.GetId())){
+            if (Region.GetGlobal(region.GetId(), '$screen')){
                 return DirectiveHandlerReturn.Nil;
             }
             
@@ -1542,7 +1577,7 @@ namespace InlineJS{
         }
 
         public static Cart(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$cart', region.GetId())){
+            if (Region.GetGlobal(region.GetId(), '$cart')){
                 return DirectiveHandlerReturn.Nil;
             }
             
@@ -1928,7 +1963,7 @@ namespace InlineJS{
         }
 
         public static Auth(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$auth', region.GetId())){
+            if (Region.GetGlobal(region.GetId(), '$auth')){
                 return DirectiveHandlerReturn.Nil;
             }
 
@@ -1969,8 +2004,9 @@ namespace InlineJS{
                 return Region.GetGlobalValue(regionId, '$router');
             };
 
+            let shouldRefresh = directive.arg.options.includes('refresh');
             let redirect = (loggedIn: boolean, refresh = false) => {
-                if (refresh){
+                if (shouldRefresh || refresh){
                     if (loggedIn){
                         window.location.href = `${(redirectPage || '/')}${redirectQuery ? ('?' + redirectQuery) : ''}`;
                     }
@@ -2104,6 +2140,8 @@ namespace InlineJS{
                                 let value = (data.failed[key] || []);
                                 errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
+
+                            return false;
                         }
 
                         return (!callback || callback(data, err));
@@ -2144,8 +2182,7 @@ namespace InlineJS{
                                 errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
                         }
-                        
-                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))){
+                        else if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))){
                             userData = (data || {});
                             alertAll();
                         }
@@ -2238,11 +2275,13 @@ namespace InlineJS{
                     }, 3000);
                 };
 
-                window.addEventListener('auth.authentication', redirectWatch);
-                innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
-                    window.removeEventListener('auth.authentication', redirectWatch);
-                    redirectWatch = null;
-                });
+                if (!shouldRefresh){
+                    window.addEventListener('auth.authentication', redirectWatch);
+                    innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
+                        window.removeEventListener('auth.authentication', redirectWatch);
+                        redirectWatch = null;
+                    });
+                }
 
                 return DirectiveHandlerReturn.Handled;
             });
@@ -2315,7 +2354,7 @@ namespace InlineJS{
         }
 
         public static Geolocation(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$geolocation', region.GetId())){
+            if (Region.GetGlobal(region.GetId(),'$geolocation')){
                 return DirectiveHandlerReturn.Nil;
             }
             
@@ -2438,7 +2477,7 @@ namespace InlineJS{
         }
 
         public static Reporter(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$reporter', region.GetId())){
+            if (Region.GetGlobal(region.GetId(), '$reporter')){
                 return DirectiveHandlerReturn.Nil;
             }
 
@@ -2458,7 +2497,7 @@ namespace InlineJS{
         }
 
         public static Overlay(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$overlay', region.GetId())){
+            if (Region.GetGlobal(region.GetId(), '$overlay')){
                 return DirectiveHandlerReturn.Nil;
             }
 
@@ -2474,7 +2513,10 @@ namespace InlineJS{
                     document.body.classList.add('inlinejs-overlay');
 
                     if (document.body.clientHeight < document.body.scrollHeight){
-                        document.body.classList.add('inlinejs-overlay-pad');
+                        let screen = Region.GetGlobalValue(region.GetId(),'$screen');
+                        if (!screen || screen.checkpoint > 1){
+                            document.body.classList.add('inlinejs-overlay-pad');
+                        }
                     }
 
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'visible', scope);
@@ -2731,7 +2773,7 @@ namespace InlineJS{
         }
 
         public static Modal(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal('$modal', region.GetId())){
+            if (Region.GetGlobal(region.GetId(), '$modal')){
                 return DirectiveHandlerReturn.Nil;
             }
 
@@ -2750,6 +2792,7 @@ namespace InlineJS{
             countainer.setAttribute('x-animate.opacity', '$modal.show');
             countainer.setAttribute('x-overlay-bind', '$modal.show');
 
+            mount.classList.add('inlinejs-modal-mount');
             mount.setAttribute('x-xhr-load', '$modal.url');
             mount.setAttribute('x-on:click.outside', '$modal.show = false');
             
@@ -3099,7 +3142,7 @@ namespace InlineJS{
         public static PrepareAnimation(element: HTMLElement, options: Array<string>){
             const displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table'];
             
-            let css = getComputedStyle(element), display: string = null;
+            let css = getComputedStyle(element), display: string = null, sync = options.includes('sync');
             let duration: number = null, animators = ExtendedDirectiveHandlers.InitAnimation(element, options, css, (key) => {
                 if (displays.includes(key)){
                     display = key;
@@ -3159,7 +3202,7 @@ namespace InlineJS{
                 let lastCheckpoint = ++checkpoint, startTimestamp: DOMHighResTimeStamp = null, done = false;
                 let end = () => {
                     done = true;
-                    keys.forEach(key => animators[key].step(element, show, duration, duration, ease));
+                    keys.forEach(key => animators[key].step(element, show, sync, duration, duration, ease));
                     element.dispatchEvent(new CustomEvent('animation.leaving'));
 
                     if ((!callback || callback() !== false) && !show){
@@ -3180,7 +3223,7 @@ namespace InlineJS{
 
                     let ellapsed = (timestamp - startTimestamp);
                     if (ellapsed < duration){
-                        keys.forEach(key => animators[key].step(element, show, ellapsed, duration, ease));
+                        keys.forEach(key => animators[key].step(element, show, sync, ellapsed, duration, ease));
                         requestAnimationFrame(pass);
                     }
                     else{//End
@@ -3199,6 +3242,7 @@ namespace InlineJS{
 
                 if (show){
                     element.style.display = display;
+                    getComputedStyle(element);
                 }
 
                 element.dispatchEvent(new CustomEvent('animation.entered'));

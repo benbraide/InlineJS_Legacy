@@ -88,6 +88,7 @@ div.inlinejs-overlay{
     width: 0;
     height: 100vh;
     backdrop-filter: blur(0.25rem);
+    background-color: rgba(0, 0, 0, 0.63);
     transition: all;
 }
 
@@ -115,4 +116,8 @@ body.inlinejs-overlay > div.inlinejs-overlay{
     justify-content: center;
     align-items: center;
     background-color: transparent;
+}
+
+.inlinejs-modal-mount{
+    flex-shrink: 0;
 }
