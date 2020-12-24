@@ -37,6 +37,7 @@ declare namespace InlineJS {
         mount: (url: string) => void;
         mountElement: HTMLElement;
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
+        progress: number;
     }
     interface RouterPageInfo {
         pattern: string | RegExp;
@@ -166,7 +167,7 @@ declare namespace InlineJS {
         static Counter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
         static ObserveIntersection(region: Region, element: HTMLElement, options: IntersectionObserverInit, callback: (entry: IntersectionObserverEntry | false) => boolean): boolean;
-        static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void): void;
+        static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void, onProgress?: (e: ProgressEvent<XMLHttpRequestEventTarget>) => void): void;
         static HandleJsonResponse(response: Response): Promise<any>;
         static HandleTextResponse(response: Response): Promise<string>;
         static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string): void;

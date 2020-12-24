@@ -42,6 +42,7 @@ namespace InlineJS{
         mount: (url: string) => void;
         mountElement: HTMLElement;
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
+        progress: number;
     }
 
     export interface RouterPageInfo{
@@ -1010,7 +1011,7 @@ namespace InlineJS{
                 options = {};
             }
             
-            let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl' ], info: RouterInfo = {
+            let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl', 'progress' ], info: RouterInfo = {
                 currentPage: null,
                 currentQuery: '',
                 pages: [],
@@ -1018,7 +1019,8 @@ namespace InlineJS{
                 targetUrl: null,
                 mount: null,
                 mountElement: null,
-                middlewares: {}
+                middlewares: {},
+                progress: 0,
             }, methods = {
                 register: (data: Record<string, any>) => {
                     let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
@@ -1297,6 +1299,11 @@ namespace InlineJS{
                 info.mountElement.classList.add('router-mount');
 
                 let mount = (url: string) => {
+                    if (info.progress != 0){
+                        info.progress = 0;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'progress', scope);
+                    }
+                    
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, () => {
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
@@ -1308,6 +1315,14 @@ namespace InlineJS{
                                 mount: info.mountElement,
                             },
                         }));
+                    }, (e) => {
+                        if (e.lengthComputable){
+                            let progress = ((e.loaded / e.total) * 100);
+                            if (progress != info.progress){
+                                info.progress = progress;
+                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'progress', scope);
+                            }
+                        }
                     });
                 };
 
@@ -2966,7 +2981,7 @@ namespace InlineJS{
             observer.observe(element);
         }
 
-        public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void){
+        public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void, onProgress?: (e: ProgressEvent<XMLHttpRequestEventTarget>) => void){
             if (!url || !(url = url.trim())){
                 return;
             }
@@ -2981,7 +2996,48 @@ namespace InlineJS{
             };
 
             let fetch = (url: string, tryJson: boolean, callback: (response: any) => void) => {
-                window.fetch(url, {
+                let request = new XMLHttpRequest();
+
+                if (onProgress){
+                    request.addEventListener('progress', onProgress);
+                }
+
+                if (onError){
+                    request.addEventListener('error', () => {
+                        onError({
+                            status: request.status,
+                            statusText: request.statusText,
+                        });
+                    });
+                }
+
+                request.addEventListener('load', () => {
+                    let parsedData: any;
+                    try{
+                        if (tryJson){
+                            parsedData = JSON.parse(request.responseText);    
+                            if (ExtendedDirectiveHandlers.Report(null, parsedData)){
+                                return;
+                            }
+                        }
+                        else{
+                            parsedData = request.responseText;
+                        }
+                    }
+                    catch (err){
+                        parsedData = request.responseText;
+                    }
+
+                    callback(parsedData);
+                    if (onLoad){
+                        onLoad();
+                    }
+                });
+
+                request.open('GET', url);
+                request.send();
+                
+                /*window.fetch(url, {
                     credentials: 'same-origin',
                 }).then(ExtendedDirectiveHandlers.HandleTextResponse).then((data) => {
                     if (data === undefined){
@@ -3013,7 +3069,7 @@ namespace InlineJS{
                     if (onError){
                         onError(err);
                     }
-                });
+                });*/
             };
 
             let fetchList = (url: string, callback: (item: object) => void) => {

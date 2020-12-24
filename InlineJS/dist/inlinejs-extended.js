@@ -760,7 +760,7 @@ var InlineJS;
             if (!InlineJS.Region.IsObject(options)) {
                 options = {};
             }
-            var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl'], info = {
+            var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl', 'progress'], info = {
                 currentPage: null,
                 currentQuery: '',
                 pages: [],
@@ -768,7 +768,8 @@ var InlineJS;
                 targetUrl: null,
                 mount: null,
                 mountElement: null,
-                middlewares: {}
+                middlewares: {},
+                progress: 0
             }, methods = {
                 register: function (data) {
                     var innerRegion = InlineJS.Region.Get(InlineJS.RegionMap.scopeRegionIds.Peek());
@@ -1012,6 +1013,10 @@ var InlineJS;
                 innerElement.parentElement.insertBefore(info.mountElement, innerElement);
                 info.mountElement.classList.add('router-mount');
                 var mount = function (url) {
+                    if (info.progress != 0) {
+                        info.progress = 0;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'progress', scope);
+                    }
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, function () {
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
@@ -1023,6 +1028,14 @@ var InlineJS;
                                 mount: info.mountElement
                             }
                         }));
+                    }, function (e) {
+                        if (e.lengthComputable) {
+                            var progress = ((e.loaded / e.total) * 100);
+                            if (progress != info.progress) {
+                                info.progress = progress;
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'progress', scope);
+                            }
+                        }
                     });
                 };
                 info.mount = mount;
@@ -2404,7 +2417,7 @@ var InlineJS;
             elementScope.intersectionObservers[path] = observer;
             observer.observe(element);
         };
-        ExtendedDirectiveHandlers.FetchLoad = function (element, url, append, onLoad, onError) {
+        ExtendedDirectiveHandlers.FetchLoad = function (element, url, append, onLoad, onError, onProgress) {
             if (!url || !(url = url.trim())) {
                 return;
             }
@@ -2418,37 +2431,74 @@ var InlineJS;
                 }
             };
             var fetch = function (url, tryJson, callback) {
-                window.fetch(url, {
-                    credentials: 'same-origin'
-                }).then(ExtendedDirectiveHandlers.HandleTextResponse).then(function (data) {
-                    if (data === undefined) {
-                        return;
-                    }
+                var request = new XMLHttpRequest();
+                if (onProgress) {
+                    request.addEventListener('progress', onProgress);
+                }
+                if (onError) {
+                    request.addEventListener('error', function () {
+                        onError({
+                            status: request.status,
+                            statusText: request.statusText
+                        });
+                    });
+                }
+                request.addEventListener('load', function () {
                     var parsedData;
                     try {
                         if (tryJson) {
-                            parsedData = JSON.parse(data);
+                            parsedData = JSON.parse(request.responseText);
                             if (ExtendedDirectiveHandlers.Report(null, parsedData)) {
                                 return;
                             }
                         }
                         else {
-                            parsedData = data;
+                            parsedData = request.responseText;
                         }
                     }
                     catch (err) {
-                        parsedData = data;
+                        parsedData = request.responseText;
                     }
                     callback(parsedData);
                     if (onLoad) {
                         onLoad();
                     }
-                })["catch"](function (err) {
+                });
+                request.open('GET', url);
+                request.send();
+                /*window.fetch(url, {
+                    credentials: 'same-origin',
+                }).then(ExtendedDirectiveHandlers.HandleTextResponse).then((data) => {
+                    if (data === undefined){
+                        return;
+                    }
+                    
+                    let parsedData: any;
+                    try{
+                        if (tryJson){
+                            parsedData = JSON.parse(data);
+                            if (ExtendedDirectiveHandlers.Report(null, parsedData)){
+                                return;
+                            }
+                        }
+                        else{
+                            parsedData = data;
+                        }
+                    }
+                    catch (err){
+                        parsedData = data;
+                    }
+
+                    callback(parsedData);
+                    if (onLoad){
+                        onLoad();
+                    }
+                }).catch((err) => {
                     ExtendedDirectiveHandlers.ReportServerError(null, err);
-                    if (onError) {
+                    if (onError){
                         onError(err);
                     }
-                });
+                });*/
             };
             var fetchList = function (url, callback) {
                 fetch(url, true, function (data) {
