@@ -72,30 +72,17 @@ declare namespace InlineJS {
         static directiveRegex: RegExp;
         static externalCallbacks: ExternalCallbacks;
         static keyMap: {
-            meta: string;
-            alt: string;
-            ctrl: string;
-            shift: string;
-            enter: string;
-            esc: string;
-            tab: string;
-            space: string;
-            menu: string;
-            backspace: string;
-            del: string;
-            ins: string;
-            home: string;
-            end: string;
-            plus: string;
-            minus: string;
-            star: string;
-            slash: string;
-            'page-up': string;
-            'page-down': string;
-            'arrow-left': string;
-            'arrow-up': string;
-            'arrow-right': string;
-            'arrow-down': string;
+            Ctrl: string;
+            Return: string;
+            Esc: string;
+            Space: string;
+            Menu: string;
+            Del: string;
+            Ins: string;
+            Plus: string;
+            Minus: string;
+            Star: string;
+            Slash: string;
         };
         static booleanAttributes: string[];
         private componentKey_;
@@ -431,7 +418,7 @@ declare namespace InlineJS {
         static TraverseDirectives(element: HTMLElement, callback: (directive: Directive) => DirectiveHandlerReturn): DirectiveHandlerReturn;
         static GetDirective(attribute: Attr): Directive;
         static GetDirectiveWith(name: string, value: string): Directive;
-        static GetCamelCaseDirectiveName(name: string): string;
+        static GetCamelCaseDirectiveName(name: string, ucfirst?: boolean): string;
     }
     class Config {
         static SetDirectivePrefix(value: string): void;

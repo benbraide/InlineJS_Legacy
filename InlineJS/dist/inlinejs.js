@@ -615,30 +615,17 @@ var InlineJS;
             deepCopy: null
         };
         Region.keyMap = {
-            meta: 'Meta',
-            alt: 'Alt',
-            ctrl: 'Control',
-            shift: 'Shift',
-            enter: 'Enter',
-            esc: 'Escape',
-            tab: 'Tab',
-            space: ' ',
-            menu: 'ContextMenu',
-            backspace: 'Backspace',
-            del: 'Delete',
-            ins: 'Insert',
-            home: 'Home',
-            end: 'End',
-            plus: '+',
-            minus: '-',
-            star: '*',
-            slash: '/',
-            'page-up': 'PageUp',
-            'page-down': 'PageDown',
-            'arrow-left': 'ArrowLeft',
-            'arrow-up': 'ArrowUp',
-            'arrow-right': 'ArrowRight',
-            'arrow-down': 'ArrowDown'
+            Ctrl: 'Control',
+            Return: 'Enter',
+            Esc: 'Escape',
+            Space: ' ',
+            Menu: 'ContextMenu',
+            Del: 'Delete',
+            Ins: 'Insert',
+            Plus: '+',
+            Minus: '-',
+            Star: '*',
+            Slash: '/'
         };
         Region.booleanAttributes = new Array('allowfullscreen', 'allowpaymentrequest', 'async', 'autofocus', 'autoplay', 'checked', 'controls', 'default', 'defer', 'disabled', 'formnovalidate', 'hidden', 'ismap', 'itemscope', 'loop', 'multiple', 'muted', 'nomodule', 'novalidate', 'open', 'playsinline', 'readonly', 'required', 'reversed', 'selected');
         return Region;
@@ -1579,7 +1566,8 @@ var InlineJS;
                     if (prop === 'parent' || prop === 'key') {
                         return false;
                     }
-                    return (myProxy[key_1][prop] = value);
+                    myProxy[key_1][prop] = value;
+                    return true;
                 }));
             }
             else {
@@ -1803,11 +1791,9 @@ var InlineJS;
                 else if (isKey && option in keyOptions) {
                     keyOptions[option] = true;
                 }
-                else if (isKey && option in Region.keyMap) {
-                    keyOptions.keys_.push(Region.keyMap[option]);
-                }
                 else if (isKey) {
-                    keyOptions.keys_.push(option);
+                    var key = Processor.GetCamelCaseDirectiveName(option, true);
+                    keyOptions.keys_.push((key in Region.keyMap) ? Region.keyMap[key] : key);
                 }
             });
             var regionId = region.GetId(), stoppable;
@@ -2648,14 +2634,16 @@ var InlineJS;
                 value: value
             };
         };
-        Processor.GetCamelCaseDirectiveName = function (name) {
-            return name.replace(/-([^-])/g, function () {
+        Processor.GetCamelCaseDirectiveName = function (name, ucfirst) {
+            if (ucfirst === void 0) { ucfirst = false; }
+            var converted = name.replace(/-([^-])/g, function () {
                 var args = [];
                 for (var _i = 0; _i < arguments.length; _i++) {
                     args[_i] = arguments[_i];
                 }
                 return (args[1].charAt(0).toUpperCase() + args[1].slice(1));
             });
+            return ((ucfirst && 0 < converted.length) ? (converted.charAt(0).toUpperCase() + converted.slice(1)) : converted);
         };
         return Processor;
     }());

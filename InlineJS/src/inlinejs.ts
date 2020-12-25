@@ -97,30 +97,17 @@ namespace InlineJS{
         };
 
         public static keyMap = {
-            meta: 'Meta',
-            alt: 'Alt',
-            ctrl: 'Control',
-            shift: 'Shift',
-            enter: 'Enter',
-            esc: 'Escape',
-            tab: 'Tab',
-            space: ' ',
-            menu: 'ContextMenu',
-            backspace: 'Backspace',
-            del: 'Delete',
-            ins: 'Insert',
-            home: 'Home',
-            end: 'End',
-            plus: '+',
-            minus: '-',
-            star: '*',
-            slash: '/',
-            'page-up': 'PageUp',
-            'page-down': 'PageDown',
-            'arrow-left': 'ArrowLeft',
-            'arrow-up': 'ArrowUp',
-            'arrow-right': 'ArrowRight',
-            'arrow-down': 'ArrowDown',
+            Ctrl: 'Control',
+            Return: 'Enter',
+            Esc: 'Escape',
+            Space: ' ',
+            Menu: 'ContextMenu',
+            Del: 'Delete',
+            Ins: 'Insert',
+            Plus: '+',
+            Minus: '-',
+            Star: '*',
+            Slash: '/',
         };
 
         public static booleanAttributes = new Array<string>(
@@ -2000,7 +1987,8 @@ namespace InlineJS{
                         return false;
                     }
 
-                    return (myProxy[key][prop] = value);
+                    myProxy[key][prop] = value;
+                    return true;
                 }));
             }
             else{
@@ -2264,11 +2252,9 @@ namespace InlineJS{
                 else if (isKey && option in keyOptions){
                     keyOptions[option] = true;
                 }
-                else if (isKey && option in Region.keyMap){
-                    keyOptions.keys_.push(Region.keyMap[option]);
-                }
                 else if (isKey){
-                    keyOptions.keys_.push(option);
+                    let key = Processor.GetCamelCaseDirectiveName(option, true);
+                    keyOptions.keys_.push((key in Region.keyMap) ? Region.keyMap[key] : key);
                 }
             });
 
@@ -3252,8 +3238,9 @@ namespace InlineJS{
             };
         }
         
-        public static GetCamelCaseDirectiveName(name: string): string{
-            return name.replace(/-([^-])/g, (...args) => (args[1].charAt(0).toUpperCase() + args[1].slice(1)));
+        public static GetCamelCaseDirectiveName(name: string, ucfirst = false): string{
+            let converted = name.replace(/-([^-])/g, (...args) => (args[1].charAt(0).toUpperCase() + args[1].slice(1)));
+            return ((ucfirst && 0 < converted.length) ? (converted.charAt(0).toUpperCase() + converted.slice(1)) : converted);
         }
     }
 
