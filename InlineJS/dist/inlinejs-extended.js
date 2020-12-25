@@ -455,21 +455,23 @@ var InlineJS;
                 isAppend: (directive.arg.options.indexOf('append') != -1),
                 isOnce: (directive.arg.options.indexOf('once') != -1),
                 isLoaded: false,
+                active: false,
+                progress: 0,
                 append: append,
                 reload: function () { return load('::reload::'); },
                 unload: function () { return load('::unload::'); }
             };
             var load = function (url) {
+                info.active = true;
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                 ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), info.isAppend, function () {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                    if (url === '::unload::') {
+                        return;
+                    }
                     info.isLoaded = true;
-                    var myRegion = InlineJS.Region.Get(regionId);
-                    myRegion.GetChanges().Add({
-                        regionId: regionId,
-                        type: 'set',
-                        path: scope.path + ".isLoaded",
-                        prop: 'isLoaded',
-                        origin: myRegion.GetChanges().GetOrigin()
-                    });
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'isLoaded', scope);
                     Object.keys(scope.callbacks).forEach(function (key) { return scope.callbacks[key].forEach(function (callback) { return InlineJS.CoreDirectiveHandlers.Call(regionId, callback, true); }); });
                     element.dispatchEvent(new CustomEvent("xhr.load"));
                     if (info.isOnce) {
@@ -477,11 +479,23 @@ var InlineJS;
                         info.isOnce = false;
                     }
                 }, function (err) {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                     element.dispatchEvent(new CustomEvent("xhr.error", {
                         detail: { error: err }
                     }));
+                }, function (e) {
+                    if (e.lengthComputable) {
+                        var progress = ((e.loaded / e.total) * 100);
+                        if (progress != info.progress) {
+                            info.progress = progress;
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'progress', scope);
+                        }
+                    }
                 });
             };
+            var elementScope = region.AddElement(element, true);
+            var scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
             region.GetState().TrapGetAccess(function () {
                 var url = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), reload = false;
                 if (typeof url !== 'string') {
@@ -503,11 +517,9 @@ var InlineJS;
                     element.dispatchEvent(new CustomEvent("xhr.reload"));
                 }
             }, true, element);
-            var elementScope = region.AddElement(element, true);
-            var scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
             elementScope.locals['$xhr'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop in info) {
-                    if (prop === 'isLoaded') {
+                    if (prop === 'isLoaded' || prop === 'active' || prop === 'progress') {
                         InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
                     }
                     return info[prop];
@@ -535,14 +547,7 @@ var InlineJS;
                 }
                 ExtendedDirectiveHandlers.FetchLoad(element, url, false, function () {
                     info.isLoaded = true;
-                    var myRegion = InlineJS.Region.Get(regionId);
-                    myRegion.GetChanges().Add({
-                        regionId: regionId,
-                        type: 'set',
-                        path: scope.path + ".isLoaded",
-                        prop: 'isLoaded',
-                        origin: myRegion.GetChanges().GetOrigin()
-                    });
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'isLoaded', scope);
                     Object.keys(scope.callbacks).forEach(function (key) { return scope.callbacks[key].forEach(function (callback) { return InlineJS.CoreDirectiveHandlers.Call(regionId, callback, true); }); });
                     element.dispatchEvent(new CustomEvent("xhr.load"));
                 }, function (err) {
@@ -622,6 +627,58 @@ var InlineJS;
                     return function (callback) { return scope.callbacks[prop].push(callback); };
                 }
             }, __spreadArrays(Object.keys(info), Object.keys(scope.callbacks)));
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.Busy = function (region, element, directive) {
+            var elementScope = region.AddElement(element, true), scope = ExtendedDirectiveHandlers.AddScope('busy', elementScope, []), shouldDisable = (directive.arg.options.includes('disable'));
+            var options = (InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), regionId = region.GetId(), info = {
+                active: false,
+                enable: function () {
+                    return info.setActiveState(true);
+                },
+                disable: function () {
+                    return info.setActiveState(false);
+                },
+                setActiveState: function (state) {
+                    if (info.active == state) {
+                        return false;
+                    }
+                    info.active = state;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                    if (shouldDisable && info.active) {
+                        element.setAttribute('disabled', 'disabled');
+                    }
+                    else if (shouldDisable) {
+                        element.removeAttribute('disabled');
+                    }
+                    window.dispatchEvent(new CustomEvent("busy." + options.key, {
+                        detail: { active: info.active, source: element }
+                    }));
+                    return true;
+                },
+                handleEvent: function (e) {
+                    if (!info.disable()) { //Already disabled
+                        e.preventDefault();
+                    }
+                }
+            };
+            options.key = (options.key || elementScope.key);
+            (options.events || ((element instanceof HTMLFormElement) ? ['submit'] : ['click', 'keydown.enter'])).forEach(function (e) {
+                InlineJS.CoreDirectiveHandlers.On(region, element, InlineJS.Processor.GetDirectiveWith("x-on:" + e, '$busy.handleEvent($event)'));
+            });
+            window.addEventListener("busy." + options.key, function (e) {
+                if (e.detail.source !== element) {
+                    info.setActiveState(e.detail.active);
+                }
+            });
+            elementScope.locals['$busy'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop in info) {
+                    if (prop === 'active') {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    }
+                    return info[prop];
+                }
+            }, Object.keys(info));
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Animate = function (region, element, directive) {
@@ -760,7 +817,7 @@ var InlineJS;
             if (!InlineJS.Region.IsObject(options)) {
                 options = {};
             }
-            var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl', 'progress'], info = {
+            var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress'], info = {
                 currentPage: null,
                 currentQuery: '',
                 pages: [],
@@ -769,6 +826,7 @@ var InlineJS;
                 mount: null,
                 mountElement: null,
                 middlewares: {},
+                active: false,
                 progress: 0
             }, methods = {
                 register: function (data) {
@@ -1013,15 +1071,21 @@ var InlineJS;
                 innerElement.parentElement.insertBefore(info.mountElement, innerElement);
                 info.mountElement.classList.add('router-mount');
                 var mount = function (url) {
+                    info.active = true;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                     if (info.progress != 0) {
                         info.progress = 0;
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'progress', scope);
                     }
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, function () {
+                        info.active = false;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
                         InlineJS.Bootstrap.Reattach();
                     }, function (err) {
+                        info.active = false;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                         window.dispatchEvent(new CustomEvent("router.mount.error", {
                             detail: {
                                 error: err,
@@ -2120,7 +2184,7 @@ var InlineJS;
             if (!(element instanceof HTMLFormElement)) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var data = (InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), regionId = region.GetId();
+            var data = (InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), regionId = region.GetId(), active = false;
             var info = {
                 action: (data.action || element.action),
                 method: (data.method || element.method),
@@ -2141,17 +2205,12 @@ var InlineJS;
                     options[key] = true;
                 }
             });
-            var submitButtons = new Array();
-            region.AddElement(element, true).locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
-                if (prop === 'addSubmitButton') {
-                    return function (button) {
-                        submitButtons.push(button);
-                    };
-                }
-                if (prop === 'removeSubmitButton') {
-                    return function (button) {
-                        submitButtons = submitButtons.filter(function (btn) { return (btn !== button); });
-                    };
+            var elementScope = region.AddElement(element, true);
+            var scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
+            elementScope.locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'active') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return active;
                 }
                 if (prop === 'element') {
                     return element;
@@ -2159,16 +2218,12 @@ var InlineJS;
                 if (prop === 'submit') {
                     return submit;
                 }
-            }, ['addSubmitButton', 'removeSubmitButton', 'element']);
-            var setDisabledState = function (disable) {
-                submitButtons.forEach(function (button) {
-                    if (disable) {
-                        button.setAttribute('disabled', 'disabled');
-                    }
-                    else {
-                        button.removeAttribute('disabled');
-                    }
-                });
+            }, ['active', 'element', 'submit']);
+            var setActiveState = function (state) {
+                if (active != state) {
+                    active = state;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                }
             };
             options.files = (options.files || !!element.querySelector('input[type="file"]'));
             var submit = function (checkConfirm) {
@@ -2206,13 +2261,13 @@ var InlineJS;
                 else { //No files embedded
                     body = new FormData(element);
                 }
-                setDisabledState(true);
+                setActiveState(false);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
                     body: body
                 }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
-                    setDisabledState(false);
+                    setActiveState(true);
                     if (info.errorBag && 'failed' in data) {
                         for (var key in info.errorBag) {
                             var value = (data.failed[key] || []);
@@ -2233,7 +2288,7 @@ var InlineJS;
                         element.reset();
                     }
                 })["catch"](function (err) {
-                    setDisabledState(false);
+                    setActiveState(true);
                     ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                     if (info.callback) {
                         info.callback(null, err);
@@ -2244,26 +2299,17 @@ var InlineJS;
                 e.preventDefault();
                 submit();
             });
-            if (!InlineJS.DirectiveHandlerManager.GetHandler('formSubmit')) {
-                InlineJS.DirectiveHandlerManager.AddHandler('formSubmit', function (innerRegion, innerElement, innerDirective) {
-                    var proxy = innerRegion.GetLocal(innerElement, '$form', true);
-                    if (!proxy || !proxy.addSubmitButton) {
-                        return InlineJS.DirectiveHandlerReturn.Nil;
-                    }
-                    proxy.addSubmitButton(innerElement);
-                    innerRegion.AddElement(innerElement, true).uninitCallbacks.push(function () {
-                        proxy.removeSubmitButton(innerElement);
-                    });
-                    return InlineJS.DirectiveHandlerReturn.Handled;
-                });
-            }
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.FormSubmit = function (region, element, directive) {
+            InlineJS.CoreDirectiveHandlers.Attr(region, element, InlineJS.Processor.GetDirectiveWith('x-attr:disabled', '$form.active'));
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Modal = function (region, element, directive) {
             if (InlineJS.Region.GetGlobal(region.GetId(), '$modal')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url = null;
+            var scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url = null, active = false;
             var countainer = document.createElement('div'), mount = document.createElement('div'), overlay = InlineJS.Region.GetGlobalValue(regionId, '$overlay');
             countainer.classList.add('inlinejs-modal');
             if (element.style.zIndex) {
@@ -2278,6 +2324,7 @@ var InlineJS;
             mount.classList.add('inlinejs-modal-mount');
             mount.setAttribute('x-xhr-load', '$modal.url');
             mount.setAttribute('x-on:click.outside', '$modal.show = false');
+            mount.setAttribute('x-bind', '$modal.active = $xhr.active');
             countainer.appendChild(mount);
             document.body.appendChild(countainer);
             var setShow = function (value) {
@@ -2285,8 +2332,10 @@ var InlineJS;
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'show', scope);
             };
             var setUrl = function (value) {
-                url = value;
-                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'url', scope);
+                if (!active) {
+                    url = value;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'url', scope);
+                }
             };
             var reload = function () {
                 setShow(false);
@@ -2308,13 +2357,22 @@ var InlineJS;
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
                     return url;
                 }
-            }, ['show', 'url'], function (target, prop, value) {
+                if (prop === 'active') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return active;
+                }
+            }, ['show', 'url', 'active'], function (target, prop, value) {
                 if (prop === 'show') {
                     setShow(!!value);
                     return true;
                 }
                 if (prop === 'url') {
                     setUrl(value || '');
+                    return true;
+                }
+                if (prop === 'active') {
+                    active = !!value;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                     return true;
                 }
                 return false;
@@ -2466,39 +2524,6 @@ var InlineJS;
                 });
                 request.open('GET', url);
                 request.send();
-                /*window.fetch(url, {
-                    credentials: 'same-origin',
-                }).then(ExtendedDirectiveHandlers.HandleTextResponse).then((data) => {
-                    if (data === undefined){
-                        return;
-                    }
-                    
-                    let parsedData: any;
-                    try{
-                        if (tryJson){
-                            parsedData = JSON.parse(data);
-                            if (ExtendedDirectiveHandlers.Report(null, parsedData)){
-                                return;
-                            }
-                        }
-                        else{
-                            parsedData = data;
-                        }
-                    }
-                    catch (err){
-                        parsedData = data;
-                    }
-
-                    callback(parsedData);
-                    if (onLoad){
-                        onLoad();
-                    }
-                }).catch((err) => {
-                    ExtendedDirectiveHandlers.ReportServerError(null, err);
-                    if (onError){
-                        onError(err);
-                    }
-                });*/
             };
             var fetchList = function (url, callback) {
                 fetch(url, true, function (data) {
@@ -2509,11 +2534,16 @@ var InlineJS;
                     else if (typeof data === 'string') {
                         element.innerHTML = data;
                     }
+                    if (onLoad) {
+                        onLoad();
+                    }
                 });
             };
             var onEvent = function () {
                 element.removeEventListener('load', onEvent);
-                onLoad();
+                if (onLoad) {
+                    onLoad();
+                }
             };
             if (url === '::unload::') {
                 if (element.tagName === 'IMG' || element.tagName === 'IFRAME') {
@@ -2521,6 +2551,9 @@ var InlineJS;
                 }
                 else {
                     removeAll(true);
+                }
+                if (onLoad) {
+                    onLoad();
                 }
             }
             else if (element.tagName === 'SELECT') {
@@ -2723,6 +2756,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
             InlineJS.DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
             InlineJS.DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
+            InlineJS.DirectiveHandlerManager.AddHandler('busy', ExtendedDirectiveHandlers.Busy);
             InlineJS.DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
             InlineJS.DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
             InlineJS.DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
@@ -2734,6 +2768,8 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
             InlineJS.DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
             InlineJS.DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
+            InlineJS.DirectiveHandlerManager.AddHandler('formSubmit', ExtendedDirectiveHandlers.FormSubmit);
+            InlineJS.DirectiveHandlerManager.AddHandler('formButton', ExtendedDirectiveHandlers.FormSubmit);
             InlineJS.DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             InlineJS.DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
             var buildGlobal = function (name) {
@@ -2749,6 +2785,7 @@ var InlineJS;
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
+            buildGlobal('busy');
             buildGlobal('db');
             buildGlobal('form');
             buildGlobal('counter');

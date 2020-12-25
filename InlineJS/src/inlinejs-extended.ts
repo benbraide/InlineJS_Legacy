@@ -42,6 +42,7 @@ namespace InlineJS{
         mount: (url: string) => void;
         mountElement: HTMLElement;
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
+        active: boolean;
         progress: number;
     }
 
@@ -646,23 +647,27 @@ namespace InlineJS{
                 isAppend: (directive.arg.options.indexOf('append') != -1),
                 isOnce: (directive.arg.options.indexOf('once') != -1),
                 isLoaded: false,
+                active: false,
+                progress: 0,
                 append: append,
                 reload: () => load('::reload::'),
                 unload: () => load('::unload::')
             };
 
             let load = (url: string) => {
+                info.active = true;
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                
                 ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), info.isAppend, () => {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                    
+                    if (url === '::unload::'){
+                        return;
+                    }
+                    
                     info.isLoaded = true;
-
-                    let myRegion = Region.Get(regionId);
-                    myRegion.GetChanges().Add({
-                        regionId: regionId,
-                        type: 'set',
-                        path: `${scope.path}.isLoaded`,
-                        prop: 'isLoaded',
-                        origin: myRegion.GetChanges().GetOrigin()
-                    });
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'isLoaded', scope);
                     
                     Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, true)));
                     element.dispatchEvent(new CustomEvent(`xhr.load`));
@@ -672,12 +677,26 @@ namespace InlineJS{
                         info.isOnce = false;
                     }
                 }, (err) => {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                    
                     element.dispatchEvent(new CustomEvent(`xhr.error`, {
                         detail: { error: err },
                     }));
+                }, (e) => {
+                    if (e.lengthComputable){
+                        let progress = ((e.loaded / e.total) * 100);
+                        if (progress != info.progress){
+                            info.progress = progress;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'progress', scope);
+                        }
+                    }
                 });
             };
             
+            let elementScope = region.AddElement(element, true);
+            let scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
+
             region.GetState().TrapGetAccess(() => {
                 let url = CoreDirectiveHandlers.Evaluate(region, element, directive.value), reload = false;
                 if (typeof url !== 'string'){
@@ -703,12 +722,9 @@ namespace InlineJS{
                 }
             }, true, element);
 
-            let elementScope = region.AddElement(element, true);
-            let scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
-
             elementScope.locals['$xhr'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                 if (prop in info){
-                    if (prop === 'isLoaded'){
+                    if (prop === 'isLoaded' || prop === 'active' || prop === 'progress'){
                         Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                     }
                     return info[prop];
@@ -744,16 +760,7 @@ namespace InlineJS{
 
                 ExtendedDirectiveHandlers.FetchLoad(element, url, false, () => {
                     info.isLoaded = true;
-
-                    let myRegion = Region.Get(regionId);
-                    myRegion.GetChanges().Add({
-                        regionId: regionId,
-                        type: 'set',
-                        path: `${scope.path}.isLoaded`,
-                        prop: 'isLoaded',
-                        origin: myRegion.GetChanges().GetOrigin()
-                    });
-
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'isLoaded', scope);
                     Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, true)));
                     element.dispatchEvent(new CustomEvent(`xhr.load`));
                 }, (err) => {
@@ -848,6 +855,67 @@ namespace InlineJS{
                     return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
+
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Busy(region: Region, element: HTMLElement, directive: Directive){
+            let elementScope = region.AddElement(element, true), scope = ExtendedDirectiveHandlers.AddScope('busy', elementScope, []), shouldDisable = (directive.arg.options.includes('disable'));
+            let options = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), regionId = region.GetId(), info = {
+                active: false,
+                enable: () => {
+                    return info.setActiveState(true);
+                },
+                disable: () => {
+                    return info.setActiveState(false);
+                },
+                setActiveState(state: boolean){
+                    if (info.active == state){
+                        return false;
+                    }
+
+                    info.active = state;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+
+                    if (shouldDisable && info.active){
+                        element.setAttribute('disabled', 'disabled');
+                    }
+                    else if (shouldDisable){
+                        element.removeAttribute('disabled');
+                    }
+
+                    window.dispatchEvent(new CustomEvent(`busy.${options.key}`, {
+                        detail: { active: info.active, source: element }
+                    }));
+
+                    return true;
+                },
+                handleEvent: (e: Event) => {
+                    if (!info.disable()){//Already disabled
+                        e.preventDefault();
+                    }
+                },
+            };
+            
+            options.key = (options.key || elementScope.key);
+            ((options.events as Array<string>) || ((element instanceof HTMLFormElement) ? ['submit'] : ['click', 'keydown.enter'])).forEach((e) => {
+                CoreDirectiveHandlers.On(region, element, Processor.GetDirectiveWith(`x-on:${e}`, '$busy.handleEvent($event)'));
+            });
+
+            window.addEventListener(`busy.${options.key}`, (e) => {
+                if (((e as CustomEvent).detail as any).source !== element){
+                    info.setActiveState(((e as CustomEvent).detail as any).active)
+                }
+            });
+
+            elementScope.locals['$busy'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop in info){
+                    if (prop === 'active'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    }
+                    return info[prop];
+                }
+            }, Object.keys(info));
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -1011,7 +1079,7 @@ namespace InlineJS{
                 options = {};
             }
             
-            let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl', 'progress' ], info: RouterInfo = {
+            let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress' ], info: RouterInfo = {
                 currentPage: null,
                 currentQuery: '',
                 pages: [],
@@ -1020,6 +1088,7 @@ namespace InlineJS{
                 mount: null,
                 mountElement: null,
                 middlewares: {},
+                active: false,
                 progress: 0,
             }, methods = {
                 register: (data: Record<string, any>) => {
@@ -1299,16 +1368,26 @@ namespace InlineJS{
                 info.mountElement.classList.add('router-mount');
 
                 let mount = (url: string) => {
+                    info.active = true;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                    
                     if (info.progress != 0){
                         info.progress = 0;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'progress', scope);
                     }
                     
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, () => {
+                        info.active = false;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                        
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
+
                         Bootstrap.Reattach();
                     }, (err) => {
+                        info.active = false;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                        
                         window.dispatchEvent(new CustomEvent(`router.mount.error`, {
                             detail: {
                                 error: err,
@@ -2628,7 +2707,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let data = ((CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}) as FormInfo), regionId = region.GetId();
+            let data = ((CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}) as FormInfo), regionId = region.GetId(), active = false;
             let info: FormInfo = {
                 action: (data.action || element.action),
                 method: (data.method || element.method),
@@ -2653,20 +2732,15 @@ namespace InlineJS{
                 }
             });
             
-            let submitButtons = new Array<HTMLElement>();
-            region.AddElement(element, true).locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
-                if (prop === 'addSubmitButton'){
-                    return (button: HTMLElement) => {
-                        submitButtons.push(button);
-                    };
-                }
+            let elementScope = region.AddElement(element, true);
+            let scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
 
-                if (prop === 'removeSubmitButton'){
-                    return (button: HTMLElement) => {
-                        submitButtons = submitButtons.filter(btn => (btn !== button));
-                    };
+            elementScope.locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop === 'active'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return active;
                 }
-
+                
                 if (prop === 'element'){
                     return element;
                 }
@@ -2674,17 +2748,13 @@ namespace InlineJS{
                 if (prop === 'submit'){
                     return submit;
                 }
-            }, ['addSubmitButton', 'removeSubmitButton', 'element']);
+            }, ['active', 'element', 'submit']);
             
-            let setDisabledState = (disable: boolean) => {
-                submitButtons.forEach((button) => {
-                    if (disable){
-                        button.setAttribute('disabled', 'disabled');
-                    }
-                    else{
-                        button.removeAttribute('disabled');
-                    }
-                });
+            let setActiveState = (state: boolean) => {
+                if (active != state){
+                    active = state;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                }
             };
 
             options.files = (options.files || !! element.querySelector('input[type="file"]'));
@@ -2725,13 +2795,13 @@ namespace InlineJS{
                     body = new FormData(element);
                 }
                 
-                setDisabledState(true);
+                setActiveState(false);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
                     body: body,
                 }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
-                    setDisabledState(false);
+                    setActiveState(true);
                     if (info.errorBag && 'failed' in data){
                         for (let key in info.errorBag){
                             let value = (data.failed[key] || []);
@@ -2755,7 +2825,7 @@ namespace InlineJS{
                         element.reset();
                     }
                 }).catch((err) => {
-                    setDisabledState(false);
+                    setActiveState(true);
                     ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                     if (info.callback){
                         info.callback(null, err);
@@ -2768,22 +2838,11 @@ namespace InlineJS{
                 submit();
             });
 
-            if (!DirectiveHandlerManager.GetHandler('formSubmit')){
-                DirectiveHandlerManager.AddHandler('formSubmit', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                    let proxy = innerRegion.GetLocal(innerElement, '$form', true);
-                    if (!proxy || !proxy.addSubmitButton){
-                        return DirectiveHandlerReturn.Nil;
-                    }
-    
-                    proxy.addSubmitButton(innerElement);
-                    innerRegion.AddElement(innerElement, true).uninitCallbacks.push(() => {
-                        proxy.removeSubmitButton(innerElement);
-                    });
-                    
-                    return DirectiveHandlerReturn.Handled;
-                });
-            }
-            
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static FormSubmit(region: Region, element: HTMLElement, directive: Directive){
+            CoreDirectiveHandlers.Attr(region, element, Processor.GetDirectiveWith('x-attr:disabled', '$form.active'));
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -2792,7 +2851,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url: string = null;
+            let scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url: string = null, active = false;
             let countainer = document.createElement('div'), mount = document.createElement('div'), overlay = Region.GetGlobalValue(regionId, '$overlay');
             
             countainer.classList.add('inlinejs-modal');
@@ -2810,6 +2869,7 @@ namespace InlineJS{
             mount.classList.add('inlinejs-modal-mount');
             mount.setAttribute('x-xhr-load', '$modal.url');
             mount.setAttribute('x-on:click.outside', '$modal.show = false');
+            mount.setAttribute('x-bind', '$modal.active = $xhr.active');
             
             countainer.appendChild(mount);
             document.body.appendChild(countainer);
@@ -2820,8 +2880,10 @@ namespace InlineJS{
             };
 
             let setUrl = (value: string) => {
-                url = value;
-                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'url', scope);
+                if (!active){
+                    url = value;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'url', scope);
+                }
             };
 
             let reload = () => {
@@ -2848,7 +2910,12 @@ namespace InlineJS{
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                     return url;
                 }
-            }, ['show', 'url'], (target: object, prop: string | number | symbol, value: any) => {
+
+                if (prop === 'active'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return active;
+                }
+            }, ['show', 'url', 'active'], (target: object, prop: string | number | symbol, value: any) => {
                 if (prop === 'show'){
                     setShow(!! value);
                     return true;
@@ -2856,6 +2923,12 @@ namespace InlineJS{
 
                 if (prop === 'url'){
                     setUrl(value || '');
+                    return true;
+                }
+
+                if (prop === 'active'){
+                    active = !! value;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
                     return true;
                 }
 
@@ -3036,40 +3109,6 @@ namespace InlineJS{
 
                 request.open('GET', url);
                 request.send();
-                
-                /*window.fetch(url, {
-                    credentials: 'same-origin',
-                }).then(ExtendedDirectiveHandlers.HandleTextResponse).then((data) => {
-                    if (data === undefined){
-                        return;
-                    }
-                    
-                    let parsedData: any;
-                    try{
-                        if (tryJson){
-                            parsedData = JSON.parse(data);    
-                            if (ExtendedDirectiveHandlers.Report(null, parsedData)){
-                                return;
-                            }
-                        }
-                        else{
-                            parsedData = data;
-                        }
-                    }
-                    catch (err){
-                        parsedData = data;
-                    }
-
-                    callback(parsedData);
-                    if (onLoad){
-                        onLoad();
-                    }
-                }).catch((err) => {
-                    ExtendedDirectiveHandlers.ReportServerError(null, err);
-                    if (onError){
-                        onError(err);
-                    }
-                });*/
             };
 
             let fetchList = (url: string, callback: (item: object) => void) => {
@@ -3081,12 +3120,18 @@ namespace InlineJS{
                     else if (typeof data === 'string'){
                         element.innerHTML = data;
                     }
+
+                    if (onLoad){
+                        onLoad();
+                    }
                 });
             };
 
             let onEvent = () => {
                 element.removeEventListener('load', onEvent);
-                onLoad();
+                if (onLoad){
+                    onLoad();
+                }
             };
 
             if (url === '::unload::'){
@@ -3095,6 +3140,10 @@ namespace InlineJS{
                 }
                 else{
                     removeAll(true);
+                }
+
+                if (onLoad){
+                    onLoad();
                 }
             }
             else if (element.tagName === 'SELECT'){
@@ -3332,6 +3381,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
 
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
+            DirectiveHandlerManager.AddHandler('busy', ExtendedDirectiveHandlers.Busy);
             DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
             DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
 
@@ -3345,7 +3395,11 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('geolocation', ExtendedDirectiveHandlers.Geolocation);
             DirectiveHandlerManager.AddHandler('reporter', ExtendedDirectiveHandlers.Reporter);
             DirectiveHandlerManager.AddHandler('overlay', ExtendedDirectiveHandlers.Overlay);
+
             DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
+            DirectiveHandlerManager.AddHandler('formSubmit', ExtendedDirectiveHandlers.FormSubmit);
+            DirectiveHandlerManager.AddHandler('formButton', ExtendedDirectiveHandlers.FormSubmit);
+            
             DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
 
@@ -3363,6 +3417,7 @@ namespace InlineJS{
             buildGlobal('xhr');
             buildGlobal('lazyLoad');
             buildGlobal('intersection');
+            buildGlobal('busy');
             buildGlobal('db');
             buildGlobal('form');
             buildGlobal('counter');

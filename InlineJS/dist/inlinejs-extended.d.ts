@@ -37,6 +37,7 @@ declare namespace InlineJS {
         mount: (url: string) => void;
         mountElement: HTMLElement;
         middlewares: Record<string, (page?: string, query?: string) => boolean>;
+        active: boolean;
         progress: number;
     }
     interface RouterPageInfo {
@@ -152,6 +153,7 @@ declare namespace InlineJS {
         static XHRLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static LazyLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Intersection(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Busy(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Animate(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Typewriter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Router(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
@@ -163,6 +165,7 @@ declare namespace InlineJS {
         static Reporter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Overlay(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Form(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static FormSubmit(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Modal(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Counter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;
