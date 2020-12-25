@@ -920,6 +920,93 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static ActiveGroup(region: Region, element: HTMLElement, directive: Directive){
+            let options = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), name = (options.key ? `activeGroup.${options.key}` : 'activeGroup');
+            if (Region.GetGlobal(null, `$${name}`)){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let elementScope = region.AddElement(element, true);
+            let scope = ExtendedDirectiveHandlers.AddScope('activeGroup', elementScope, []), regionId = region.GetId(), count = 0, setCount = (value: number) => {
+                count = value;
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'count', scope);
+            };
+            
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'count'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return count;
+                }
+
+                if (prop === 'active'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.count`);
+                    return (0 < count);
+                }
+
+                if (prop === 'setCount'){
+                    return (value: number) => {
+                        setCount((value < 0) ? 0 : value);
+                    };
+                }
+                
+                if (prop === 'offsetCount'){
+                    return (value: number) => {
+                        let newCount = (count += value);
+                        setCount((newCount < 0) ? 0 : newCount);
+                    };
+                }
+            }, ['count', 'active', 'setCount', 'offsetCount']);
+
+            elementScope.locals['$activeGroup'] = proxy;
+            Region.AddGlobal(`$${name}`, () => proxy);
+
+            if (!Region.GetGlobal(null, '$activeGroup')){
+                Region.AddGlobal('$activeGroup', () => {
+                    return (key: string) => Region.GetGlobalValue(null, `activeGroup.${key}`);
+                });
+            }
+
+            let update = (key: string, state: boolean, isInitial: boolean) => {
+                let proxy = Region.GetGlobalValue(null, (key ? `$activeGroup.${key}` : '$activeGroup'));
+                if (proxy){
+                    (proxy.offsetCount as (value: number) => void)(state ? 1 : (isInitial ? 0 : -1));
+                }
+            };
+
+            let trapExpression = (innerRegion: Region, innerElement: HTMLElement, expression: string, key: string) => {
+                let innerRegionId = innerRegion.GetId(), previousValue: boolean = null;
+                innerRegion.GetState().TrapGetAccess(() => {
+                    let value = !! CoreDirectiveHandlers.Evaluate(Region.Get(innerRegionId), innerElement, expression);
+                    if (value !== previousValue){
+                        update(key, value, (previousValue === null));
+                        previousValue = value;
+                    }
+                }, true, innerElement);
+            };
+
+            if (!DirectiveHandlerManager.GetHandler('activeGroupBind')){
+                DirectiveHandlerManager.AddHandler('activeGroupBind', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                    trapExpression(innerRegion, innerElement, innerDirective.value, null);
+                    return DirectiveHandlerReturn.Handled;
+                });
+            }
+            
+            if (!DirectiveHandlerManager.GetHandler('activeGroupBindFor')){
+                DirectiveHandlerManager.AddHandler('activeGroupBindFor', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                    let innerOptions = (CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value) || {})
+                    if (!innerOptions.expression){
+                        return DirectiveHandlerReturn.Nil;    
+                    }
+                    
+                    trapExpression(innerRegion, innerElement, innerOptions.expression, innerOptions.key);
+                    
+                    return DirectiveHandlerReturn.Handled;
+                });
+            }
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static Animate(region: Region, element: HTMLElement, directive: Directive){
             let animator = ExtendedDirectiveHandlers.PrepareAnimation(element, directive.arg.options);
             if (!animator){
@@ -2676,7 +2763,7 @@ namespace InlineJS{
                 if (prop === 'container'){
                     return container;
                 }
-            }, ['show', 'hide', 'visible', 'zIndex', 'container']);
+            }, ['show', 'hide', 'count', 'visible', 'zIndex', 'container']);
 
             Region.AddGlobal('$overlay', () => proxy);
             DirectiveHandlerManager.AddHandler('overlayBind', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
@@ -3382,6 +3469,7 @@ namespace InlineJS{
 
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             DirectiveHandlerManager.AddHandler('busy', ExtendedDirectiveHandlers.Busy);
+            DirectiveHandlerManager.AddHandler('activeGroup', ExtendedDirectiveHandlers.ActiveGroup);
             DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
             DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
 

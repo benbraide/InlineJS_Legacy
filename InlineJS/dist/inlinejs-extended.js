@@ -681,6 +681,78 @@ var InlineJS;
             }, Object.keys(info));
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.ActiveGroup = function (region, element, directive) {
+            var options = (InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), name = (options.key ? "activeGroup." + options.key : 'activeGroup');
+            if (InlineJS.Region.GetGlobal(null, "$" + name)) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var elementScope = region.AddElement(element, true);
+            var scope = ExtendedDirectiveHandlers.AddScope('activeGroup', elementScope, []), regionId = region.GetId(), count = 0, setCount = function (value) {
+                count = value;
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'count', scope);
+            };
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'count') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return count;
+                }
+                if (prop === 'active') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".count");
+                    return (0 < count);
+                }
+                if (prop === 'setCount') {
+                    return function (value) {
+                        setCount((value < 0) ? 0 : value);
+                    };
+                }
+                if (prop === 'offsetCount') {
+                    return function (value) {
+                        var newCount = (count += value);
+                        setCount((newCount < 0) ? 0 : newCount);
+                    };
+                }
+            }, ['count', 'active', 'setCount', 'offsetCount']);
+            elementScope.locals['$activeGroup'] = proxy;
+            InlineJS.Region.AddGlobal("$" + name, function () { return proxy; });
+            if (!InlineJS.Region.GetGlobal(null, '$activeGroup')) {
+                InlineJS.Region.AddGlobal('$activeGroup', function () {
+                    return function (key) { return InlineJS.Region.GetGlobalValue(null, "activeGroup." + key); };
+                });
+            }
+            var update = function (key, state, isInitial) {
+                var proxy = InlineJS.Region.GetGlobalValue(null, (key ? "$activeGroup." + key : '$activeGroup'));
+                if (proxy) {
+                    proxy.offsetCount(state ? 1 : (isInitial ? 0 : -1));
+                }
+            };
+            var trapExpression = function (innerRegion, innerElement, expression, key) {
+                var innerRegionId = innerRegion.GetId(), previousValue = null;
+                innerRegion.GetState().TrapGetAccess(function () {
+                    var value = !!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(innerRegionId), innerElement, expression);
+                    if (value !== previousValue) {
+                        update(key, value, (previousValue === null));
+                        previousValue = value;
+                    }
+                }, true, innerElement);
+            };
+            if (!InlineJS.DirectiveHandlerManager.GetHandler('activeGroupBind')) {
+                InlineJS.DirectiveHandlerManager.AddHandler('activeGroupBind', function (innerRegion, innerElement, innerDirective) {
+                    trapExpression(innerRegion, innerElement, innerDirective.value, null);
+                    return InlineJS.DirectiveHandlerReturn.Handled;
+                });
+            }
+            if (!InlineJS.DirectiveHandlerManager.GetHandler('activeGroupBindFor')) {
+                InlineJS.DirectiveHandlerManager.AddHandler('activeGroupBindFor', function (innerRegion, innerElement, innerDirective) {
+                    var innerOptions = (InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value) || {});
+                    if (!innerOptions.expression) {
+                        return InlineJS.DirectiveHandlerReturn.Nil;
+                    }
+                    trapExpression(innerRegion, innerElement, innerOptions.expression, innerOptions.key);
+                    return InlineJS.DirectiveHandlerReturn.Handled;
+                });
+            }
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.Animate = function (region, element, directive) {
             var animator = ExtendedDirectiveHandlers.PrepareAnimation(element, directive.arg.options);
             if (!animator) {
@@ -2159,7 +2231,7 @@ var InlineJS;
                 if (prop === 'container') {
                     return container;
                 }
-            }, ['show', 'hide', 'visible', 'zIndex', 'container']);
+            }, ['show', 'hide', 'count', 'visible', 'zIndex', 'container']);
             InlineJS.Region.AddGlobal('$overlay', function () { return proxy; });
             InlineJS.DirectiveHandlerManager.AddHandler('overlayBind', function (innerRegion, innerElement, innerDirective) {
                 var innerRegionId = innerRegion.GetId(), previousValue = null;
@@ -2757,6 +2829,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
             InlineJS.DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             InlineJS.DirectiveHandlerManager.AddHandler('busy', ExtendedDirectiveHandlers.Busy);
+            InlineJS.DirectiveHandlerManager.AddHandler('activeGroup', ExtendedDirectiveHandlers.ActiveGroup);
             InlineJS.DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
             InlineJS.DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
             InlineJS.DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
