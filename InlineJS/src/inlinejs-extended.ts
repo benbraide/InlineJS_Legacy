@@ -1013,14 +1013,14 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let regionId = region.GetId(), lastValue: boolean = null;
+            let regionId = region.GetId(), lastValue: boolean = null, showOnly = directive.arg.options.includes('show'), hideOnly = (!showOnly && directive.arg.options.includes('hide'));
             region.GetState().TrapGetAccess(() => {
                 lastValue = !! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
                 animator(lastValue, null, false);
             }, () => {
                 if (lastValue != (!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value))){
                     lastValue = !lastValue;
-                    animator(lastValue);
+                    animator(lastValue, null, (lastValue ? !hideOnly : !showOnly));
                 }
             }, element);
 
@@ -2882,13 +2882,13 @@ namespace InlineJS{
                     body = new FormData(element);
                 }
                 
-                setActiveState(false);
+                setActiveState(true);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
                     body: body,
                 }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
-                    setActiveState(true);
+                    setActiveState(false);
                     if (info.errorBag && 'failed' in data){
                         for (let key in info.errorBag){
                             let value = (data.failed[key] || []);
@@ -2912,7 +2912,7 @@ namespace InlineJS{
                         element.reset();
                     }
                 }).catch((err) => {
-                    setActiveState(true);
+                    setActiveState(false);
                     ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                     if (info.callback){
                         info.callback(null, err);
