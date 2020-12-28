@@ -2989,7 +2989,7 @@ namespace InlineJS{
 
             mount.classList.add('inlinejs-modal-mount');
             mount.setAttribute('x-xhr-load', '$modal.url');
-            mount.setAttribute('x-on:click.outside', '$modal.show = false');
+            mount.setAttribute('x-on:click.mobile.outside', '$modal.show = false');
             mount.setAttribute('x-bind', '$modal.active = $xhr.active');
             
             countainer.appendChild(mount);
