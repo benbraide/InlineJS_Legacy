@@ -48,6 +48,7 @@ namespace InlineJS{
 
     export interface RouterPageInfo{
         pattern: string | RegExp;
+        name: string;
         path: string;
         title: string;
         component: string;
@@ -1165,6 +1166,11 @@ namespace InlineJS{
             if (!Region.IsObject(options)){
                 options = {};
             }
+
+            let hooks = {
+                beforeLoad: [],
+                afterLoad: [],
+            };
             
             let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress' ], info: RouterInfo = {
                 currentPage: null,
@@ -1181,7 +1187,8 @@ namespace InlineJS{
                 register: (data: Record<string, any>) => {
                     let innerRegion = Region.Get(RegionMap.scopeRegionIds.Peek());
                     if (innerRegion){
-                        register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares, data.uid);
+                        register(data.page, (data.name || ''), (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(),
+                            (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares, data.uid);
                     }
                 },
                 unregister: (uid: number) => {
@@ -1216,6 +1223,11 @@ namespace InlineJS{
                 setTitle: (title: string) => {
                     document.title = `${options.titlePrefix || ''}${title || 'Untitled'}${options.titleSuffix || ''}`;
                 },
+                addHook: (key: string, handler: (...args: any) => any) => {
+                    if (key in hooks){
+                        hooks[key].push(handler);
+                    }
+                },
             };
 
             if (options.urlPrefix){
@@ -1226,7 +1238,7 @@ namespace InlineJS{
             }
 
             let scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
-            let register = (page: string | RegExp, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean, middlewares: Array<string>, uid: number) => {
+            let register = (page: string | RegExp, name: string, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean, middlewares: Array<string>, uid: number) => {
                 if (typeof page === 'string' && page.length > 1 && page.startsWith('/')){
                     page = page.substr(1);
                 }
@@ -1237,6 +1249,7 @@ namespace InlineJS{
                 
                 info.pages.push({
                     pattern: page,
+                    name: name,
                     path: path,
                     title: title,
                     component: component,
@@ -1309,7 +1322,17 @@ namespace InlineJS{
                     ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
                 }
 
-                let pageInfo = findPage(page);
+                let pageInfo = findPage(page), prevented = false;
+                hooks.beforeLoad.forEach((handler) => {
+                    if (handler(pageInfo, page, query) === false){
+                        prevented = true;
+                    }
+                });
+
+                if (prevented){
+                    return;
+                }
+                
                 if (!pageInfo || pageInfo.disabled){//Not found
                     let targetUrl = buildPath(page, query), isReload = (targetUrl === info.targetUrl);
                     if (!isReload){
@@ -1337,6 +1360,10 @@ namespace InlineJS{
                     if (callback){
                         callback('Page Not Found', page);
                     }
+
+                    hooks.afterLoad.forEach((handler) => {
+                        handler(pageInfo, page, query);
+                    });
                     
                     return;
                 }
@@ -1389,6 +1416,9 @@ namespace InlineJS{
                 }
                 
                 window.dispatchEvent(new CustomEvent('router.load'));
+                hooks.afterLoad.forEach((handler) => {
+                    handler(pageInfo, page, query);
+                });
             };
 
             let unload = (component: string, exit: string) => {
@@ -1509,7 +1539,8 @@ namespace InlineJS{
                 }
                 
                 let data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), innerUid: number = (data.uid || uid++);
-                register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares, data.uid);
+                register(data.page, (data.name || ''), (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(),
+                    (data.entry || 'open'), (data.exit || 'close'), !! data.disabled, data.middlewares, data.uid);
 
                 innerScope.uninitCallbacks.push(() => {
                     methods.unregister(uid);
@@ -2383,6 +2414,12 @@ namespace InlineJS{
                         return;
                     }
 
+                    router.addHook('beforeLoad', (info: RouterPageInfo) => {
+                        if (!info || (info.name !== 'login' && info.name !== 'register')){
+                            redirectPage = redirectQuery = null;
+                        }
+                    });
+
                     let redirectToLogin = (page: string, query: string) => {
                         router.goto('/login');
                         redirectPage = page;
@@ -2390,7 +2427,6 @@ namespace InlineJS{
                     };
                     
                     router.addMiddleware('guest', (page: string, query: string) => {
-                        redirectPage = redirectQuery = null;
                         if (userData){//Logged in
                             router.goto('/');
                             return false;
@@ -2400,7 +2436,6 @@ namespace InlineJS{
                     });
 
                     router.addMiddleware('auth', (page: string, query: string) => {
-                        redirectPage = redirectQuery = null;
                         if (!userData){//Not logged in
                             redirectToLogin(page, query);
                             return false;
@@ -2411,7 +2446,6 @@ namespace InlineJS{
 
                     (roles || []).forEach((role) => {
                         router.addMiddleware(`role:${role}`, (page: string, query: string) => {
-                            redirectPage = redirectQuery = null;
                             if (!userData){//Not logged in
                                 redirectToLogin(page, query);
                                 return false;

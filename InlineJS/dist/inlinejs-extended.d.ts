@@ -42,6 +42,7 @@ declare namespace InlineJS {
     }
     interface RouterPageInfo {
         pattern: string | RegExp;
+        name: string;
         path: string;
         title: string;
         component: string;

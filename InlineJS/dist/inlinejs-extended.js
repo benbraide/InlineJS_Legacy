@@ -889,6 +889,10 @@ var InlineJS;
             if (!InlineJS.Region.IsObject(options)) {
                 options = {};
             }
+            var hooks = {
+                beforeLoad: [],
+                afterLoad: []
+            };
             var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress'], info = {
                 currentPage: null,
                 currentQuery: '',
@@ -904,7 +908,7 @@ var InlineJS;
                 register: function (data) {
                     var innerRegion = InlineJS.Region.Get(InlineJS.RegionMap.scopeRegionIds.Peek());
                     if (innerRegion) {
-                        register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares, data.uid);
+                        register(data.page, (data.name || ''), (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares, data.uid);
                     }
                 },
                 unregister: function (uid) {
@@ -939,6 +943,11 @@ var InlineJS;
                 parseQuery: function (query) { return parseQuery(query); },
                 setTitle: function (title) {
                     document.title = "" + (options.titlePrefix || '') + (title || 'Untitled') + (options.titleSuffix || '');
+                },
+                addHook: function (key, handler) {
+                    if (key in hooks) {
+                        hooks[key].push(handler);
+                    }
                 }
             };
             if (options.urlPrefix) {
@@ -948,7 +957,7 @@ var InlineJS;
                 options.urlPrefix = '';
             }
             var scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
-            var register = function (page, path, title, component, entry, exit, disabled, middlewares, uid) {
+            var register = function (page, name, path, title, component, entry, exit, disabled, middlewares, uid) {
                 if (typeof page === 'string' && page.length > 1 && page.startsWith('/')) {
                     page = page.substr(1);
                 }
@@ -957,6 +966,7 @@ var InlineJS;
                 }
                 info.pages.push({
                     pattern: page,
+                    name: name,
                     path: path,
                     title: title,
                     component: component,
@@ -1020,7 +1030,15 @@ var InlineJS;
                     info.currentQuery = query;
                     ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
                 }
-                var pageInfo = findPage(page);
+                var pageInfo = findPage(page), prevented = false;
+                hooks.beforeLoad.forEach(function (handler) {
+                    if (handler(pageInfo, page, query) === false) {
+                        prevented = true;
+                    }
+                });
+                if (prevented) {
+                    return;
+                }
                 if (!pageInfo || pageInfo.disabled) { //Not found
                     var targetUrl = buildPath(page, query), isReload = (targetUrl === info.targetUrl);
                     if (!isReload) {
@@ -1045,6 +1063,9 @@ var InlineJS;
                     if (callback) {
                         callback('Page Not Found', page);
                     }
+                    hooks.afterLoad.forEach(function (handler) {
+                        handler(pageInfo, page, query);
+                    });
                     return;
                 }
                 var component = pageInfo.component, handled;
@@ -1090,6 +1111,9 @@ var InlineJS;
                     callback(pageInfo.title, (pageInfo.path || page));
                 }
                 window.dispatchEvent(new CustomEvent('router.load'));
+                hooks.afterLoad.forEach(function (handler) {
+                    handler(pageInfo, page, query);
+                });
             };
             var unload = function (component, exit) {
                 try {
@@ -1188,7 +1212,7 @@ var InlineJS;
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
                 var data = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value), innerUid = (data.uid || uid++);
-                register(data.page, (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares, data.uid);
+                register(data.page, (data.name || ''), (data.path || ((typeof data.page === 'string') ? data.page : null)), data.title, innerRegion.GetComponentKey(), (data.entry || 'open'), (data.exit || 'close'), !!data.disabled, data.middlewares, data.uid);
                 innerScope.uninitCallbacks.push(function () {
                     methods.unregister(uid);
                 });
@@ -1922,13 +1946,17 @@ var InlineJS;
                     if (!router) {
                         return;
                     }
+                    router.addHook('beforeLoad', function (info) {
+                        if (!info || (info.name !== 'login' && info.name !== 'register')) {
+                            redirectPage = redirectQuery = null;
+                        }
+                    });
                     var redirectToLogin = function (page, query) {
                         router.goto('/login');
                         redirectPage = page;
                         redirectQuery = query;
                     };
                     router.addMiddleware('guest', function (page, query) {
-                        redirectPage = redirectQuery = null;
                         if (userData) { //Logged in
                             router.goto('/');
                             return false;
@@ -1936,7 +1964,6 @@ var InlineJS;
                         return true;
                     });
                     router.addMiddleware('auth', function (page, query) {
-                        redirectPage = redirectQuery = null;
                         if (!userData) { //Not logged in
                             redirectToLogin(page, query);
                             return false;
@@ -1945,7 +1972,6 @@ var InlineJS;
                     });
                     (roles || []).forEach(function (role) {
                         router.addMiddleware("role:" + role, function (page, query) {
-                            redirectPage = redirectQuery = null;
                             if (!userData) { //Not logged in
                                 redirectToLogin(page, query);
                                 return false;
