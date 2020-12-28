@@ -1751,6 +1751,12 @@ var InlineJS;
             if (!directive.arg || !directive.arg.key) {
                 return DirectiveHandlerReturn.Nil;
             }
+            var mobileMap = {
+                click: 'touchend',
+                mouseup: 'touchend',
+                mousedown: 'touchstart',
+                mousemove: 'touchmove'
+            };
             var options = {
                 outside: false,
                 prevent: false,
@@ -1844,22 +1850,38 @@ var InlineJS;
                     }
                 }
             };
-            var event = region.ExpandEvent(directive.arg.key, element);
+            var event = region.ExpandEvent(directive.arg.key, element), mappedEvent = null;
+            if (directive.arg.options.includes('mobile') && (event in mobileMap)) {
+                mappedEvent = mobileMap[event];
+            }
             if (!options.outside) {
                 stoppable = true;
-                if (options.window) {
-                    window.addEventListener(event, onEvent);
+                if (options.window || options.document) {
+                    var target_1 = (options.window ? window : document);
+                    target_1.addEventListener(event, onEvent);
+                    if (mappedEvent) {
+                        target_1.addEventListener(mappedEvent, onEvent);
+                    }
                     region.AddElement(element).uninitCallbacks.push(function () {
-                        window.removeEventListener(event, onEvent);
+                        target_1.removeEventListener(event, onEvent);
+                        if (mappedEvent) {
+                            target_1.removeEventListener(mappedEvent, onEvent);
+                        }
                     });
                 }
                 else {
-                    (options.document ? document : element).addEventListener(event, onEvent);
+                    element.addEventListener(event, onEvent);
+                    if (mappedEvent) {
+                        element.addEventListener(mappedEvent, onEvent);
+                    }
                 }
             }
             else {
                 stoppable = false;
                 region.AddOutsideEventCallback(element, event, onEvent);
+                if (mappedEvent) {
+                    region.AddOutsideEventCallback(element, mappedEvent, onEvent);
+                }
             }
             return DirectiveHandlerReturn.Handled;
         };

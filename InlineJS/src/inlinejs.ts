@@ -2207,6 +2207,13 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
+            const mobileMap = {
+                click: 'touchend',
+                mouseup: 'touchend',
+                mousedown: 'touchstart',
+                mousemove: 'touchmove',
+            };
+
             let options = {
                 outside: false,
                 prevent: false,
@@ -2317,22 +2324,41 @@ namespace InlineJS{
                 }
             };
             
-            let event = region.ExpandEvent(directive.arg.key, element);
+            let event = region.ExpandEvent(directive.arg.key, element), mappedEvent: string = null;
+            if (directive.arg.options.includes('mobile') && (event in mobileMap)){
+                mappedEvent = mobileMap[event];
+            }
+            
             if (!options.outside){
                 stoppable = true;
-                if (options.window){
-                    window.addEventListener(event, onEvent);
+                if (options.window || options.document){
+                    let target = (options.window ? window : document);
+                    
+                    target.addEventListener(event, onEvent);
+                    if (mappedEvent){
+                        target.addEventListener(mappedEvent, onEvent);
+                    }
+                    
                     region.AddElement(element).uninitCallbacks.push(() => {
-                        window.removeEventListener(event, onEvent);
+                        target.removeEventListener(event, onEvent);
+                        if (mappedEvent){
+                            target.removeEventListener(mappedEvent, onEvent);
+                        }
                     });
                 }
                 else{
-                    (options.document ? document : element).addEventListener(event, onEvent);
+                    element.addEventListener(event, onEvent);
+                    if (mappedEvent){
+                        element.addEventListener(mappedEvent, onEvent);
+                    }
                 }
             }
             else{
                 stoppable = false;
                 region.AddOutsideEventCallback(element, event, onEvent);
+                if (mappedEvent){
+                    region.AddOutsideEventCallback(element, mappedEvent, onEvent);
+                }
             }
             
             return DirectiveHandlerReturn.Handled;
