@@ -1714,6 +1714,10 @@ namespace InlineJS{
                 return true;
             });
 
+            Region.AddGlobal('$conditional', () => (condition: boolean, trueValue: any, falseValue: any) => {
+                return (condition ? trueValue : falseValue);
+            });
+
             Region.AddGlobal('$__InlineJS_CallTemp__', (regionId: string) => (key: string) => {
                 let region = Region.Get(regionId);
                 return (region ? region.CallTemp(key) : null);

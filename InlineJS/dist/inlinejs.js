@@ -1373,6 +1373,9 @@ var InlineJS;
                 }
                 return true;
             }; });
+            Region.AddGlobal('$conditional', function () { return function (condition, trueValue, falseValue) {
+                return (condition ? trueValue : falseValue);
+            }; });
             Region.AddGlobal('$__InlineJS_CallTemp__', function (regionId) { return function (key) {
                 var region = Region.Get(regionId);
                 return (region ? region.CallTemp(key) : null);
