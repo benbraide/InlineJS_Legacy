@@ -1900,6 +1900,7 @@ namespace InlineJS{
     }
 
     export interface EachCloneInfo{
+        key: string | number;
         element: HTMLElement;
         animator: (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
     }
@@ -1908,6 +1909,8 @@ namespace InlineJS{
         clones: Array<EachCloneInfo> | Record<string, EachCloneInfo>;
         items: Array<any> | Record<string, any> | number;
         count: number;
+        path: string;
+        rangeValue: number;
     }
 
     export interface DataOptions{
@@ -2613,7 +2616,9 @@ namespace InlineJS{
             let options: EachOptions = {
                 clones: null,
                 items: null,
-                count: 0
+                count: 0,
+                path: null,
+                rangeValue: null,
             };
 
             let valueKey = '', matches = directive.value.match(/^(.+)? as[ ]+([A-Za-z_][0-9A-Za-z_$]*)[ ]*$/), expression: string, animate = (directive.arg.key === 'animate');
@@ -2635,23 +2640,19 @@ namespace InlineJS{
                 });
             };
 
-            let indexOf = (clone: HTMLElement) => {
-                return (options.clones as Array<EachCloneInfo>).findIndex(info => (info.element === clone));
-            };
-
-            let locals = (myRegion: Region, clone: HTMLElement, key?: string) => {
-                myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
+            let locals = (myRegion: Region, cloneInfo: EachCloneInfo) => {
+                myRegion.AddLocal(cloneInfo.element, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
                     if (prop === 'count'){
                         Region.Get(info.regionId).GetChanges().AddGetAccess(`${scope.key}.$each.count`);
                         return options.count;
                     }
                     
                     if (prop === 'index'){
-                        return (key || indexOf(clone));
+                        return cloneInfo.key;
                     }
 
                     if (prop === 'value'){
-                        return (key ? (options.items as Record<string, any>)[key] : (options.items as Array<any>)[indexOf(clone)]);
+                        return options.items[cloneInfo.key];
                     }
 
                     if (prop === 'collection'){
@@ -2659,15 +2660,15 @@ namespace InlineJS{
                     }
 
                     if (prop === 'parent'){
-                        return Region.Get(info.regionId).GetLocal(clone.parentElement, '$each', true);
+                        return Region.Get(info.regionId).GetLocal(cloneInfo.element.parentElement, '$each', true);
                     }
 
                     return null;
                 }, ['count', 'index', 'value', 'collection', 'parent']));
 
                 if (valueKey){
-                    myRegion.AddLocal(clone, valueKey, new Value(() => {
-                        return (key ? (options.items as Record<string, any>)[key] : (options.items as Array<any>)[indexOf(clone)]);
+                    myRegion.AddLocal(cloneInfo.element, valueKey, new Value(() => {
+                        return options.items[cloneInfo.key];
                     }));
                 }
             };
@@ -2676,17 +2677,22 @@ namespace InlineJS{
                 let clone = (element.cloneNode(true) as HTMLElement), animator = CoreDirectiveHandlers.GetAnimator(animate, clone, directive.arg.options);
                 if (key){
                     (options.clones as Record<string, EachCloneInfo>)[key] = {
+                        key : key,
                         element: clone,
                         animator: animator,
                     };
-                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, clone, key), (Object.keys(options.clones).length - 1));
+                    
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, (options.clones as Record<string, EachCloneInfo>)[key]), (Object.keys(options.clones).length - 1));
                 }
                 else{//Array
+                    let index = (options.clones as Array<EachCloneInfo>).length;
                     (options.clones as Array<EachCloneInfo>).push({
+                        key : index,
                         element: clone,
                         animator: animator,
                     });
-                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, clone), ((options.clones as Array<EachCloneInfo>).length - 1));
+
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, (options.clones as Array<EachCloneInfo>)[index]), index);
                 }
 
                 animator(true);
@@ -2712,6 +2718,7 @@ namespace InlineJS{
                 }
 
                 options.clones = null;
+                options.path = null;
             };
 
             let getRange = (from: number, to: number) => {
@@ -2721,20 +2728,6 @@ namespace InlineJS{
                 return Array.from({length: (from - to)}, (value, key) => (from - key));
             };
 
-            let expander: (target: any) => any = (target: any) => target;
-            let rangeExpander = (target: any) => {
-                if (typeof target !== 'number' || !Number.isInteger(target)){
-                    return null;
-                }
-
-                let offset = (isCount ? 1 : 0);
-                if (target < 0){
-                    return (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
-                }
-                
-                return (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
-            };
-            
             let evaluate = (myRegion: Region) => {
                 myRegion.AddLocalHandler(element, (element: HTMLElement, prop: string, bubble: boolean) => {
                     return myRegion.GetLocal(info.parent, prop, bubble);
@@ -2746,107 +2739,168 @@ namespace InlineJS{
                 return result;
             };
             
-            let arrayHandler = (myRegion: Region, items?: Array<any>, shouldEvaluate = true) => {
-                items = expander(shouldEvaluate ? (evaluate(myRegion) || []) : items);
-                if (!Array.isArray(items)){
-                    return false;
+            let arrayChangeHandler = (myRegion: Region, change: Change) => {
+                let index = ((change.prop === 'length') ? null : Number.parseInt(change.prop));
+                if (!index && index !== 0){//Not an index
+                    return;
+                }
+                
+                if (change.type === 'set' && (options.clones as Array<EachCloneInfo>).length <= index){//Element added
+                    ++options.count;
+                    addSizeChange(myRegion);
+                    append(myRegion);
+                }
+                else if (change.type === 'delete' && index < (options.clones as Array<EachCloneInfo>).length){
+                    (options.clones as Array<EachCloneInfo>).splice(index, 1).forEach((myInfo) => {
+                        --options.count;
+                        addSizeChange(myRegion);
+                        
+                        myInfo.animator(false, () => {
+                            info.parent.removeChild(myInfo.element);
+                            myRegion.MarkElementAsRemoved(myInfo.element);
+                        });
+                    });
+                }
+            };
+
+            let mapChangeHandler = (myRegion: Region, change: Change) => {
+                let key = change.prop;
+                if (change.type === 'set' && !(key in (options.clones as Record<string, EachCloneInfo>))){//Element added
+                    ++options.count;
+                    addSizeChange(myRegion);
+                    append(myRegion, key);
+                }
+                else if (change.type === 'delete' && (key in (options.clones as Record<string, EachCloneInfo>))){
+                    --options.count;
+                    addSizeChange(myRegion);
+                    
+                    let myInfo = (options.clones as Record<string, EachCloneInfo>)[key];
+                    myInfo.animator(false, () => {
+                        info.parent.removeChild(myInfo.element);
+                        myRegion.MarkElementAsRemoved(myInfo.element);
+                        delete options.clones[key];
+                    });
+                }
+            };
+
+            let changeHandler: (myRegion: Region, change: Change) => void, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
+            let initOptions = (target: any, count: number, handler: (myRegion: Region, change: Change) => void, createClones: () => any) => {
+                if (Region.IsObject(target) && '__InlineJS_Path__' in target){
+                    options.path = target['__InlineJS_Path__'];
                 }
 
-                let targetItems = (('__InlineJS_Target__' in items) ? items['__InlineJS_Target__'] : items);
-                if (items === options.items){
-                    let count = options.count;
-                    if (targetItems.length < options.count){//Item(s) removed
-                        options.count = targetItems.length;
-                        addSizeChange(Region.Get(info.regionId));
-                        (options.clones as Array<EachCloneInfo>).splice(targetItems.length).forEach((myInfo) => {
+                options.items = target;
+                options.count = count;
+                options.clones = createClones();
+
+                changeHandler = handler;
+            };
+            
+            let init = (myRegion: Region, target: any) => {
+                let isRange = (typeof target === 'number' && Number.isInteger(target));
+                if (isRange && !isReverse && options.rangeValue !== null && target <= options.count){//Range value decrement
+                    let diff = (options.count - target);
+                    if (0 < diff){
+                        options.count = target;
+                        addSizeChange(myRegion);
+                        
+                        (options.items as Array<any>).splice(target, diff);
+                        (options.clones as Array<EachCloneInfo>).splice(target, diff).forEach((myInfo) => {
                             myInfo.animator(false, () => {
                                 info.parent.removeChild(myInfo.element);
                                 myRegion.MarkElementAsRemoved(myInfo.element);
                             });
                         });
                     }
-                    else if (options.count < targetItems.length){//Item(s) added
-                        options.count = targetItems.length;
-                        addSizeChange(Region.Get(info.regionId));
-                        for (let diff = (targetItems.length - count); 0 < diff; --diff){
-                            append(myRegion);
-                        }
-                    }
+                    
+                    return true;
                 }
-                else{//Refresh
+                
+                if (!isRange || isReverse || options.rangeValue === null){
                     empty(myRegion);
-                    options.clones = new Array<EachCloneInfo>();
-                    options.count = targetItems.length;
-                    options.items = items;
-
-                    targetItems.forEach(() => { append(myRegion) });
-                    addSizeChange(myRegion);
                 }
+                
+                if (isRange){
+                    let offset = (isCount ? 1 : 0), items: Array<number>;
+                    if (target < 0){
+                        items = (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
+                    }
+                    else{
+                        items = (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
+                    }
 
-                return true;
-            };
-
-            let mapHandler = (myRegion: Region, items?: Record<string, any>, shouldEvaluate = true) => {
-                items = expander(shouldEvaluate ? (evaluate(myRegion) || {}) : items);
-                if (!Region.IsObject(items)){
-                    return false;
-                }
-
-                if (items === options.items){
-                    let newKeys = Object.keys(items), oldKeys = Object.keys(options.clones);
-
-                    newKeys.filter(key => !(key in options.clones)).forEach((key) => { append(myRegion, key) });//Add new items
-                    oldKeys.filter(key => !(key in items)).forEach((key) => {
-                        let myInfo = (options.clones as Record<string, EachCloneInfo>)[key];
-                        myInfo.animator(false, () => {
-                            info.parent.removeChild(myInfo.element);
-                            myRegion.MarkElementAsRemoved(myInfo.element);
-                            delete options.clones[key];
-                        });
-                    });
-
-                    if (newKeys.length != oldKeys.length){
+                    if (!isReverse && options.rangeValue !== null){//Ranged value increment
+                        let addedItems = items.splice(options.count);
+                        
+                        options.count = target;
                         addSizeChange(myRegion);
+
+                        options.items = (options.items as Array<number>).concat(addedItems);
+                        addedItems.forEach(item => append(myRegion));
+
+                        options.rangeValue = target;
+                    }
+                    else{
+                        options.rangeValue = target;
+                        initOptions(items, items.length, arrayChangeHandler, () => new Array<EachCloneInfo>());
+                        items.forEach(item => append(myRegion));
                     }
                 }
-                else{//Refresh
-                    empty(myRegion);
-                    options.clones = {};
-                    options.count = Object.keys(items).length;
-                    options.items = items;
+                else if (Array.isArray(target)){
+                    let items = (('__InlineJS_Target__' in target) ? (target['__InlineJS_Target__'] as Array<any>) : target);
 
-                    Object.keys(items).forEach((key) => { append(myRegion, key) });
-                    addSizeChange(myRegion);
+                    options.rangeValue = null;
+                    initOptions(target, items.length, arrayChangeHandler, () => new Array<EachCloneInfo>());
+                    items.forEach(item => append(myRegion));
+                }
+                else if (Region.IsObject(target)){
+                    let keys = Object.keys(('__InlineJS_Target__' in target) ? (target['__InlineJS_Target__'] as Record<string, any>) : target);
+
+                    options.rangeValue = null;
+                    initOptions(target, keys.length, mapChangeHandler, () => ({}));
+                    keys.forEach(key => append(myRegion, key));
                 }
 
-                return true;
+                return (!!options.path || options.rangeValue !== null);
             };
             
-            let handler: (myRegion: Region, items?: Array<any>, shouldEvaluate?: boolean) => boolean = null, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
             region.GetState().TrapGetAccess(() => {
                 if (element.parentElement){
                     element.parentElement.removeChild(element);
                 }
                 
                 let myRegion = Region.Get(info.regionId), target = evaluate(myRegion);
-                if (!target){
+                if (!target && target !== 0){
+                    return false;
+                }
+
+                return init(myRegion, target);
+            }, (changes: Array<Change | BubbledChange>) => {
+                if (!changeHandler){
                     return false;
                 }
                 
-                if (Array.isArray(target)){
-                    handler = arrayHandler;
-                }
-                else if (Region.IsObject(target)){
-                    handler = mapHandler;
-                }
-                else if (typeof target === 'number' && Number.isInteger(target)){
-                    handler = arrayHandler;
-                    expander = rangeExpander;
-                }
+                let myRegion = Region.Get(info.regionId), hasBeenInit = false;
+                changes.forEach((change) => {
+                    if ('original' in change){//Bubbled change
+                        if (change.original.path === `${options.path}.${change.original.prop}`){
+                            changeHandler(myRegion, change.original);
+                        }
+                    }
+                    else if (!hasBeenInit && change.type === 'set' && (change.path === options.path || options.rangeValue !== null)){//Target changed
+                        let target = evaluate(myRegion);
+                        if (!target && target !== 0){
+                            return false;
+                        }
+                        
+                        hasBeenInit = init(myRegion, target);
+                    }
+                    else if (change.type === 'delete' && change.path === options.path){//Item deleted
+                        changeHandler(myRegion, change);
+                    }
+                });
 
-                return (handler && handler(myRegion, target, false));
-            }, () => {
-                return (handler && handler(Region.Get(info.regionId)));
+                return (!!options.path || options.rangeValue !== null);
             }, null);
 
             info.parent.appendChild(tmpl);

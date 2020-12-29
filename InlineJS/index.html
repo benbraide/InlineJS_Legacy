@@ -59,30 +59,32 @@
     </div>
     <div x-data="{list: ['First', 'Second', 'Third', 'Last']}">
         <h2>Array Loop</h2>
-        <div x-each="list as item">
+        <div style="overflow: hidden;" x-each:animate.height="list as item">
             <span>Index: </span><strong x-text="$each.index"></strong> | 
             <span>Value: </span><strong x-text="$each.value"></strong> | 
             <span>Value(alt): </span><strong x-text="item"></strong> | 
             <span>Count: </span><strong x-text="$each.count"></strong>
         </div>
+        <button x-on:click="list.push('Pushed!')">Click me</button>
     </div>
     <div x-data="{range: 9}">
         <h2>Range Loop</h2>
-        <div x-each.reverse.count="range">
+        <div style="overflow: hidden;" x-each:animate.height.count="range">
             <span>Index: </span><strong x-text="$each.index"></strong> | 
             <span>Value: </span><strong x-text="$each.value"></strong> | 
             <span>Count: </span><strong x-text="$each.count"></strong>
         </div>
-        <button x-on:click="range = 18">Change Range</button>
+        <button x-on:click="range = ((range == 9) ? 18 : 9)">Change Range</button>
     </div>
     <div x-data="{list: {name: {first: 'Anon Legion', second:'Anon Legion2'}, email: {first:'anon.legion@crypt.co',second:'a@b.c'}, age: {first:27,second:45}, sex: {first:'MALE',second:'FEMALE'}}}">
         <h2>Map Loop</h2>
-        <div x-each="list as item">
+        <div style="overflow: hidden;" x-each:animate.height="list as item">
             <span>Index: </span><strong x-text="$each.index"></strong> | 
             <span>Value: </span><strong x-text="$each.value.first"></strong> | <strong x-text="$each.value.second"></strong> | 
             <span>Value(alt): </span><strong x-text="item.first"></strong> | <strong x-text="item.second"></strong> | 
             <span>Count: </span><strong x-text="$each.count"></strong>
         </div>
+        <button x-on:click="('new' in $raw(list)) ? delete list['new'] : list['new'] = {first: 'World', second:'Order'}">Click me</button>
     </div>
     <div x-data="cartData()" x-component="cart">
         <h2>Product Cart (<span x-text="getCount()"></span>)</h2>

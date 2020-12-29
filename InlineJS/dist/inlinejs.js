@@ -2091,7 +2091,9 @@ var InlineJS;
             var options = {
                 clones: null,
                 items: null,
-                count: 0
+                count: 0,
+                path: null,
+                rangeValue: null
             };
             var valueKey = '', matches = directive.value.match(/^(.+)? as[ ]+([A-Za-z_][0-9A-Za-z_$]*)[ ]*$/), expression, animate = (directive.arg.key === 'animate');
             if (matches && 2 < matches.length) {
@@ -2110,32 +2112,29 @@ var InlineJS;
                     origin: myRegion.GetChanges().GetOrigin()
                 });
             };
-            var indexOf = function (clone) {
-                return options.clones.findIndex(function (info) { return (info.element === clone); });
-            };
-            var locals = function (myRegion, clone, key) {
-                myRegion.AddLocal(clone, '$each', CoreDirectiveHandlers.CreateProxy(function (prop) {
+            var locals = function (myRegion, cloneInfo) {
+                myRegion.AddLocal(cloneInfo.element, '$each', CoreDirectiveHandlers.CreateProxy(function (prop) {
                     if (prop === 'count') {
                         Region.Get(info.regionId).GetChanges().AddGetAccess(scope.key + ".$each.count");
                         return options.count;
                     }
                     if (prop === 'index') {
-                        return (key || indexOf(clone));
+                        return cloneInfo.key;
                     }
                     if (prop === 'value') {
-                        return (key ? options.items[key] : options.items[indexOf(clone)]);
+                        return options.items[cloneInfo.key];
                     }
                     if (prop === 'collection') {
                         return options.items;
                     }
                     if (prop === 'parent') {
-                        return Region.Get(info.regionId).GetLocal(clone.parentElement, '$each', true);
+                        return Region.Get(info.regionId).GetLocal(cloneInfo.element.parentElement, '$each', true);
                     }
                     return null;
                 }, ['count', 'index', 'value', 'collection', 'parent']));
                 if (valueKey) {
-                    myRegion.AddLocal(clone, valueKey, new Value(function () {
-                        return (key ? options.items[key] : options.items[indexOf(clone)]);
+                    myRegion.AddLocal(cloneInfo.element, valueKey, new Value(function () {
+                        return options.items[cloneInfo.key];
                     }));
                 }
             };
@@ -2143,17 +2142,20 @@ var InlineJS;
                 var clone = element.cloneNode(true), animator = CoreDirectiveHandlers.GetAnimator(animate, clone, directive.arg.options);
                 if (key) {
                     options.clones[key] = {
+                        key: key,
                         element: clone,
                         animator: animator
                     };
-                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, clone, key); }, (Object.keys(options.clones).length - 1));
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, options.clones[key]); }, (Object.keys(options.clones).length - 1));
                 }
                 else { //Array
+                    var index_1 = options.clones.length;
                     options.clones.push({
+                        key: index_1,
                         element: clone,
                         animator: animator
                     });
-                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, clone); }, (options.clones.length - 1));
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, options.clones[index_1]); }, index_1);
                 }
                 animator(true);
             };
@@ -2176,23 +2178,13 @@ var InlineJS;
                     });
                 }
                 options.clones = null;
+                options.path = null;
             };
             var getRange = function (from, to) {
                 if (from < to) {
                     return Array.from({ length: (to - from) }, function (value, key) { return (key + from); });
                 }
                 return Array.from({ length: (from - to) }, function (value, key) { return (from - key); });
-            };
-            var expander = function (target) { return target; };
-            var rangeExpander = function (target) {
-                if (typeof target !== 'number' || !Number.isInteger(target)) {
-                    return null;
-                }
-                var offset = (isCount ? 1 : 0);
-                if (target < 0) {
-                    return (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
-                }
-                return (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
             };
             var evaluate = function (myRegion) {
                 myRegion.AddLocalHandler(element, function (element, prop, bubble) {
@@ -2202,96 +2194,143 @@ var InlineJS;
                 myRegion.RemoveLocalHandler(element);
                 return result;
             };
-            var arrayHandler = function (myRegion, items, shouldEvaluate) {
-                if (shouldEvaluate === void 0) { shouldEvaluate = true; }
-                items = expander(shouldEvaluate ? (evaluate(myRegion) || []) : items);
-                if (!Array.isArray(items)) {
-                    return false;
+            var arrayChangeHandler = function (myRegion, change) {
+                var index = ((change.prop === 'length') ? null : Number.parseInt(change.prop));
+                if (!index && index !== 0) { //Not an index
+                    return;
                 }
-                var targetItems = (('__InlineJS_Target__' in items) ? items['__InlineJS_Target__'] : items);
-                if (items === options.items) {
-                    var count = options.count;
-                    if (targetItems.length < options.count) { //Item(s) removed
-                        options.count = targetItems.length;
-                        addSizeChange(Region.Get(info.regionId));
-                        options.clones.splice(targetItems.length).forEach(function (myInfo) {
+                if (change.type === 'set' && options.clones.length <= index) { //Element added
+                    ++options.count;
+                    addSizeChange(myRegion);
+                    append(myRegion);
+                }
+                else if (change.type === 'delete' && index < options.clones.length) {
+                    options.clones.splice(index, 1).forEach(function (myInfo) {
+                        --options.count;
+                        addSizeChange(myRegion);
+                        myInfo.animator(false, function () {
+                            info.parent.removeChild(myInfo.element);
+                            myRegion.MarkElementAsRemoved(myInfo.element);
+                        });
+                    });
+                }
+            };
+            var mapChangeHandler = function (myRegion, change) {
+                var key = change.prop;
+                if (change.type === 'set' && !(key in options.clones)) { //Element added
+                    ++options.count;
+                    addSizeChange(myRegion);
+                    append(myRegion, key);
+                }
+                else if (change.type === 'delete' && (key in options.clones)) {
+                    --options.count;
+                    addSizeChange(myRegion);
+                    var myInfo_1 = options.clones[key];
+                    myInfo_1.animator(false, function () {
+                        info.parent.removeChild(myInfo_1.element);
+                        myRegion.MarkElementAsRemoved(myInfo_1.element);
+                        delete options.clones[key];
+                    });
+                }
+            };
+            var changeHandler, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
+            var initOptions = function (target, count, handler, createClones) {
+                if (Region.IsObject(target) && '__InlineJS_Path__' in target) {
+                    options.path = target['__InlineJS_Path__'];
+                }
+                options.items = target;
+                options.count = count;
+                options.clones = createClones();
+                changeHandler = handler;
+            };
+            var init = function (myRegion, target) {
+                var isRange = (typeof target === 'number' && Number.isInteger(target));
+                if (isRange && !isReverse && options.rangeValue !== null && target <= options.count) { //Range value decrement
+                    var diff = (options.count - target);
+                    if (0 < diff) {
+                        options.count = target;
+                        addSizeChange(myRegion);
+                        options.items.splice(target, diff);
+                        options.clones.splice(target, diff).forEach(function (myInfo) {
                             myInfo.animator(false, function () {
                                 info.parent.removeChild(myInfo.element);
                                 myRegion.MarkElementAsRemoved(myInfo.element);
                             });
                         });
                     }
-                    else if (options.count < targetItems.length) { //Item(s) added
-                        options.count = targetItems.length;
-                        addSizeChange(Region.Get(info.regionId));
-                        for (var diff = (targetItems.length - count); 0 < diff; --diff) {
-                            append(myRegion);
-                        }
-                    }
+                    return true;
                 }
-                else { //Refresh
+                if (!isRange || isReverse || options.rangeValue === null) {
                     empty(myRegion);
-                    options.clones = new Array();
-                    options.count = targetItems.length;
-                    options.items = items;
-                    targetItems.forEach(function () { append(myRegion); });
-                    addSizeChange(myRegion);
                 }
-                return true;
-            };
-            var mapHandler = function (myRegion, items, shouldEvaluate) {
-                if (shouldEvaluate === void 0) { shouldEvaluate = true; }
-                items = expander(shouldEvaluate ? (evaluate(myRegion) || {}) : items);
-                if (!Region.IsObject(items)) {
-                    return false;
-                }
-                if (items === options.items) {
-                    var newKeys = Object.keys(items), oldKeys = Object.keys(options.clones);
-                    newKeys.filter(function (key) { return !(key in options.clones); }).forEach(function (key) { append(myRegion, key); }); //Add new items
-                    oldKeys.filter(function (key) { return !(key in items); }).forEach(function (key) {
-                        var myInfo = options.clones[key];
-                        myInfo.animator(false, function () {
-                            info.parent.removeChild(myInfo.element);
-                            myRegion.MarkElementAsRemoved(myInfo.element);
-                            delete options.clones[key];
-                        });
-                    });
-                    if (newKeys.length != oldKeys.length) {
+                if (isRange) {
+                    var offset = (isCount ? 1 : 0), items = void 0;
+                    if (target < 0) {
+                        items = (isReverse ? getRange((target - offset + 1), (1 - offset)) : getRange(-offset, (target - offset)));
+                    }
+                    else {
+                        items = (isReverse ? getRange((target + offset - 1), (offset - 1)) : getRange(offset, (target + offset)));
+                    }
+                    if (!isReverse && options.rangeValue !== null) { //Ranged value increment
+                        var addedItems = items.splice(options.count);
+                        options.count = target;
                         addSizeChange(myRegion);
+                        options.items = options.items.concat(addedItems);
+                        addedItems.forEach(function (item) { return append(myRegion); });
+                        options.rangeValue = target;
+                    }
+                    else {
+                        options.rangeValue = target;
+                        initOptions(items, items.length, arrayChangeHandler, function () { return new Array(); });
+                        items.forEach(function (item) { return append(myRegion); });
                     }
                 }
-                else { //Refresh
-                    empty(myRegion);
-                    options.clones = {};
-                    options.count = Object.keys(items).length;
-                    options.items = items;
-                    Object.keys(items).forEach(function (key) { append(myRegion, key); });
-                    addSizeChange(myRegion);
+                else if (Array.isArray(target)) {
+                    var items = (('__InlineJS_Target__' in target) ? target['__InlineJS_Target__'] : target);
+                    options.rangeValue = null;
+                    initOptions(target, items.length, arrayChangeHandler, function () { return new Array(); });
+                    items.forEach(function (item) { return append(myRegion); });
                 }
-                return true;
+                else if (Region.IsObject(target)) {
+                    var keys = Object.keys(('__InlineJS_Target__' in target) ? target['__InlineJS_Target__'] : target);
+                    options.rangeValue = null;
+                    initOptions(target, keys.length, mapChangeHandler, function () { return ({}); });
+                    keys.forEach(function (key) { return append(myRegion, key); });
+                }
+                return (!!options.path || options.rangeValue !== null);
             };
-            var handler = null, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
             region.GetState().TrapGetAccess(function () {
                 if (element.parentElement) {
                     element.parentElement.removeChild(element);
                 }
                 var myRegion = Region.Get(info.regionId), target = evaluate(myRegion);
-                if (!target) {
+                if (!target && target !== 0) {
                     return false;
                 }
-                if (Array.isArray(target)) {
-                    handler = arrayHandler;
+                return init(myRegion, target);
+            }, function (changes) {
+                if (!changeHandler) {
+                    return false;
                 }
-                else if (Region.IsObject(target)) {
-                    handler = mapHandler;
-                }
-                else if (typeof target === 'number' && Number.isInteger(target)) {
-                    handler = arrayHandler;
-                    expander = rangeExpander;
-                }
-                return (handler && handler(myRegion, target, false));
-            }, function () {
-                return (handler && handler(Region.Get(info.regionId)));
+                var myRegion = Region.Get(info.regionId), hasBeenInit = false;
+                changes.forEach(function (change) {
+                    if ('original' in change) { //Bubbled change
+                        if (change.original.path === options.path + "." + change.original.prop) {
+                            changeHandler(myRegion, change.original);
+                        }
+                    }
+                    else if (!hasBeenInit && change.type === 'set' && (change.path === options.path || options.rangeValue !== null)) { //Target changed
+                        var target = evaluate(myRegion);
+                        if (!target && target !== 0) {
+                            return false;
+                        }
+                        hasBeenInit = init(myRegion, target);
+                    }
+                    else if (change.type === 'delete' && change.path === options.path) { //Item deleted
+                        changeHandler(myRegion, change);
+                    }
+                });
+                return (!!options.path || options.rangeValue !== null);
             }, null);
             info.parent.appendChild(tmpl);
             region.AddElement(tmpl).uninitCallbacks.push(function () {

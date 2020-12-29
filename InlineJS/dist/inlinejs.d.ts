@@ -350,6 +350,7 @@ declare namespace InlineJS {
         attributes: Array<LiteAttr>;
     }
     interface EachCloneInfo {
+        key: string | number;
         element: HTMLElement;
         animator: (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
     }
@@ -357,6 +358,8 @@ declare namespace InlineJS {
         clones: Array<EachCloneInfo> | Record<string, EachCloneInfo>;
         items: Array<any> | Record<string, any> | number;
         count: number;
+        path: string;
+        rangeValue: number;
     }
     interface DataOptions {
         $enableOptimizedBinds?: boolean;
