@@ -261,13 +261,45 @@ namespace InlineJS{
         }
 
         public static Input(region: Region, element: HTMLElement, directive: Directive){
-            let wrapper = document.createElement('div'), span = document.createElement('span'), style = getComputedStyle(element);
+            let wrapper = document.createElement('div'), innerWrapper = document.createElement('div'), label = document.createElement('span'), hiddenLabel = document.createElement('span'), style = getComputedStyle(element);
+            let cachedValues = {
+                fontSize: style.fontSize,
+                paddingBottom: style.paddingBottom,
+                borderBottom: style.borderBottomWidth,
+                height: element.clientHeight,
+            };
+
+            wrapper.style.display = style.display;
+            wrapper.style.position = style.position;
+            wrapper.style.visibility = style.visibility;
+            wrapper.style.margin = style.margin;
+            wrapper.style.top = style.top;
+            wrapper.style.right = style.right;
+            wrapper.style.bottom = style.bottom;
+            wrapper.style.left = style.left;
+            
+            wrapper.classList.add('inlinejs-input');
+            if (directive.arg.options.includes('validate')){
+                wrapper.classList.add('validate');
+            }
+            
+            innerWrapper.classList.add('inlinejs-input-wrapper');
+            label.classList.add('inlinejs-input-label');
+            hiddenLabel.classList.add('inlinejs-input-hidden-label');
+            element.classList.add('inlinejs-input-textbox');
+
+            label.style.left = style.paddingLeft;
+            label.style.bottom = cachedValues.paddingBottom;
+            label.style.fontSize = style.fontSize;
+            hiddenLabel.style.fontSize = `calc(${style.fontSize} * 0.81)`;
 
             element.parentElement.insertBefore(wrapper, element);
-            wrapper.appendChild(element);
-            wrapper.appendChild(span);
+            innerWrapper.appendChild(hiddenLabel);
+            innerWrapper.appendChild(element);
+            innerWrapper.appendChild(label);
+            wrapper.appendChild(innerWrapper);
 
-            if (directive.arg.options.indexOf('password') != -1){
+            if (directive.arg.options.includes('password')){
                 let icon = document.createElement('i'), updateIcon = () => {
                     if ((element as HTMLInputElement).type === 'text'){
                         icon.title = 'Hide password';
@@ -285,35 +317,73 @@ namespace InlineJS{
 
                 icon.addEventListener('click', () => {
                     (element as HTMLInputElement).type = (((element as HTMLInputElement).type === 'password') ? 'text' : 'password');
+                    (element as HTMLInputElement).focus();
+                    
                     updateIcon();
-
                     element.dispatchEvent(new CustomEvent('input.password', {
                         detail: (element as HTMLInputElement).type
                     }));
                 });
             }
 
-            wrapper.classList.add('inlinejs-input');
-            directive.arg.options.forEach(key => wrapper.classList.add(key));
+            label.textContent = (element as HTMLInputElement).placeholder;
+            (element as HTMLInputElement).placeholder = '';
 
-            span.style.top = `calc(${wrapper.offsetHeight}px - 1rem - ${style.marginBottom} - ${style.paddingBottom})`;
-            span.style.left = `calc(${style.paddingLeft} + ${style.marginLeft})`;
+            let options = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (Region.IsObject(options)){
+                Object.keys(options).forEach((key) => {
+                    if (key === 'wrapperClass'){
+                        (Array.isArray(options[key]) ? (options[key] as Array<string>) : (options[key] as string).split(' ')).forEach(item =>  wrapper.classList.add(item));
+                    }
+                    else if (key === 'labelClass'){
+                        (Array.isArray(options[key]) ? (options[key] as Array<string>) : (options[key] as string).split(' ')).forEach(item =>  label.classList.add(item));
+                    }
+                });
+            }
+
+            let labelShown = true;
+            let toggleLabel = (show: boolean) => {
+                if (show == labelShown){
+                    return;
+                }
+
+                labelShown = show;
+                if (show){
+                    label.style.bottom = cachedValues.paddingBottom;
+                    label.style.fontSize = cachedValues.fontSize;
+                }
+                else{
+                    label.style.bottom = `${cachedValues.height}px`;
+                    label.style.fontSize = hiddenLabel.style.fontSize;
+                }
+            };
             
-            span.textContent = (element as HTMLInputElement).placeholder;
-            (element as HTMLInputElement).placeholder = ' ';
-
             let onBlur = () => {
                 wrapper.classList.add('blurred');
-                element.removeEventListener('blur', onBlur);
+                if (!(element as HTMLInputElement).value){
+                    toggleLabel(true);
+                }
             };
 
             element.addEventListener('blur', onBlur);
-            span.addEventListener('click', () => { element.focus() });
-            span.addEventListener('keydown', (e) => {
-                if (e.key === ' '){
-                    element.focus();
+            element.addEventListener('focus', () => {
+                toggleLabel(false);
+            });
+
+            element.addEventListener('input', () => {
+                if ((element as HTMLInputElement).value){
+                    toggleLabel(false);
                 }
             });
+
+            label.addEventListener('focus', () => element.focus());
+            label.addEventListener('click', () => {
+                element.focus();
+            });
+
+            if ((element as HTMLInputElement).value){
+                toggleLabel(false);
+            }
 
             return DirectiveHandlerReturn.Handled;
         }

@@ -131,11 +131,39 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Input = function (region, element, directive) {
-            var wrapper = document.createElement('div'), span = document.createElement('span'), style = getComputedStyle(element);
+            var wrapper = document.createElement('div'), innerWrapper = document.createElement('div'), label = document.createElement('span'), hiddenLabel = document.createElement('span'), style = getComputedStyle(element);
+            var cachedValues = {
+                fontSize: style.fontSize,
+                paddingBottom: style.paddingBottom,
+                borderBottom: style.borderBottomWidth,
+                height: element.clientHeight
+            };
+            wrapper.style.display = style.display;
+            wrapper.style.position = style.position;
+            wrapper.style.visibility = style.visibility;
+            wrapper.style.margin = style.margin;
+            wrapper.style.top = style.top;
+            wrapper.style.right = style.right;
+            wrapper.style.bottom = style.bottom;
+            wrapper.style.left = style.left;
+            wrapper.classList.add('inlinejs-input');
+            if (directive.arg.options.includes('validate')) {
+                wrapper.classList.add('validate');
+            }
+            innerWrapper.classList.add('inlinejs-input-wrapper');
+            label.classList.add('inlinejs-input-label');
+            hiddenLabel.classList.add('inlinejs-input-hidden-label');
+            element.classList.add('inlinejs-input-textbox');
+            label.style.left = style.paddingLeft;
+            label.style.bottom = cachedValues.paddingBottom;
+            label.style.fontSize = style.fontSize;
+            hiddenLabel.style.fontSize = "calc(" + style.fontSize + " * 0.81)";
             element.parentElement.insertBefore(wrapper, element);
-            wrapper.appendChild(element);
-            wrapper.appendChild(span);
-            if (directive.arg.options.indexOf('password') != -1) {
+            innerWrapper.appendChild(hiddenLabel);
+            innerWrapper.appendChild(element);
+            innerWrapper.appendChild(label);
+            wrapper.appendChild(innerWrapper);
+            if (directive.arg.options.includes('password')) {
                 var icon_1 = document.createElement('i'), updateIcon_1 = function () {
                     if (element.type === 'text') {
                         icon_1.title = 'Hide password';
@@ -151,29 +179,63 @@ var InlineJS;
                 updateIcon_1();
                 icon_1.addEventListener('click', function () {
                     element.type = ((element.type === 'password') ? 'text' : 'password');
+                    element.focus();
                     updateIcon_1();
                     element.dispatchEvent(new CustomEvent('input.password', {
                         detail: element.type
                     }));
                 });
             }
-            wrapper.classList.add('inlinejs-input');
-            directive.arg.options.forEach(function (key) { return wrapper.classList.add(key); });
-            span.style.top = "calc(" + wrapper.offsetHeight + "px - 1rem - " + style.marginBottom + " - " + style.paddingBottom + ")";
-            span.style.left = "calc(" + style.paddingLeft + " + " + style.marginLeft + ")";
-            span.textContent = element.placeholder;
-            element.placeholder = ' ';
+            label.textContent = element.placeholder;
+            element.placeholder = '';
+            var options = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (InlineJS.Region.IsObject(options)) {
+                Object.keys(options).forEach(function (key) {
+                    if (key === 'wrapperClass') {
+                        (Array.isArray(options[key]) ? options[key] : options[key].split(' ')).forEach(function (item) { return wrapper.classList.add(item); });
+                    }
+                    else if (key === 'labelClass') {
+                        (Array.isArray(options[key]) ? options[key] : options[key].split(' ')).forEach(function (item) { return label.classList.add(item); });
+                    }
+                });
+            }
+            var labelShown = true;
+            var toggleLabel = function (show) {
+                if (show == labelShown) {
+                    return;
+                }
+                labelShown = show;
+                if (show) {
+                    label.style.bottom = cachedValues.paddingBottom;
+                    label.style.fontSize = cachedValues.fontSize;
+                }
+                else {
+                    label.style.bottom = cachedValues.height + "px";
+                    label.style.fontSize = hiddenLabel.style.fontSize;
+                }
+            };
             var onBlur = function () {
                 wrapper.classList.add('blurred');
-                element.removeEventListener('blur', onBlur);
+                if (!element.value) {
+                    toggleLabel(true);
+                }
             };
             element.addEventListener('blur', onBlur);
-            span.addEventListener('click', function () { element.focus(); });
-            span.addEventListener('keydown', function (e) {
-                if (e.key === ' ') {
-                    element.focus();
+            element.addEventListener('focus', function () {
+                toggleLabel(false);
+            });
+            element.addEventListener('input', function () {
+                if (element.value) {
+                    toggleLabel(false);
                 }
             });
+            label.addEventListener('focus', function () { return element.focus(); });
+            label.addEventListener('click', function () {
+                element.focus();
+            });
+            if (element.value) {
+                toggleLabel(false);
+            }
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.State = function (region, element, directive) {
