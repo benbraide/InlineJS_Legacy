@@ -3446,9 +3446,15 @@ namespace InlineJS{
                                 });
                             }
                             else if (mutation.type === 'attributes'){
-                                let scope = region.GetElementScope(mutation.target as HTMLElement);
-                                if (scope){
-                                    scope.attributeChangeCallbacks.forEach(callback => callback(mutation.attributeName));
+                                let directive = ((mutation.target as HTMLElement).hasAttribute(mutation.attributeName) ? Processor.GetDirectiveWith(mutation.attributeName, (mutation.target as HTMLElement).getAttribute(mutation.attributeName)) : null);
+                                if (!directive){
+                                    let scope = region.GetElementScope(mutation.target as HTMLElement);
+                                    if (scope){
+                                        scope.attributeChangeCallbacks.forEach(callback => callback(mutation.attributeName));
+                                    }
+                                }
+                                else{//Process directive
+                                    Processor.DispatchDirective(region, (mutation.target as HTMLElement), directive);
                                 }
                             }
                         });

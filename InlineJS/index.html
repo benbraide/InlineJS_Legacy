@@ -75,6 +75,7 @@
             <span>Count: </span><strong x-text="$each.count"></strong>
         </div>
         <button x-on:click="range = ((range == 9) ? 18 : 9)">Change Range</button>
+        <button x-on:click="$parent.setAttribute('x-init', '$console.log(this, `Executed attribute`)')">Insert Attribute</button>
     </div>
     <div x-data="{list: {name: {first: 'Anon Legion', second:'Anon Legion2'}, email: {first:'anon.legion@crypt.co',second:'a@b.c'}, age: {first:27,second:45}, sex: {first:'MALE',second:'FEMALE'}}}">
         <h2>Map Loop</h2>

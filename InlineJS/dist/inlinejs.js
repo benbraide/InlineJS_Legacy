@@ -2813,9 +2813,15 @@ var InlineJS;
                                 });
                             }
                             else if (mutation.type === 'attributes') {
-                                var scope = region.GetElementScope(mutation.target);
-                                if (scope) {
-                                    scope.attributeChangeCallbacks.forEach(function (callback) { return callback(mutation.attributeName); });
+                                var directive = (mutation.target.hasAttribute(mutation.attributeName) ? Processor.GetDirectiveWith(mutation.attributeName, mutation.target.getAttribute(mutation.attributeName)) : null);
+                                if (!directive) {
+                                    var scope = region.GetElementScope(mutation.target);
+                                    if (scope) {
+                                        scope.attributeChangeCallbacks.forEach(function (callback) { return callback(mutation.attributeName); });
+                                    }
+                                }
+                                else { //Process directive
+                                    Processor.DispatchDirective(region, mutation.target, directive);
                                 }
                             }
                         });
