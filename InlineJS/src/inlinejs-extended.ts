@@ -272,6 +272,7 @@ namespace InlineJS{
             wrapper.style.display = style.display;
             wrapper.style.position = style.position;
             wrapper.style.visibility = style.visibility;
+            wrapper.style.width = style.width;
             wrapper.style.margin = style.margin;
             wrapper.style.top = style.top;
             wrapper.style.right = style.right;
@@ -311,10 +312,16 @@ namespace InlineJS{
                     }
                 };
 
-                wrapper.appendChild(icon);
+                icon.classList.add('inlinejs-input-password-icon');
                 icon.classList.add('material-icons-outlined');
-                updateIcon();
 
+                icon.style.right = style.paddingRight;
+                icon.style.bottom = cachedValues.paddingBottom;
+                icon.style.fontSize = `calc(${style.fontSize} * 1.25)`;
+                
+                innerWrapper.appendChild(icon);
+                updateIcon();
+                
                 icon.addEventListener('click', () => {
                     (element as HTMLInputElement).type = (((element as HTMLInputElement).type === 'password') ? 'text' : 'password');
                     (element as HTMLInputElement).focus();
@@ -1554,6 +1561,19 @@ namespace InlineJS{
                 innerElement.parentElement.insertBefore(info.mountElement, innerElement);
                 info.mountElement.classList.add('router-mount');
 
+                let regions = new Array<Region>(), regionsCopy: Array<Region> = null;
+                Config.AddRegionHook((region, added) => {
+                    if (!added){
+                        regions.splice(regions.indexOf(region), 1);
+                        if (regionsCopy){
+                            regionsCopy.splice(regionsCopy.indexOf(region), 1);
+                        }
+                    }
+                    else if (info.mountElement.contains(region.GetRootElement())){
+                        regions.push(region);
+                    }
+                });
+                
                 let mount = (url: string) => {
                     info.active = true;
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
@@ -1562,8 +1582,14 @@ namespace InlineJS{
                         info.progress = 0;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'progress', scope);
                     }
+
+                    regionsCopy = regions;
+                    regions = new Array<Region>();
                     
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, () => {
+                        regionsCopy.forEach(region => region.RemoveElement(region.GetRootElement()));
+                        regionsCopy = null;
+                        
                         info.active = false;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
                         

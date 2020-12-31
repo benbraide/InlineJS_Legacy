@@ -17,10 +17,6 @@
     color: var(--inlinejs-input-border-color);
 }
 
-.inlinejs-input-wrapper:focus-within{
-    color: var(--inlinejs-input-border-color-focus);
-}
-
 .inlinejs-input-label{
     position: absolute;
     transition: all 0.3s ease;
@@ -33,6 +29,7 @@
 .inlinejs-input-textbox{
     display: inline-block;
     visibility: visible;
+    width: 100%;
     margin: 0;
     border: none;
     border-bottom: var(--inlinejs-input-border-width) solid var(--inlinejs-input-border-color);
@@ -41,6 +38,10 @@
 .inlinejs-input-textbox:focus{
     outline: none;
     border-bottom-color: var(--inlinejs-input-border-color-focus);
+}
+
+.inlinejs-input-wrapper:focus-within .inlinejs-input-label{
+    color: var(--inlinejs-input-border-color-focus);
 }
 
 .inlinejs-input.validate.blurred .inlinejs-input-textbox:valid{
@@ -59,11 +60,8 @@
     color: var(--inlinejs-input-border-color-invalid);
 }
 
-.inlinejs-input.password > i{
+.inlinejs-input-password-icon{
     position: absolute;
-    top: 1.15rem;
-    right: 0.5rem;
-    font-size: 1.125rem;
     cursor: pointer;
 }
 

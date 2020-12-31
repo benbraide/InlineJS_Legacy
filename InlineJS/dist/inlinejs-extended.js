@@ -141,6 +141,7 @@ var InlineJS;
             wrapper.style.display = style.display;
             wrapper.style.position = style.position;
             wrapper.style.visibility = style.visibility;
+            wrapper.style.width = style.width;
             wrapper.style.margin = style.margin;
             wrapper.style.top = style.top;
             wrapper.style.right = style.right;
@@ -174,8 +175,12 @@ var InlineJS;
                         icon_1.textContent = 'visibility';
                     }
                 };
-                wrapper.appendChild(icon_1);
+                icon_1.classList.add('inlinejs-input-password-icon');
                 icon_1.classList.add('material-icons-outlined');
+                icon_1.style.right = style.paddingRight;
+                icon_1.style.bottom = cachedValues.paddingBottom;
+                icon_1.style.fontSize = "calc(" + style.fontSize + " * 1.25)";
+                innerWrapper.appendChild(icon_1);
                 updateIcon_1();
                 icon_1.addEventListener('click', function () {
                     element.type = ((element.type === 'password') ? 'text' : 'password');
@@ -1228,6 +1233,18 @@ var InlineJS;
                 info.mountElement = document.createElement('div');
                 innerElement.parentElement.insertBefore(info.mountElement, innerElement);
                 info.mountElement.classList.add('router-mount');
+                var regions = new Array(), regionsCopy = null;
+                InlineJS.Config.AddRegionHook(function (region, added) {
+                    if (!added) {
+                        regions.splice(regions.indexOf(region), 1);
+                        if (regionsCopy) {
+                            regionsCopy.splice(regionsCopy.indexOf(region), 1);
+                        }
+                    }
+                    else if (info.mountElement.contains(region.GetRootElement())) {
+                        regions.push(region);
+                    }
+                });
                 var mount = function (url) {
                     info.active = true;
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
@@ -1235,7 +1252,11 @@ var InlineJS;
                         info.progress = 0;
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'progress', scope);
                     }
+                    regionsCopy = regions;
+                    regions = new Array();
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, function () {
+                        regionsCopy.forEach(function (region) { return region.RemoveElement(region.GetRootElement()); });
+                        regionsCopy = null;
                         info.active = false;
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                         window.scrollTo({ top: -window.scrollY, left: 0 });
