@@ -437,11 +437,14 @@ declare namespace InlineJS {
         static RemoveDirective(name: string): void;
         static AddGlobalMagicProperty(name: string, value: GlobalCallbackType | any): void;
         static RemoveGlobalMagicProperty(name: string): void;
+        static AddRegionHook(handler: (region: Region, added: boolean) => void): void;
+        static RemoveRegionHook(handler: (region: Region, added: boolean) => void): void;
     }
     class Bootstrap {
         private static lastRegionId_;
         private static lastRegionSubId_;
         private static anchors_;
+        static regionHooks: ((region: Region, added: boolean) => void)[];
         static Attach(anchors?: Array<string>): void;
         static Reattach(): void;
         static Attach_(): void;

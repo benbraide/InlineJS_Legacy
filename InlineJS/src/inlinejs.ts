@@ -1,4 +1,4 @@
-export namespace InlineJS{
+namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -355,6 +355,7 @@ export namespace InlineJS{
             }
             
             if (!preserve && element === this.rootElement_){//Remove from map
+                Bootstrap.regionHooks.forEach(hook => hook(RegionMap.entries[this.id_], false));
                 this.AddNextTickCallback(() => {//Wait for changes to finalize
                     Evaluator.RemoveProxyCache(this.id_);
                     if (this.componentKey_ in Region.components_){
@@ -3393,12 +3394,21 @@ export namespace InlineJS{
         public static RemoveGlobalMagicProperty(name: string){
             Region.RemoveGlobal(('$' + name));
         }
+
+        public static AddRegionHook(handler: (region: Region, added: boolean) => void){
+            Bootstrap.regionHooks.push(handler);
+        }
+
+        public static RemoveRegionHook(handler: (region: Region, added: boolean) => void){
+            Bootstrap.regionHooks.splice(Bootstrap.regionHooks.indexOf(handler), 1);
+        }
     }
 
     export class Bootstrap{
         private static lastRegionId_: number = null;
         private static lastRegionSubId_: number = null;
         private static anchors_: Array<string> = null;
+        public static regionHooks = new Array<(region: Region, added: boolean) => void>();
         
         public static Attach(anchors?: Array<string>){
             Bootstrap.anchors_ = anchors;
@@ -3480,6 +3490,8 @@ export namespace InlineJS{
                         attributes: true,
                         characterData: false,
                     });
+
+                    Bootstrap.regionHooks.forEach(hook => hook(region, true));
                 });
             });
 

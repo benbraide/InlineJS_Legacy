@@ -262,6 +262,7 @@ var InlineJS;
                 Array.from(element.children).forEach(function (child) { return _this.RemoveElement(child, preserve); });
             }
             if (!preserve && element === this.rootElement_) { //Remove from map
+                Bootstrap.regionHooks.forEach(function (hook) { return hook(RegionMap.entries[_this.id_], false); });
                 this.AddNextTickCallback(function () {
                     Evaluator.RemoveProxyCache(_this.id_);
                     if (_this.componentKey_ in Region.components_) {
@@ -1130,6 +1131,9 @@ var InlineJS;
     function ProxySetter(target, prop, value, regionId, parentPath, name, callback) {
         var exists = (prop in target);
         if (!exists && callback && callback()) {
+            return true;
+        }
+        if (exists && value === target[prop]) {
             return true;
         }
         var path = (parentPath ? parentPath + "." + name : name);
@@ -2763,6 +2767,12 @@ var InlineJS;
         Config.RemoveGlobalMagicProperty = function (name) {
             Region.RemoveGlobal(('$' + name));
         };
+        Config.AddRegionHook = function (handler) {
+            Bootstrap.regionHooks.push(handler);
+        };
+        Config.RemoveRegionHook = function (handler) {
+            Bootstrap.regionHooks.splice(Bootstrap.regionHooks.indexOf(handler), 1);
+        };
         return Config;
     }());
     InlineJS.Config = Config;
@@ -2840,6 +2850,7 @@ var InlineJS;
                         attributes: true,
                         characterData: false
                     });
+                    Bootstrap.regionHooks.forEach(function (hook) { return hook(region, true); });
                 });
             });
             Region.ExecutePostProcessCallbacks();
@@ -2847,6 +2858,7 @@ var InlineJS;
         Bootstrap.lastRegionId_ = null;
         Bootstrap.lastRegionSubId_ = null;
         Bootstrap.anchors_ = null;
+        Bootstrap.regionHooks = new Array();
         return Bootstrap;
     }());
     InlineJS.Bootstrap = Bootstrap;
