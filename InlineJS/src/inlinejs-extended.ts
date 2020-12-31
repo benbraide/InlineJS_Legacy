@@ -1587,8 +1587,10 @@ namespace InlineJS{
                     regions = new Array<Region>();
                     
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, () => {
-                        regionsCopy.forEach(region => region.RemoveElement(region.GetRootElement()));
-                        regionsCopy = null;
+                        if (regionsCopy){
+                            regionsCopy.forEach(region => region.RemoveElement(region.GetRootElement()));
+                            regionsCopy = null;
+                        }
                         
                         info.active = false;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
@@ -1596,7 +1598,7 @@ namespace InlineJS{
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
 
-                        Bootstrap.Reattach();
+                        Bootstrap.Reattach(info.mountElement);
                     }, (err) => {
                         info.active = false;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
@@ -2876,6 +2878,17 @@ namespace InlineJS{
                     return hide;
                 }
 
+                if (prop === 'toggle'){
+                    return (shouldShow: boolean) => {
+                        if (shouldShow){
+                            show();
+                        }
+                        else{
+                            hide();
+                        }
+                    };
+                }
+
                 if (prop === 'count'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                     return count;
@@ -3068,38 +3081,95 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url: string = null, active = false;
-            let countainer = document.createElement('div'), mount = document.createElement('div'), overlay = Region.GetGlobalValue(regionId, '$overlay');
+            let scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = null, url: string = null, active = false;
+            let container = document.createElement('div'), mount = document.createElement('div'), overlay = Region.GetGlobalValue(regionId, '$overlay');
             
-            countainer.classList.add('inlinejs-modal');
+            container.classList.add('inlinejs-modal');
+            mount.classList.add('inlinejs-modal-mount');
+
             if (element.style.zIndex){
-                countainer.style.zIndex = element.style.zIndex;
+                container.style.zIndex = element.style.zIndex;
             }
             else{//Compute z-index
-                countainer.style.zIndex = (overlay ? ((overlay.zIndex || 1000) + 9) : 1009);
+                container.style.zIndex = (overlay ? ((overlay.zIndex || 1000) + 9) : 1009);
             }
 
-            countainer.setAttribute('x-data', '');
-            countainer.setAttribute('x-animate.opacity', '$modal.show');
-            countainer.setAttribute('x-overlay-bind', '$modal.show');
+            container.appendChild(mount);
+            document.body.appendChild(container);
 
-            mount.classList.add('inlinejs-modal-mount');
-            mount.setAttribute('x-xhr-load', '$modal.url');
-            mount.setAttribute('x-on:click.mobile.outside', '$modal.show = false');
-            mount.setAttribute('x-bind', '$modal.active = $xhr.active');
-            
-            countainer.appendChild(mount);
-            document.body.appendChild(countainer);
-
+            let animator = ExtendedDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']);
             let setShow = (value: boolean) => {
-                show = value;
-                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'show', scope);
+                if (value !== show){
+                    show = value;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'show', scope);
+
+                    animator(show);
+                    overlay.toggle(show);
+                }
             };
 
+            let regions = new Array<Region>(), regionsCopy: Array<Region> = null;
+            Config.AddRegionHook((region, added) => {
+                if (!added){
+                    regions.splice(regions.indexOf(region), 1);
+                    if (regionsCopy){
+                        regionsCopy.splice(regionsCopy.indexOf(region), 1);
+                    }
+                }
+                else if (mount.contains(region.GetRootElement())){
+                    regions.push(region);
+                }
+            });
+            
             let setUrl = (value: string) => {
-                if (!active){
-                    url = value;
-                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'url', scope);
+                if (active){
+                    return;
+                }
+
+                if (url === value){
+                    if (url !== '::unload::'){
+                        setShow(true);
+                    }
+                    return;
+                }
+                    
+                url = value;
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'url', scope);
+
+                regionsCopy = regions;
+                regions = new Array<Region>();
+                
+                setActive(true);
+                ExtendedDirectiveHandlers.FetchLoad(mount, url, false, (unloaded) => {
+                    if (regionsCopy){
+                        regionsCopy.forEach(region => region.RemoveElement(region.GetRootElement()));
+                        regionsCopy = null;
+                    }
+                    
+                    setActive(false);
+                    if (!unloaded){
+                        setShow(true);
+                    }
+                    
+                    window.dispatchEvent(new CustomEvent('modal.mount.load'));
+                    if (!unloaded){
+                        Bootstrap.Reattach(mount);
+                    }
+                }, (err) => {
+                    setActive(false);
+                    window.dispatchEvent(new CustomEvent(`modal.mount.error`, {
+                        detail: {
+                            error: err,
+                            mount: mount,
+                        },
+                    }));
+                });
+            };
+
+            let setActive = (value: boolean) => {
+                if (active != value){
+                    active = value;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
                 }
             };
 
@@ -3108,12 +3178,10 @@ namespace InlineJS{
                 setUrl('::unload::');
             };
             
-            mount.addEventListener('xhr.load', () => setShow(true));
-            mount.addEventListener('xhr.reload', () => setShow(true));
-
             window.addEventListener('router.load', reload);
             window.addEventListener('router.reload', reload);
-            region.AddOutsideEventCallback(mount, 'click', () => {
+
+            Region.AddGlobalOutsideEventCallback(mount, ['click', 'touchend'], () => {
                 setShow(false);
             });
 
@@ -3271,7 +3339,7 @@ namespace InlineJS{
             observer.observe(element);
         }
 
-        public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: () => void, onError: (err: any) => void, onProgress?: (e: ProgressEvent<XMLHttpRequestEventTarget>) => void){
+        public static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: (unloaded?: boolean) => void, onError: (err: any) => void, onProgress?: (e: ProgressEvent<XMLHttpRequestEventTarget>) => void){
             if (!url || !(url = url.trim())){
                 return;
             }
@@ -3360,7 +3428,7 @@ namespace InlineJS{
                 }
 
                 if (onLoad){
-                    onLoad();
+                    onLoad(true);
                 }
             }
             else if (element.tagName === 'SELECT'){

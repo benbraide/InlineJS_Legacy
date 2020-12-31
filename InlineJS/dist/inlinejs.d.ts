@@ -60,6 +60,10 @@ declare namespace InlineJS {
         handler: GlobalCallbackType;
         accessHandler: (regionId?: string) => boolean;
     }
+    interface GlobalOutsideEventInfo {
+        target: HTMLElement;
+        handler: (event: Event) => void;
+    }
     class Region {
         private id_;
         private rootElement_;
@@ -67,6 +71,8 @@ declare namespace InlineJS {
         private static components_;
         private static globals_;
         private static postProcessCallbacks_;
+        private static outsideEventCallbacks_;
+        private static globalOutsideEvents_;
         static enableOptimizedBinds: boolean;
         static directivePrfix: string;
         static directiveRegex: RegExp;
@@ -126,8 +132,8 @@ declare namespace InlineJS {
         ElementIsRemoved(element: HTMLElement | string): boolean;
         ElementIsContained(element: HTMLElement | string, checkDocument?: boolean): boolean;
         ElementExists(element: HTMLElement | string): boolean;
-        AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
-        RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void): void;
+        AddOutsideEventCallback(element: HTMLElement | string, events: string | Array<string>, callback: (event: Event) => void): void;
+        RemoveOutsideEventCallback(element: HTMLElement | string, events: string | Array<string>, callback: (event: Event) => void): void;
         AddNextTickCallback(callback: () => void): void;
         ExecuteNextTick(): void;
         AddLocal(element: HTMLElement | string, key: string, value: any): void;
@@ -155,6 +161,8 @@ declare namespace InlineJS {
         static GetGlobalValue(regionId: string, key: string, contextElement?: HTMLElement): any;
         static AddPostProcessCallback(callback: () => void): void;
         static ExecutePostProcessCallbacks(): void;
+        static AddGlobalOutsideEventCallback(element: HTMLElement, events: string | Array<string>, callback: (event: Event) => void): void;
+        static RemoveGlobalOutsideEventCallback(element: HTMLElement, events: string | Array<string>, callback: (event: Event) => void): void;
         static SetDirectivePrefix(value: string): void;
         static IsEqual(first: any, second: any): boolean;
         static DeepCopy(target: any): any;
@@ -445,8 +453,8 @@ declare namespace InlineJS {
         private static lastRegionSubId_;
         private static anchors_;
         static regionHooks: ((region: Region, added: boolean) => void)[];
-        static Attach(anchors?: Array<string>): void;
-        static Reattach(): void;
-        static Attach_(): void;
+        static Attach(anchors?: Array<string>, node?: HTMLElement): void;
+        static Reattach(node?: HTMLElement): void;
+        static Attach_(node?: HTMLElement): void;
     }
 }

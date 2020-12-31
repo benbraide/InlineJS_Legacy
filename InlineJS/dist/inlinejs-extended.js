@@ -1255,13 +1255,15 @@ var InlineJS;
                     regionsCopy = regions;
                     regions = new Array();
                     ExtendedDirectiveHandlers.FetchLoad(info.mountElement, url, false, function () {
-                        regionsCopy.forEach(function (region) { return region.RemoveElement(region.GetRootElement()); });
-                        regionsCopy = null;
+                        if (regionsCopy) {
+                            regionsCopy.forEach(function (region) { return region.RemoveElement(region.GetRootElement()); });
+                            regionsCopy = null;
+                        }
                         info.active = false;
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                         window.scrollTo({ top: -window.scrollY, left: 0 });
                         window.dispatchEvent(new CustomEvent('router.mount.load'));
-                        InlineJS.Bootstrap.Reattach();
+                        InlineJS.Bootstrap.Reattach(info.mountElement);
                     }, function (err) {
                         info.active = false;
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
@@ -2326,6 +2328,16 @@ var InlineJS;
                 if (prop === 'hide') {
                     return hide;
                 }
+                if (prop === 'toggle') {
+                    return function (shouldShow) {
+                        if (shouldShow) {
+                            show();
+                        }
+                        else {
+                            hide();
+                        }
+                    };
+                }
                 if (prop === 'count') {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
                     return count;
@@ -2490,43 +2502,90 @@ var InlineJS;
             if (InlineJS.Region.GetGlobal(region.GetId(), '$modal')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = false, url = null, active = false;
-            var countainer = document.createElement('div'), mount = document.createElement('div'), overlay = InlineJS.Region.GetGlobalValue(regionId, '$overlay');
-            countainer.classList.add('inlinejs-modal');
+            var scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = null, url = null, active = false;
+            var container = document.createElement('div'), mount = document.createElement('div'), overlay = InlineJS.Region.GetGlobalValue(regionId, '$overlay');
+            container.classList.add('inlinejs-modal');
+            mount.classList.add('inlinejs-modal-mount');
             if (element.style.zIndex) {
-                countainer.style.zIndex = element.style.zIndex;
+                container.style.zIndex = element.style.zIndex;
             }
             else { //Compute z-index
-                countainer.style.zIndex = (overlay ? ((overlay.zIndex || 1000) + 9) : 1009);
+                container.style.zIndex = (overlay ? ((overlay.zIndex || 1000) + 9) : 1009);
             }
-            countainer.setAttribute('x-data', '');
-            countainer.setAttribute('x-animate.opacity', '$modal.show');
-            countainer.setAttribute('x-overlay-bind', '$modal.show');
-            mount.classList.add('inlinejs-modal-mount');
-            mount.setAttribute('x-xhr-load', '$modal.url');
-            mount.setAttribute('x-on:click.mobile.outside', '$modal.show = false');
-            mount.setAttribute('x-bind', '$modal.active = $xhr.active');
-            countainer.appendChild(mount);
-            document.body.appendChild(countainer);
+            container.appendChild(mount);
+            document.body.appendChild(container);
+            var animator = ExtendedDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']);
             var setShow = function (value) {
-                show = value;
-                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'show', scope);
+                if (value !== show) {
+                    show = value;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'show', scope);
+                    animator(show);
+                    overlay.toggle(show);
+                }
             };
+            var regions = new Array(), regionsCopy = null;
+            InlineJS.Config.AddRegionHook(function (region, added) {
+                if (!added) {
+                    regions.splice(regions.indexOf(region), 1);
+                    if (regionsCopy) {
+                        regionsCopy.splice(regionsCopy.indexOf(region), 1);
+                    }
+                }
+                else if (mount.contains(region.GetRootElement())) {
+                    regions.push(region);
+                }
+            });
             var setUrl = function (value) {
-                if (!active) {
-                    url = value;
-                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'url', scope);
+                if (active) {
+                    return;
+                }
+                if (url === value) {
+                    if (url !== '::unload::') {
+                        setShow(true);
+                    }
+                    return;
+                }
+                url = value;
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'url', scope);
+                regionsCopy = regions;
+                regions = new Array();
+                setActive(true);
+                ExtendedDirectiveHandlers.FetchLoad(mount, url, false, function (unloaded) {
+                    if (regionsCopy) {
+                        regionsCopy.forEach(function (region) { return region.RemoveElement(region.GetRootElement()); });
+                        regionsCopy = null;
+                    }
+                    setActive(false);
+                    if (!unloaded) {
+                        setShow(true);
+                    }
+                    window.dispatchEvent(new CustomEvent('modal.mount.load'));
+                    if (!unloaded) {
+                        InlineJS.Bootstrap.Reattach(mount);
+                    }
+                }, function (err) {
+                    setActive(false);
+                    window.dispatchEvent(new CustomEvent("modal.mount.error", {
+                        detail: {
+                            error: err,
+                            mount: mount
+                        }
+                    }));
+                });
+            };
+            var setActive = function (value) {
+                if (active != value) {
+                    active = value;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                 }
             };
             var reload = function () {
                 setShow(false);
                 setUrl('::unload::');
             };
-            mount.addEventListener('xhr.load', function () { return setShow(true); });
-            mount.addEventListener('xhr.reload', function () { return setShow(true); });
             window.addEventListener('router.load', reload);
             window.addEventListener('router.reload', reload);
-            region.AddOutsideEventCallback(mount, 'click', function () {
+            InlineJS.Region.AddGlobalOutsideEventCallback(mount, ['click', 'touchend'], function () {
                 setShow(false);
             });
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
@@ -2734,7 +2793,7 @@ var InlineJS;
                     removeAll(true);
                 }
                 if (onLoad) {
-                    onLoad();
+                    onLoad(true);
                 }
             }
             else if (element.tagName === 'SELECT') {

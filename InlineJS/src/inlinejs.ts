@@ -82,11 +82,18 @@ namespace InlineJS{
         handler: GlobalCallbackType;
         accessHandler: (regionId?: string) => boolean;
     }
+
+    export interface GlobalOutsideEventInfo{
+        target: HTMLElement;
+        handler: (event: Event) => void;
+    }
     
     export class Region{
         private static components_: Record<string, string> = {};
         private static globals_: Record<string, GlobalAttributeInfo> = {};
         private static postProcessCallbacks_ = new Array<() => void>();
+        private static outsideEventCallbacks_: Record<string, Array<GlobalOutsideEventInfo>> = {};
+        private static globalOutsideEvents_ = new Array<string>();
 
         public static enableOptimizedBinds = true;
         public static directivePrfix = 'x';
@@ -397,46 +404,51 @@ namespace InlineJS{
             return (scope && !scope.removed);
         }
 
-        public AddOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void){
+        public AddOutsideEventCallback(element: HTMLElement | string, events: string | Array<string>, callback: (event: Event) => void){
             let scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
             if (!scope){
                 return;
             }
 
-            if (!(event in scope.outsideEventCallbacks)){
-                scope.outsideEventCallbacks[event] = new Array<(event: Event) => void>();
-            }
-
-            (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).push(callback);
-            if (this.outsideEvents_.indexOf(event) == -1){
-                this.outsideEvents_.push(event);
-                document.body.addEventListener(event, (e: Event) => {
-                    let myRegion = Region.Get(id);
-                    if (myRegion){
-                        Object.keys(myRegion.elementScopes_).forEach((key) => {
-                            let scope = (myRegion.elementScopes_[key] as ElementScope);
-                            if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target as Node)){
-                                (scope.outsideEventCallbacks[e.type] as Array<(event: Event) => void>).forEach(callback => callback(e));
-                            }
-                        });
-                    }
-                }, true);
-            }
+            ((typeof events === 'string') ? [events] : events).forEach((event) => {
+                if (!(event in scope.outsideEventCallbacks)){
+                    scope.outsideEventCallbacks[event] = new Array<(event: Event) => void>();
+                }
+    
+                (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).push(callback);
+                if (!this.outsideEvents_.includes(event)){
+                    this.outsideEvents_.push(event);
+                    document.body.addEventListener(event, (e: Event) => {
+                        let myRegion = Region.Get(id);
+                        if (myRegion){
+                            Object.keys(myRegion.elementScopes_).forEach((key) => {
+                                let scope = (myRegion.elementScopes_[key] as ElementScope);
+                                if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target as Node)){
+                                    (scope.outsideEventCallbacks[e.type] as Array<(event: Event) => void>).forEach(callback => callback(e));
+                                }
+                            });
+                        }
+                    }, true);
+                }
+            });
         }
 
-        public RemoveOutsideEventCallback(element: HTMLElement | string, event: string, callback: (event: Event) => void){
+        public RemoveOutsideEventCallback(element: HTMLElement | string, events: string | Array<string>, callback: (event: Event) => void){
             let scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
-            if (!scope || !(event in scope.outsideEventCallbacks)){
+            if (!scope){
                 return;
             }
 
-            let list = (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>);
-            for (let i = 0; i < list.length; ++i){
-                if (list[i] === callback){
-                    list.splice(i, 1);
-                    break;
+            ((typeof events === 'string') ? [events] : events).forEach((event) => {
+                if (!(event in scope.outsideEventCallbacks)){
+                    return;
                 }
-            }
+                
+                let index = (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).findIndex(handler => (handler === callback));
+                if (index != -1){
+                    (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).splice(index, 1);
+                }
+            });
         }
 
         public AddNextTickCallback(callback: () => void){
@@ -663,6 +675,47 @@ namespace InlineJS{
             });
 
             Region.postProcessCallbacks_ = [];
+        }
+
+        public static AddGlobalOutsideEventCallback(element: HTMLElement, events: string | Array<string>, callback: (event: Event) => void){
+            ((typeof events === 'string') ? [events] : events).forEach((event) => {
+                if (!(event in Region.outsideEventCallbacks_)){
+                    Region.outsideEventCallbacks_[event] = new Array<GlobalOutsideEventInfo>();
+                }
+    
+                (Region.outsideEventCallbacks_[event] as Array<GlobalOutsideEventInfo>).push({
+                    target: element,
+                    handler: callback,
+                });
+
+                if (!Region.globalOutsideEvents_.includes(event)){
+                    Region.globalOutsideEvents_.push(event);
+                    document.body.addEventListener(event, (e: Event) => {
+                        if (!(e.type in Region.outsideEventCallbacks_)){
+                            return;
+                        }
+
+                        (Region.outsideEventCallbacks_[e.type] as Array<GlobalOutsideEventInfo>).forEach((info) => {
+                            if (e.target !== info.target && e.type in Region.outsideEventCallbacks_ && !info.target.contains(e.target as Node)){
+                                info.handler(e);
+                            }
+                        });
+                    }, true);
+                }
+            });
+        }
+
+        public static RemoveGlobalOutsideEventCallback(element: HTMLElement, events: string | Array<string>, callback: (event: Event) => void){
+            ((typeof events === 'string') ? [events] : events).forEach((event) => {
+                if (!(event in Region.outsideEventCallbacks_)){
+                    return;
+                }
+
+                let index = (Region.outsideEventCallbacks_[event] as Array<GlobalOutsideEventInfo>).findIndex(info => (info.target === element && info.handler === callback));
+                if (index != -1){
+                    (Region.outsideEventCallbacks_[event] as Array<GlobalOutsideEventInfo>).splice(index, 1);
+                }
+            });
         }
 
         public static SetDirectivePrefix(value: string){
@@ -3410,18 +3463,18 @@ namespace InlineJS{
         private static anchors_: Array<string> = null;
         public static regionHooks = new Array<(region: Region, added: boolean) => void>();
         
-        public static Attach(anchors?: Array<string>){
+        public static Attach(anchors?: Array<string>, node?: HTMLElement){
             Bootstrap.anchors_ = anchors;
-            Bootstrap.Attach_();
+            Bootstrap.Attach_(node);
         }
 
-        public static Reattach(){
-            Bootstrap.Attach_();
+        public static Reattach(node?: HTMLElement){
+            Bootstrap.Attach_(node);
         }
 
-        public static Attach_(){
+        public static Attach_(node?: HTMLElement){
             (Bootstrap.anchors_ || [`data-${Region.directivePrfix}-data`, `${Region.directivePrfix}-data`]).forEach((anchor) => {//Traverse anchors
-                document.querySelectorAll(`[${anchor}]`).forEach((element) => {//Traverse elements
+                (node || document).querySelectorAll(`[${anchor}]`).forEach((element) => {//Traverse elements
                     if (!element.hasAttribute(anchor)){//Probably contained inside another region
                         return;
                     }

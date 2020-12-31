@@ -297,42 +297,47 @@ var InlineJS;
             var scope = this.GetElementScope(element);
             return (scope && !scope.removed);
         };
-        Region.prototype.AddOutsideEventCallback = function (element, event, callback) {
+        Region.prototype.AddOutsideEventCallback = function (element, events, callback) {
+            var _this = this;
             var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
             if (!scope) {
                 return;
             }
-            if (!(event in scope.outsideEventCallbacks)) {
-                scope.outsideEventCallbacks[event] = new Array();
-            }
-            scope.outsideEventCallbacks[event].push(callback);
-            if (this.outsideEvents_.indexOf(event) == -1) {
-                this.outsideEvents_.push(event);
-                document.body.addEventListener(event, function (e) {
-                    var myRegion = Region.Get(id);
-                    if (myRegion) {
-                        Object.keys(myRegion.elementScopes_).forEach(function (key) {
-                            var scope = myRegion.elementScopes_[key];
-                            if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target)) {
-                                scope.outsideEventCallbacks[e.type].forEach(function (callback) { return callback(e); });
-                            }
-                        });
-                    }
-                }, true);
-            }
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in scope.outsideEventCallbacks)) {
+                    scope.outsideEventCallbacks[event] = new Array();
+                }
+                scope.outsideEventCallbacks[event].push(callback);
+                if (!_this.outsideEvents_.includes(event)) {
+                    _this.outsideEvents_.push(event);
+                    document.body.addEventListener(event, function (e) {
+                        var myRegion = Region.Get(id);
+                        if (myRegion) {
+                            Object.keys(myRegion.elementScopes_).forEach(function (key) {
+                                var scope = myRegion.elementScopes_[key];
+                                if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target)) {
+                                    scope.outsideEventCallbacks[e.type].forEach(function (callback) { return callback(e); });
+                                }
+                            });
+                        }
+                    }, true);
+                }
+            });
         };
-        Region.prototype.RemoveOutsideEventCallback = function (element, event, callback) {
+        Region.prototype.RemoveOutsideEventCallback = function (element, events, callback) {
             var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
-            if (!scope || !(event in scope.outsideEventCallbacks)) {
+            if (!scope) {
                 return;
             }
-            var list = scope.outsideEventCallbacks[event];
-            for (var i = 0; i < list.length; ++i) {
-                if (list[i] === callback) {
-                    list.splice(i, 1);
-                    break;
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in scope.outsideEventCallbacks)) {
+                    return;
                 }
-            }
+                var index = scope.outsideEventCallbacks[event].findIndex(function (handler) { return (handler === callback); });
+                if (index != -1) {
+                    scope.outsideEventCallbacks[event].splice(index, 1);
+                }
+            });
         };
         Region.prototype.AddNextTickCallback = function (callback) {
             this.nextTickCallbacks_.push(callback);
@@ -521,6 +526,41 @@ var InlineJS;
             });
             Region.postProcessCallbacks_ = [];
         };
+        Region.AddGlobalOutsideEventCallback = function (element, events, callback) {
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in Region.outsideEventCallbacks_)) {
+                    Region.outsideEventCallbacks_[event] = new Array();
+                }
+                Region.outsideEventCallbacks_[event].push({
+                    target: element,
+                    handler: callback
+                });
+                if (!Region.globalOutsideEvents_.includes(event)) {
+                    Region.globalOutsideEvents_.push(event);
+                    document.body.addEventListener(event, function (e) {
+                        if (!(e.type in Region.outsideEventCallbacks_)) {
+                            return;
+                        }
+                        Region.outsideEventCallbacks_[e.type].forEach(function (info) {
+                            if (e.target !== info.target && e.type in Region.outsideEventCallbacks_ && !info.target.contains(e.target)) {
+                                info.handler(e);
+                            }
+                        });
+                    }, true);
+                }
+            });
+        };
+        Region.RemoveGlobalOutsideEventCallback = function (element, events, callback) {
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in Region.outsideEventCallbacks_)) {
+                    return;
+                }
+                var index = Region.outsideEventCallbacks_[event].findIndex(function (info) { return (info.target === element && info.handler === callback); });
+                if (index != -1) {
+                    Region.outsideEventCallbacks_[event].splice(index, 1);
+                }
+            });
+        };
         Region.SetDirectivePrefix = function (value) {
             Region.directivePrfix = value;
             Region.directiveRegex = new RegExp("^(data-)?" + value + "-(.+)$");
@@ -608,6 +648,8 @@ var InlineJS;
         Region.components_ = {};
         Region.globals_ = {};
         Region.postProcessCallbacks_ = new Array();
+        Region.outsideEventCallbacks_ = {};
+        Region.globalOutsideEvents_ = new Array();
         Region.enableOptimizedBinds = true;
         Region.directivePrfix = 'x';
         Region.directiveRegex = /^(data-)?x-(.+)$/;
@@ -2779,16 +2821,16 @@ var InlineJS;
     var Bootstrap = /** @class */ (function () {
         function Bootstrap() {
         }
-        Bootstrap.Attach = function (anchors) {
+        Bootstrap.Attach = function (anchors, node) {
             Bootstrap.anchors_ = anchors;
-            Bootstrap.Attach_();
+            Bootstrap.Attach_(node);
         };
-        Bootstrap.Reattach = function () {
-            Bootstrap.Attach_();
+        Bootstrap.Reattach = function (node) {
+            Bootstrap.Attach_(node);
         };
-        Bootstrap.Attach_ = function () {
+        Bootstrap.Attach_ = function (node) {
             (Bootstrap.anchors_ || ["data-" + Region.directivePrfix + "-data", Region.directivePrfix + "-data"]).forEach(function (anchor) {
-                document.querySelectorAll("[" + anchor + "]").forEach(function (element) {
+                (node || document).querySelectorAll("[" + anchor + "]").forEach(function (element) {
                     if (!element.hasAttribute(anchor)) { //Probably contained inside another region
                         return;
                     }
