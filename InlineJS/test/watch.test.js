@@ -56,7 +56,7 @@ describe('$watch global magic property', () => {
 
     it('should be reactive with arrays', async () => {
         document.body.innerHTML = `
-            <div x-data="{ foo: ['one'], bob: 'lob' }" x-init="$watch('foo', value => { bob = value })">
+            <div x-data="{ foo: ['one'], bob: 'lob' }" x-init="$watch('foo', value => { bob = value.map(item => item) })">
                 <h1 x-text="foo"></h1>
                 <h2 x-text="bob"></h2>
                 <button id="push" x-on:click="foo.push('two')"></button>
@@ -81,7 +81,7 @@ describe('$watch global magic property', () => {
             expect(document.querySelector('h1').textContent).toEqual('["one","two"]')
             expect(document.querySelector('h2').textContent).toEqual('["one","two"]');
         });
-    
+
         userEvent.click(document.querySelector('#pop'));
     
         await waitFor(() => {

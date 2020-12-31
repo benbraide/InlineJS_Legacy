@@ -101,8 +101,6 @@ describe('x-data directive', () => {
             </div>
         `;
 
-        debugger;
-
         InlineJS.Bootstrap.Attach();
 
         expect(document.querySelectorAll('span')[0].textContent).toEqual('bar');

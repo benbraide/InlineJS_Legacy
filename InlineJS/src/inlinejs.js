@@ -1131,6 +1131,9 @@ export var InlineJS;
         if (!exists && callback && callback()) {
             return true;
         }
+        if (exists && value === target[prop]) {
+            return true;
+        }
         var path = (parentPath ? parentPath + "." + name : name);
         var region = Region.Get(regionId);
         if (region) {
@@ -1371,6 +1374,9 @@ export var InlineJS;
                     }
                 }
                 return true;
+            }; });
+            Region.AddGlobal('$conditional', function () { return function (condition, trueValue, falseValue) {
+                return (condition ? trueValue : falseValue);
             }; });
             Region.AddGlobal('$__InlineJS_CallTemp__', function (regionId) { return function (key) {
                 var region = Region.Get(regionId);
@@ -2809,9 +2815,15 @@ export var InlineJS;
                                 });
                             }
                             else if (mutation.type === 'attributes') {
-                                var scope = region.GetElementScope(mutation.target);
-                                if (scope) {
-                                    scope.attributeChangeCallbacks.forEach(function (callback) { return callback(mutation.attributeName); });
+                                var directive = (mutation.target.hasAttribute(mutation.attributeName) ? Processor.GetDirectiveWith(mutation.attributeName, mutation.target.getAttribute(mutation.attributeName)) : null);
+                                if (!directive) {
+                                    var scope = region.GetElementScope(mutation.target);
+                                    if (scope) {
+                                        scope.attributeChangeCallbacks.forEach(function (callback) { return callback(mutation.attributeName); });
+                                    }
+                                }
+                                else { //Process directive
+                                    Processor.DispatchDirective(region, mutation.target, directive);
                                 }
                             }
                         });

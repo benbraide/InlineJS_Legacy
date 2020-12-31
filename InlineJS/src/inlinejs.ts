@@ -1,4 +1,4 @@
-namespace InlineJS{
+export namespace InlineJS{
     export class Stack<T>{
         private list_: Array<T> = new Array<T>();
 
@@ -1427,6 +1427,10 @@ namespace InlineJS{
     function ProxySetter(target: object, prop: string, value: any, regionId: string, parentPath: string, name: string, callback?: () => boolean): boolean{
         let exists = (prop in target);
         if (!exists && callback && callback()){
+            return true;
+        }
+
+        if (exists && value === target[prop]){
             return true;
         }
         
