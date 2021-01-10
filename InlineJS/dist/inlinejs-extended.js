@@ -2681,7 +2681,7 @@ var InlineJS;
                     options['rootMargin'] = '0px';
                 }
                 if (!('threshold' in options)) {
-                    options['rootMargin'] = 0;
+                    options['threshold'] = 0;
                 }
             }
             else { //Use defaults
