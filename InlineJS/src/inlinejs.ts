@@ -1964,7 +1964,7 @@ namespace InlineJS{
     export interface EachCloneInfo{
         key: string | number;
         element: HTMLElement;
-        animator: (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
+        animator: (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => void;
     }
     
     export interface EachOptions{
@@ -1983,7 +1983,7 @@ namespace InlineJS{
     }
 
     export class CoreDirectiveHandlers{
-        public static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, callback?: () => boolean | void, animate?: boolean) => void) = null;
+        public static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => void) = null;
         
         public static Noop(region: Region, element: HTMLElement, directive: Directive){
             return DirectiveHandlerReturn.Handled;
@@ -2562,10 +2562,37 @@ namespace InlineJS{
                 showValue = 'block';
             }
 
-            let regionId = region.GetId();
-            region.GetState().TrapGetAccess(() => {
-                element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
-            }, true, element);
+            let regionId = region.GetId(), animator = CoreDirectiveHandlers.GetAnimator((directive.arg.key === 'animate'), element, directive.arg.options, false);
+            if (animator){
+                let lastValue: boolean = null, showOnly = directive.arg.options.includes('show'), hideOnly = (!showOnly && directive.arg.options.includes('hide'));
+                region.GetState().TrapGetAccess(() => {
+                    lastValue = !! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                    element.style.display = (lastValue ? showValue : 'none');
+                }, () => {
+                    if (lastValue != (!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value))){
+                        lastValue = !lastValue;
+                        if ((lastValue ? !hideOnly : !showOnly)){
+                            animator(lastValue, (show) => {//Animation is starting
+                                if (show){
+                                    element.style.display = showValue;
+                                }
+                            }, (show) => {//Animation is done
+                                if (!show){
+                                    element.style.display = 'none';
+                                }
+                            });
+                        }
+                        else{//No animation
+                            element.style.display = (lastValue ? showValue : 'none');
+                        }
+                    }
+                }, element);
+            }
+            else{
+                region.GetState().TrapGetAccess(() => {
+                    element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
+                }, true, element);
+            }
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -2596,7 +2623,20 @@ namespace InlineJS{
                     scope.falseIfCondition = new Array<() => void>();
                 }
                 
-                let predicate = !! evaluate(myRegion);
+                let predicate = !! evaluate(myRegion), onHide = () => {
+                    scope.preserve = true;//Don't remove scope
+                    [...scope.falseIfCondition].forEach(callback => callback());
+    
+                    if (!ifFirstEntry){
+                        info.attributes.forEach(attr => element.removeAttribute(attr.name));
+                    }
+    
+                    if (element.parentElement){
+                        element.parentElement.removeChild(element);
+                        scope.removed = true;
+                    }
+                };
+
                 if (predicate){
                     if (!isInserted){
                         isInserted = true;
@@ -2605,7 +2645,7 @@ namespace InlineJS{
                             scope.removed = false;
                         }
                         
-                        animator(true, () => {
+                        animator(true, null, () => {
                             CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info);//Execute directives
                         });
                     }
@@ -2615,19 +2655,7 @@ namespace InlineJS{
                 }
                 else if (isInserted){
                     isInserted = false;
-                    animator(false, () => {
-                        scope.preserve = true;//Don't remove scope
-                        [...scope.falseIfCondition].forEach(callback => callback());
-
-                        if (!ifFirstEntry){
-                            info.attributes.forEach(attr => element.removeAttribute(attr.name));
-                        }
-
-                        if (element.parentElement){
-                            element.parentElement.removeChild(element);
-                            scope.removed = true;
-                        }
-                    }, !ifFirstEntry);
+                    animator(false, null, onHide);
                 }
                 
                 ifFirstEntry = false;
@@ -2763,7 +2791,7 @@ namespace InlineJS{
             let empty = (myRegion: Region) => {
                 if (Array.isArray(options.clones)){
                     ((options.clones as Array<EachCloneInfo>) || []).forEach((myInfo) => {//Remove previous clones
-                        myInfo.animator(false, () => {
+                        myInfo.animator(false, null, () => {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2772,7 +2800,7 @@ namespace InlineJS{
                 else{//Map
                     Object.keys((options.clones as Record<string, EachCloneInfo>) || {}).forEach((key) => {//Remove previous clones
                         let myInfo = (options.clones as Record<string, EachCloneInfo>)[key];
-                        myInfo.animator(false, () => {
+                        myInfo.animator(false, null, () => {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2817,7 +2845,7 @@ namespace InlineJS{
                         --options.count;
                         addSizeChange(myRegion);
                         
-                        myInfo.animator(false, () => {
+                        myInfo.animator(false, null, () => {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2837,7 +2865,7 @@ namespace InlineJS{
                     addSizeChange(myRegion);
                     
                     let myInfo = (options.clones as Record<string, EachCloneInfo>)[key];
-                    myInfo.animator(false, () => {
+                    myInfo.animator(false, null, () => {
                         info.parent.removeChild(myInfo.element);
                         myRegion.MarkElementAsRemoved(myInfo.element);
                         delete options.clones[key];
@@ -2868,7 +2896,7 @@ namespace InlineJS{
                         
                         (options.items as Array<any>).splice(target, diff);
                         (options.clones as Array<EachCloneInfo>).splice(target, diff).forEach((myInfo) => {
-                            myInfo.animator(false, () => {
+                            myInfo.animator(false, null, () => {
                                 info.parent.removeChild(myInfo.element);
                                 myRegion.MarkElementAsRemoved(myInfo.element);
                             });
@@ -3155,12 +3183,16 @@ namespace InlineJS{
             }
         }
 
-        public static GetAnimator(animate: boolean, element: HTMLElement, options: Array<string>){
+        public static GetAnimator(animate: boolean, element: HTMLElement, options: Array<string>, always = true){
             let animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(element, options) : null);
-            if (!animator){//Use a dummy animator
-                animator = (show: boolean, callback?: () => boolean | void, animate?: boolean) => {
-                    if (callback){
-                        callback();
+            if (!animator && always){//Use a dummy animator
+                animator = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => {
+                    if (beforeCallback){
+                        beforeCallback(show);
+                    }
+
+                    if (afterCallback){
+                        afterCallback(show);
                     }
                 };
             }

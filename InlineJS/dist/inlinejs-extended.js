@@ -8,96 +8,6 @@ var __spreadArrays = (this && this.__spreadArrays) || function () {
 };
 var InlineJS;
 (function (InlineJS) {
-    var OpacityAnimator = /** @class */ (function () {
-        function OpacityAnimator(element, css) {
-            this.delta_ = (Number.parseInt((css || getComputedStyle(element)).opacity) || 1);
-        }
-        OpacityAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
-            if (sync || this.delta_ <= 0) {
-                this.delta_ = (Number.parseInt(getComputedStyle(element).opacity) || 1);
-            }
-            element.style.opacity = (show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration))).toString();
-        };
-        return OpacityAnimator;
-    }());
-    InlineJS.OpacityAnimator = OpacityAnimator;
-    var HeightAnimator = /** @class */ (function () {
-        function HeightAnimator(reversed_, element, css) {
-            this.reversed_ = reversed_;
-            this.delta_ = Math.round(element.clientHeight);
-            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginTop) || 0);
-        }
-        HeightAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
-            if (sync || this.delta_ <= 0) {
-                this.delta_ = Math.round(element.clientHeight);
-            }
-            var value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
-            element.style.height = value + "px";
-            if (this.reversed_) {
-                element.style.marginTop = (this.margin_ + (this.delta_ - value)) + "px";
-            }
-        };
-        return HeightAnimator;
-    }());
-    InlineJS.HeightAnimator = HeightAnimator;
-    var WidthAnimator = /** @class */ (function () {
-        function WidthAnimator(reversed_, element, css) {
-            this.reversed_ = reversed_;
-            this.delta_ = Math.round(element.clientWidth);
-            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginLeft) || 0);
-        }
-        WidthAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
-            if (sync || this.delta_ <= 0) {
-                this.delta_ = Math.round(element.clientWidth);
-            }
-            var value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
-            element.style.width = value + "px";
-            if (this.reversed_) {
-                element.style.marginLeft = (this.margin_ + (this.delta_ - value)) + "px";
-            }
-        };
-        return WidthAnimator;
-    }());
-    InlineJS.WidthAnimator = WidthAnimator;
-    var SlideAnimator = /** @class */ (function () {
-        function SlideAnimator(direction_, element, css) {
-            this.direction_ = direction_;
-            this.isWidth_ = (direction_ === 'left' || direction_ === 'right');
-            this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
-        }
-        SlideAnimator.prototype.step = function (element, show, sync, ellapsed, duration, ease) {
-            if (sync || this.delta_ <= 0) {
-                this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
-            }
-            var value = ease(ellapsed, 0, this.delta_, duration);
-            if (this.direction_ === 'down') {
-                element.style.top = (show ? (value - this.delta_) : -value) + "px";
-            }
-            else if (this.direction_ === 'left') {
-                element.style.right = (show ? (value - this.delta_) : -value) + "px";
-            }
-            else if (this.direction_ === 'up') {
-                element.style.bottom = (show ? (value - this.delta_) : -value) + "px";
-            }
-            else if (this.direction_ === 'right') {
-                element.style.left = (show ? (value - this.delta_) : -value) + "px";
-            }
-        };
-        return SlideAnimator;
-    }());
-    InlineJS.SlideAnimator = SlideAnimator;
-    InlineJS.Animators = {
-        opacity: function (element, css) { return new OpacityAnimator(element, css); },
-        height: function (element, css) { return new HeightAnimator(false, element, css); },
-        'height-reverse': function (element, css) { return new HeightAnimator(true, element, css); },
-        width: function (element, css) { return new WidthAnimator(false, element, css); },
-        'width-reverse': function (element, css) { return new WidthAnimator(true, element, css); },
-        slide: function (element, css) { return new SlideAnimator('down', element, css); },
-        'slide-down': function (element, css) { return new SlideAnimator('down', element, css); },
-        'slide-left': function (element, css) { return new SlideAnimator('left', element, css); },
-        'slide-up': function (element, css) { return new SlideAnimator('up', element, css); },
-        'slide-right': function (element, css) { return new SlideAnimator('right', element, css); }
-    };
     var ExtendedDirectiveHandlers = /** @class */ (function () {
         function ExtendedDirectiveHandlers() {
         }
@@ -818,134 +728,6 @@ var InlineJS;
                     return InlineJS.DirectiveHandlerReturn.Handled;
                 });
             }
-            return InlineJS.DirectiveHandlerReturn.Handled;
-        };
-        ExtendedDirectiveHandlers.Animate = function (region, element, directive) {
-            var animator = ExtendedDirectiveHandlers.PrepareAnimation(element, directive.arg.options);
-            if (!animator) {
-                return InlineJS.DirectiveHandlerReturn.Nil;
-            }
-            var regionId = region.GetId(), lastValue = null, showOnly = directive.arg.options.includes('show'), hideOnly = (!showOnly && directive.arg.options.includes('hide'));
-            region.GetState().TrapGetAccess(function () {
-                lastValue = !!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value);
-                animator(lastValue, null, false);
-            }, function () {
-                if (lastValue != (!!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value))) {
-                    lastValue = !lastValue;
-                    animator(lastValue, null, (lastValue ? !hideOnly : !showOnly));
-                }
-            }, element);
-            return InlineJS.DirectiveHandlerReturn.Handled;
-        };
-        ExtendedDirectiveHandlers.Typewriter = function (region, element, directive) {
-            var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
-            if (!data) {
-                return InlineJS.DirectiveHandlerReturn.Nil;
-            }
-            var info = {
-                list: new Array(),
-                delay: 100,
-                interval: 250,
-                iterations: -1,
-                showDelete: false,
-                useRandom: false,
-                showCursor: false
-            };
-            if (typeof data === 'string') {
-                info.list.push(data);
-            }
-            else if (Array.isArray(data)) {
-                data.forEach(function (item) { return info.list.push(item); });
-            }
-            else {
-                return InlineJS.DirectiveHandlerReturn.Nil;
-            }
-            var nextDuration = '', iterationsIsNext = false;
-            directive.arg.options.forEach(function (option) {
-                if (nextDuration) {
-                    var duration_1 = InlineJS.CoreDirectiveHandlers.ExtractDuration(option, null);
-                    if (duration_1 !== null) {
-                        info[nextDuration] = duration_1;
-                        nextDuration = '';
-                        return;
-                    }
-                    nextDuration = '';
-                }
-                else if (iterationsIsNext) {
-                    iterationsIsNext = false;
-                    if (option === 'inf' || option === 'infinite') {
-                        info.iterations = -1;
-                    }
-                    else {
-                        info.iterations = (parseInt(option) || -1);
-                    }
-                    return;
-                }
-                if (option === 'delay' || option === 'interval') {
-                    nextDuration = option;
-                    info[nextDuration] = (info[nextDuration] || 250);
-                }
-                else if (option === 'iterations') {
-                    iterationsIsNext = true;
-                }
-                else if (option === 'delete') {
-                    info.showDelete = true;
-                }
-                else if (option === 'random') {
-                    info.useRandom = true;
-                }
-                else if (option === 'cursor') {
-                    info.showCursor = true;
-                }
-            });
-            var lineIndex = -1, index = 0, line, isDeleting = false, span = document.createElement('span'), duration, startTimestamp = null, stopped = false;
-            var pass = function (timestamp) {
-                if (lineIndex == -1 || line.length <= index) {
-                    index = 0;
-                    if (isDeleting || lineIndex == -1 || !info.showDelete) {
-                        lineIndex = (info.useRandom ? Math.floor(Math.random() * info.list.length) : ++lineIndex);
-                        if (info.list.length <= lineIndex) { //Move to front of list
-                            lineIndex = 0;
-                        }
-                        line = info.list[lineIndex];
-                        isDeleting = false;
-                    }
-                    else {
-                        isDeleting = true;
-                    }
-                    duration = info.interval;
-                }
-                if (startTimestamp === null) {
-                    startTimestamp = timestamp;
-                }
-                if ((timestamp - startTimestamp) < duration) { //Duration not met
-                    requestAnimationFrame(pass);
-                    return;
-                }
-                startTimestamp = timestamp;
-                if (isDeleting) {
-                    ++index;
-                    span.innerText = line.substr(0, (line.length - index));
-                    duration = info.delay;
-                }
-                else { //Append
-                    ++index;
-                    span.innerText = line.substring(0, index);
-                    duration = info.delay;
-                }
-                if (!stopped) {
-                    requestAnimationFrame(pass);
-                }
-            };
-            span.classList.add('typewriter-text');
-            if (info.showCursor) {
-                span.style.borderRight = '1px solid #333333';
-            }
-            element.appendChild(span);
-            requestAnimationFrame(pass);
-            region.AddElement(element).uninitCallbacks.push(function () {
-                stopped = true;
-            });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Router = function (region, element, directive) {
@@ -2514,12 +2296,20 @@ var InlineJS;
             }
             container.appendChild(mount);
             document.body.appendChild(container);
-            var animator = ExtendedDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']);
+            var animator = (InlineJS.CoreDirectiveHandlers.PrepareAnimation ? InlineJS.CoreDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']) : null);
             var setShow = function (value) {
                 if (value !== show) {
                     show = value;
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'show', scope);
-                    animator(show);
+                    if (animator) {
+                        animator(show);
+                    }
+                    else if (show) {
+                        container.style.display = 'block';
+                    }
+                    else {
+                        container.style.display = 'none';
+                    }
                     overlay.toggle(show);
                 }
             };
@@ -2868,113 +2658,6 @@ var InlineJS;
             var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
             return (reporter && reporter.reportServerError && reporter.reportServerError(err));
         };
-        ExtendedDirectiveHandlers.InitAnimation = function (element, options, css, callback) {
-            var animators = {};
-            css = (css || getComputedStyle(element));
-            options.forEach(function (key) {
-                if (key in InlineJS.Animators) {
-                    animators[key] = InlineJS.Animators[key](element, css);
-                }
-                else if (callback) {
-                    callback(key);
-                }
-            });
-            return animators;
-        };
-        ExtendedDirectiveHandlers.PrepareAnimation = function (element, options) {
-            var displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table'];
-            var css = getComputedStyle(element), display = null, sync = options.includes('sync');
-            var duration = null, animators = ExtendedDirectiveHandlers.InitAnimation(element, options, css, function (key) {
-                if (displays.includes(key)) {
-                    display = key;
-                    return;
-                }
-                switch (key) {
-                    case 'slower':
-                        duration = 1000;
-                        break;
-                    case 'slow':
-                        duration = 750;
-                        break;
-                    case 'normal':
-                        duration = 500;
-                        break;
-                    case 'fast':
-                        duration = 300;
-                        break;
-                    case 'faster':
-                        duration = 200;
-                        break;
-                    default:
-                        duration = InlineJS.CoreDirectiveHandlers.ExtractDuration(key, null);
-                        break;
-                }
-            });
-            duration = (duration || 300);
-            display = (display || css.display || 'block');
-            var keys = Object.keys(animators);
-            if (keys.length == 0) { //Default
-                animators['opacity'] = InlineJS.Animators.opacity(element, css);
-                keys.push('opacity');
-            }
-            var ease = function (time, start, value, duration) {
-                return ((time < duration) ? (-value * Math.cos(time / duration * (Math.PI / 2)) + value + start) : value);
-            };
-            var checkpoint = 0;
-            return function (show, callback, animate) {
-                if (animate === void 0) { animate = true; }
-                if (!animate) {
-                    if (show) {
-                        element.style.display = display;
-                        if (callback) {
-                            callback();
-                        }
-                    }
-                    else if (!callback || callback() !== false) {
-                        element.style.display = 'none';
-                    }
-                    return;
-                }
-                var lastCheckpoint = ++checkpoint, startTimestamp = null, done = false;
-                var end = function () {
-                    done = true;
-                    keys.forEach(function (key) { return animators[key].step(element, show, sync, duration, duration, ease); });
-                    element.dispatchEvent(new CustomEvent('animation.leaving'));
-                    if ((!callback || callback() !== false) && !show) {
-                        element.style.display = 'none';
-                    }
-                    element.dispatchEvent(new CustomEvent('animation.leave'));
-                };
-                var pass = function (timestamp) {
-                    if (startTimestamp === null) {
-                        startTimestamp = timestamp;
-                    }
-                    if (done || lastCheckpoint != checkpoint) {
-                        return;
-                    }
-                    var ellapsed = (timestamp - startTimestamp);
-                    if (ellapsed < duration) {
-                        keys.forEach(function (key) { return animators[key].step(element, show, sync, ellapsed, duration, ease); });
-                        requestAnimationFrame(pass);
-                    }
-                    else { //End
-                        end();
-                    }
-                };
-                setTimeout(function () {
-                    if (!done && lastCheckpoint == checkpoint) {
-                        end();
-                    }
-                }, (duration + 100));
-                requestAnimationFrame(pass);
-                element.dispatchEvent(new CustomEvent('animation.entering'));
-                if (show) {
-                    element.style.display = display;
-                    getComputedStyle(element);
-                }
-                element.dispatchEvent(new CustomEvent('animation.entered'));
-            };
-        };
         ExtendedDirectiveHandlers.AddScope = function (prefix, elementScope, callbacks) {
             var id = prefix + "<" + ++ExtendedDirectiveHandlers.scopeId_ + ">";
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -2986,7 +2669,6 @@ var InlineJS;
             return ExtendedDirectiveHandlers.scopes_[id];
         };
         ExtendedDirectiveHandlers.AddAll = function () {
-            InlineJS.CoreDirectiveHandlers.PrepareAnimation = ExtendedDirectiveHandlers.PrepareAnimation;
             InlineJS.DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             InlineJS.DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             InlineJS.DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
@@ -2998,8 +2680,6 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             InlineJS.DirectiveHandlerManager.AddHandler('busy', ExtendedDirectiveHandlers.Busy);
             InlineJS.DirectiveHandlerManager.AddHandler('activeGroup', ExtendedDirectiveHandlers.ActiveGroup);
-            InlineJS.DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
-            InlineJS.DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
             InlineJS.DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
             InlineJS.DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
             InlineJS.DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);

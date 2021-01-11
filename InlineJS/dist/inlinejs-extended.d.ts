@@ -56,47 +56,6 @@ declare namespace InlineJS {
         from: number;
         to: number;
     }
-    interface Animator {
-        step: (element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
-    }
-    class OpacityAnimator implements Animator {
-        private delta_;
-        constructor(element: HTMLElement, css?: CSSStyleDeclaration);
-        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
-    }
-    class HeightAnimator implements Animator {
-        private reversed_;
-        private delta_;
-        private margin_;
-        constructor(reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration);
-        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
-    }
-    class WidthAnimator implements Animator {
-        private reversed_;
-        private delta_;
-        private margin_;
-        constructor(reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration);
-        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
-    }
-    class SlideAnimator implements Animator {
-        private direction_;
-        private delta_;
-        private isWidth_;
-        constructor(direction_: string, element: HTMLElement, css?: CSSStyleDeclaration);
-        step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number): void;
-    }
-    let Animators: {
-        opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => OpacityAnimator;
-        height: (element: HTMLElement, css?: CSSStyleDeclaration) => HeightAnimator;
-        'height-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => HeightAnimator;
-        width: (element: HTMLElement, css?: CSSStyleDeclaration) => WidthAnimator;
-        'width-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => WidthAnimator;
-        slide: (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
-        'slide-down': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
-        'slide-left': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
-        'slide-up': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
-        'slide-right': (element: HTMLElement, css?: CSSStyleDeclaration) => SlideAnimator;
-    };
     interface TypewriterInfo {
         list: Array<string>;
         delay: number;
@@ -156,8 +115,6 @@ declare namespace InlineJS {
         static Intersection(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Busy(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static ActiveGroup(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static Animate(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static Typewriter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Router(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Screen(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Cart(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
@@ -178,8 +135,6 @@ declare namespace InlineJS {
         static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string): void;
         static Report(regionId: string, info: any): boolean;
         static ReportServerError(regionId: string, err: any): boolean;
-        static InitAnimation(element: HTMLElement, options: Array<string>, css?: CSSStyleDeclaration, callback?: (key: string) => void): Record<string, Animator>;
-        static PrepareAnimation(element: HTMLElement, options: Array<string>): (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
         static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>): ExtendedDirectiveHandlerScope;
         static AddAll(): void;
     }

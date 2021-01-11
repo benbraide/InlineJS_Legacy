@@ -63,115 +63,6 @@ namespace InlineJS{
         from: number;
         to: number;
     }
-    
-    export interface Animator{
-        step: (element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number) => void;
-    }
-
-    export class OpacityAnimator implements Animator{
-        private delta_: number;
-
-        public constructor(element: HTMLElement, css?: CSSStyleDeclaration){
-            this.delta_ = (Number.parseInt((css || getComputedStyle(element)).opacity) || 1);
-        }
-        
-        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
-            if (sync || this.delta_ <= 0){
-                this.delta_ = (Number.parseInt(getComputedStyle(element).opacity) || 1);
-            }
-            
-            element.style.opacity = (show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration))).toString();
-        }
-    }
-
-    export class HeightAnimator implements Animator{
-        private delta_: number;
-        private margin_: number;
-
-        public constructor(private reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration){
-            this.delta_ = Math.round(element.clientHeight);
-            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginTop) || 0);
-        }
-        
-        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
-            if (sync || this.delta_ <= 0){
-                this.delta_ = Math.round(element.clientHeight);
-            }
-            
-            let value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
-            element.style.height = `${value}px`;
-            
-            if (this.reversed_){
-                element.style.marginTop = `${(this.margin_ + (this.delta_ - value))}px`;
-            }
-        }
-    }
-
-    export class WidthAnimator implements Animator{
-        private delta_: number;
-        private margin_: number;
-
-        public constructor(private reversed_: boolean, element: HTMLElement, css?: CSSStyleDeclaration){
-            this.delta_ = Math.round(element.clientWidth);
-            this.margin_ = (Number.parseInt((css || getComputedStyle(element)).marginLeft) || 0);
-        }
-        
-        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
-            if (sync || this.delta_ <= 0){
-                this.delta_ = Math.round(element.clientWidth);
-            }
-            
-            let value = Math.round(show ? ease(ellapsed, 0, this.delta_, duration) : (this.delta_ - ease(ellapsed, 0, this.delta_, duration)));
-            element.style.width = `${value}px`;
-            
-            if (this.reversed_){
-                element.style.marginLeft = `${(this.margin_ + (this.delta_ - value))}px`;
-            }
-        }
-    }
-
-    export class SlideAnimator implements Animator{
-        private delta_: number;
-        private isWidth_: boolean;
-
-        public constructor(private direction_: string, element: HTMLElement, css?: CSSStyleDeclaration){
-            this.isWidth_ = (direction_ === 'left' || direction_ === 'right');
-            this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
-        }
-        
-        public step(element: HTMLElement, show: boolean, sync: boolean, ellapsed: number, duration: number, ease: (time: number, start: number, value: number, duration: number) => number){
-            if (sync || this.delta_ <= 0){
-                this.delta_ = Math.round(this.isWidth_ ? element.clientWidth : element.clientHeight);
-            }
-            
-            let value = ease(ellapsed, 0, this.delta_, duration);
-            if (this.direction_ === 'down'){
-                element.style.top = `${show ? (value - this.delta_) : -value}px`;
-            }
-            else if (this.direction_ === 'left'){
-                element.style.right = `${show ? (value - this.delta_) : -value}px`;
-            }
-            else if (this.direction_ === 'up'){
-                element.style.bottom = `${show ? (value - this.delta_) : -value}px`;
-            }
-            else if (this.direction_ === 'right'){
-                element.style.left = `${show ? (value - this.delta_) : -value}px`;
-            }
-        }
-    }
-
-    export let Animators = {
-        opacity: (element: HTMLElement, css?: CSSStyleDeclaration) => new OpacityAnimator(element, css),
-        height: (element: HTMLElement, css?: CSSStyleDeclaration) => new HeightAnimator(false, element, css),
-        'height-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => new HeightAnimator(true, element, css),
-        width: (element: HTMLElement, css?: CSSStyleDeclaration) => new WidthAnimator(false, element, css),
-        'width-reverse': (element: HTMLElement, css?: CSSStyleDeclaration) => new WidthAnimator(true, element, css),
-        slide: (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('down', element, css),
-        'slide-down': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('down', element, css),
-        'slide-left': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('left', element, css),
-        'slide-up': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('up', element, css),
-        'slide-right': (element: HTMLElement, css?: CSSStyleDeclaration) => new SlideAnimator('right', element, css),
-    };
 
     export interface TypewriterInfo{
         list: Array<string>;
@@ -1081,155 +972,6 @@ namespace InlineJS{
                     return DirectiveHandlerReturn.Handled;
                 });
             }
-            
-            return DirectiveHandlerReturn.Handled;
-        }
-
-        public static Animate(region: Region, element: HTMLElement, directive: Directive){
-            let animator = ExtendedDirectiveHandlers.PrepareAnimation(element, directive.arg.options);
-            if (!animator){
-                return DirectiveHandlerReturn.Nil;
-            }
-
-            let regionId = region.GetId(), lastValue: boolean = null, showOnly = directive.arg.options.includes('show'), hideOnly = (!showOnly && directive.arg.options.includes('hide'));
-            region.GetState().TrapGetAccess(() => {
-                lastValue = !! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
-                animator(lastValue, null, false);
-            }, () => {
-                if (lastValue != (!! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value))){
-                    lastValue = !lastValue;
-                    animator(lastValue, null, (lastValue ? !hideOnly : !showOnly));
-                }
-            }, element);
-
-            return DirectiveHandlerReturn.Handled;
-        }
-
-        public static Typewriter(region: Region, element: HTMLElement, directive: Directive){
-            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
-            if (!data){
-                return DirectiveHandlerReturn.Nil;
-            }
-
-            let info: TypewriterInfo = {
-                list: new Array<string>(),
-                delay: 100,
-                interval: 250,
-                iterations: -1,
-                showDelete: false,
-                useRandom: false,
-                showCursor: false
-            };
-            
-            if (typeof data === 'string'){
-                info.list.push(data);
-            }
-            else if (Array.isArray(data)){
-                data.forEach(item => info.list.push(item));
-            }
-            else{
-                return DirectiveHandlerReturn.Nil;
-            }
-
-            let nextDuration = '', iterationsIsNext = false;
-            directive.arg.options.forEach((option) => {//Parse options
-                if (nextDuration){
-                    let duration = CoreDirectiveHandlers.ExtractDuration(option, null);
-                    if (duration !== null){
-                        info[nextDuration] = duration;
-                        nextDuration = '';
-                        return;
-                    }
-
-                    nextDuration = '';
-                }
-                else if (iterationsIsNext){
-                    iterationsIsNext = false;
-                    if (option === 'inf' || option === 'infinite'){
-                        info.iterations = -1;
-                    }
-                    else{
-                        info.iterations = (parseInt(option) || -1);
-                    }
-
-                    return;
-                }
-                
-                if (option === 'delay' || option === 'interval'){
-                    nextDuration = option;
-                    info[nextDuration] = (info[nextDuration] || 250);
-                }
-                else if (option === 'iterations'){
-                    iterationsIsNext = true;
-                }
-                else if (option === 'delete'){
-                    info.showDelete = true;
-                }
-                else if (option === 'random'){
-                    info.useRandom = true;
-                }
-                else if (option === 'cursor'){
-                    info.showCursor = true;
-                }
-            });
-            
-            let lineIndex = -1, index = 0, line: string, isDeleting = false, span = document.createElement('span'), duration: number, startTimestamp: DOMHighResTimeStamp = null, stopped = false;
-            let pass = (timestamp: DOMHighResTimeStamp) => {
-                if (lineIndex == -1 || line.length <= index){
-                    index = 0;
-                    if (isDeleting || lineIndex == -1 || !info.showDelete){
-                        lineIndex = (info.useRandom ? Math.floor(Math.random() * info.list.length) : ++lineIndex);
-                        if (info.list.length <= lineIndex){//Move to front of list
-                            lineIndex = 0;
-                        }
-
-                        line = info.list[lineIndex];
-                        isDeleting = false;
-                    }
-                    else{
-                        isDeleting = true;
-                    }
-
-                    duration = info.interval;
-                }
-                
-                if (startTimestamp === null){
-                    startTimestamp = timestamp;
-                }
-
-                if ((timestamp - startTimestamp) < duration){//Duration not met
-                    requestAnimationFrame(pass);
-                    return;
-                }
-                
-                startTimestamp = timestamp;
-                if (isDeleting){
-                    ++index;
-                    span.innerText = line.substr(0, (line.length - index));
-                    duration = info.delay;
-                }
-                else{//Append
-                    ++index;
-                    span.innerText = line.substring(0, index);
-                    duration = info.delay;
-                }
-
-                if (!stopped){
-                    requestAnimationFrame(pass);
-                }
-            };
-
-            span.classList.add('typewriter-text');
-            if (info.showCursor){
-                span.style.borderRight = '1px solid #333333';
-            }
-            
-            element.appendChild(span);
-            requestAnimationFrame(pass);
-
-            region.AddElement(element).uninitCallbacks.push(() => {
-                stopped = true;
-            });
             
             return DirectiveHandlerReturn.Handled;
         }
@@ -3081,7 +2823,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show = null, url: string = null, active = false;
+            let scope = ExtendedDirectiveHandlers.AddScope('modal', region.AddElement(element, true), []), regionId = region.GetId(), show: boolean = null, url: string = null, active = false;
             let container = document.createElement('div'), mount = document.createElement('div'), overlay = Region.GetGlobalValue(regionId, '$overlay');
             
             container.classList.add('inlinejs-modal');
@@ -3097,13 +2839,22 @@ namespace InlineJS{
             container.appendChild(mount);
             document.body.appendChild(container);
 
-            let animator = ExtendedDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']);
+            let animator = (CoreDirectiveHandlers.PrepareAnimation ? CoreDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']) : null);
             let setShow = (value: boolean) => {
                 if (value !== show){
                     show = value;
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'show', scope);
 
-                    animator(show);
+                    if (animator){
+                        animator(show);
+                    }
+                    else if (show){
+                        container.style.display = 'block';
+                    }
+                    else{
+                        container.style.display = 'none';
+                    }
+                    
                     overlay.toggle(show);
                 }
             };
@@ -3513,132 +3264,6 @@ namespace InlineJS{
             return (reporter && reporter.reportServerError && reporter.reportServerError(err));
         }
 
-        public static InitAnimation(element: HTMLElement, options: Array<string>, css?: CSSStyleDeclaration, callback?: (key: string) => void){
-            let animators: Record<string, Animator> = {};
-
-            css = (css || getComputedStyle(element));
-            options.forEach((key) => {
-                if (key in Animators){
-                    animators[key] = Animators[key](element, css);
-                }
-                else if (callback){
-                    callback(key);
-                }
-            });
-
-            return animators;
-        }
-
-        public static PrepareAnimation(element: HTMLElement, options: Array<string>){
-            const displays = ['block', 'flex', 'inline', 'inline-block', 'inline-flex', 'table'];
-            
-            let css = getComputedStyle(element), display: string = null, sync = options.includes('sync');
-            let duration: number = null, animators = ExtendedDirectiveHandlers.InitAnimation(element, options, css, (key) => {
-                if (displays.includes(key)){
-                    display = key;
-                    return;
-                }
-                
-                switch (key) {
-                case 'slower':
-                    duration = 1000;
-                    break;
-                case 'slow':
-                    duration = 750;
-                    break;
-                case 'normal':
-                    duration = 500;
-                    break;
-                case 'fast':
-                    duration = 300;
-                    break;
-                case 'faster':
-                    duration = 200;
-                    break;
-                default:
-                    duration = CoreDirectiveHandlers.ExtractDuration(key, null);
-                    break;
-                }
-            });
-
-            duration = (duration || 300);
-            display = (display || css.display || 'block');
-
-            let keys = Object.keys(animators);
-            if (keys.length == 0){//Default
-                animators['opacity'] = Animators.opacity(element, css);
-                keys.push('opacity');
-            }
-
-            let ease = (time: number, start: number, value: number, duration: number) => {
-                return ((time < duration) ? (-value * Math.cos(time / duration * (Math.PI / 2)) + value + start) : value);
-            };
-
-            let checkpoint = 0;
-            return (show: boolean, callback?: () => boolean | void, animate = true) => {
-                if (!animate){
-                    if (show){
-                        element.style.display = display;
-                        if (callback){
-                            callback();
-                        }
-                    }
-                    else if (!callback || callback() !== false){
-                        element.style.display = 'none';
-                    }
-                    return;
-                }
-                
-                let lastCheckpoint = ++checkpoint, startTimestamp: DOMHighResTimeStamp = null, done = false;
-                let end = () => {
-                    done = true;
-                    keys.forEach(key => animators[key].step(element, show, sync, duration, duration, ease));
-                    element.dispatchEvent(new CustomEvent('animation.leaving'));
-
-                    if ((!callback || callback() !== false) && !show){
-                        element.style.display = 'none';
-                    }
-
-                    element.dispatchEvent(new CustomEvent('animation.leave'));
-                };
-                
-                let pass = (timestamp: DOMHighResTimeStamp) => {
-                    if (startTimestamp === null){
-                        startTimestamp = timestamp;
-                    }
-    
-                    if (done || lastCheckpoint != checkpoint){
-                        return;
-                    }
-
-                    let ellapsed = (timestamp - startTimestamp);
-                    if (ellapsed < duration){
-                        keys.forEach(key => animators[key].step(element, show, sync, ellapsed, duration, ease));
-                        requestAnimationFrame(pass);
-                    }
-                    else{//End
-                        end();
-                    }
-                };
-
-                setTimeout(() => {//Watcher
-                    if (!done && lastCheckpoint == checkpoint){
-                        end();
-                    }
-                }, (duration + 100));
-
-                requestAnimationFrame(pass);
-                element.dispatchEvent(new CustomEvent('animation.entering'));
-
-                if (show){
-                    element.style.display = display;
-                    getComputedStyle(element);
-                }
-
-                element.dispatchEvent(new CustomEvent('animation.entered'));
-            };
-        }
-
         public static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>) : ExtendedDirectiveHandlerScope{
             let id = `${prefix}<${++ExtendedDirectiveHandlers.scopeId_}>`;
             ExtendedDirectiveHandlers.scopes_[id] = {
@@ -3652,8 +3277,6 @@ namespace InlineJS{
         }
 
         public static AddAll(){
-            CoreDirectiveHandlers.PrepareAnimation = ExtendedDirectiveHandlers.PrepareAnimation;
-            
             DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
@@ -3668,8 +3291,6 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);
             DirectiveHandlerManager.AddHandler('busy', ExtendedDirectiveHandlers.Busy);
             DirectiveHandlerManager.AddHandler('activeGroup', ExtendedDirectiveHandlers.ActiveGroup);
-            DirectiveHandlerManager.AddHandler('animate', ExtendedDirectiveHandlers.Animate);
-            DirectiveHandlerManager.AddHandler('typewriter', ExtendedDirectiveHandlers.Typewriter);
 
             DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
             DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);

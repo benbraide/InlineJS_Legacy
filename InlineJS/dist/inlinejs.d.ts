@@ -360,7 +360,7 @@ declare namespace InlineJS {
     interface EachCloneInfo {
         key: string | number;
         element: HTMLElement;
-        animator: (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
+        animator: (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => void;
     }
     interface EachOptions {
         clones: Array<EachCloneInfo> | Record<string, EachCloneInfo>;
@@ -376,7 +376,7 @@ declare namespace InlineJS {
         $init?: (region?: Region) => void;
     }
     class CoreDirectiveHandlers {
-        static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, callback?: () => boolean | void, animate?: boolean) => void);
+        static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => void);
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Locals(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -411,7 +411,7 @@ declare namespace InlineJS {
         static GetChildElementIndex(element: HTMLElement): number;
         static GetChildElementAt(parent: HTMLElement, index: number): HTMLElement;
         static InsertOrAppendChildElement(parent: HTMLElement, element: HTMLElement, index: number): void;
-        static GetAnimator(animate: boolean, element: HTMLElement, options: Array<string>): (show: boolean, callback?: () => boolean | void, animate?: boolean) => void;
+        static GetAnimator(animate: boolean, element: HTMLElement, options: Array<string>, always?: boolean): (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => void;
         static AddAll(): void;
     }
     interface ProcessorOptions {

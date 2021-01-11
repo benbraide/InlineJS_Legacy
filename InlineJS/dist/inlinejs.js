@@ -2044,10 +2044,37 @@ var InlineJS;
             if (showValue === 'none') {
                 showValue = 'block';
             }
-            var regionId = region.GetId();
-            region.GetState().TrapGetAccess(function () {
-                element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
-            }, true, element);
+            var regionId = region.GetId(), animator = CoreDirectiveHandlers.GetAnimator((directive.arg.key === 'animate'), element, directive.arg.options, false);
+            if (animator) {
+                var lastValue_1 = null, showOnly_1 = directive.arg.options.includes('show'), hideOnly_1 = (!showOnly_1 && directive.arg.options.includes('hide'));
+                region.GetState().TrapGetAccess(function () {
+                    lastValue_1 = !!CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                    element.style.display = (lastValue_1 ? showValue : 'none');
+                }, function () {
+                    if (lastValue_1 != (!!CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value))) {
+                        lastValue_1 = !lastValue_1;
+                        if ((lastValue_1 ? !hideOnly_1 : !showOnly_1)) {
+                            animator(lastValue_1, function (show) {
+                                if (show) {
+                                    element.style.display = showValue;
+                                }
+                            }, function (show) {
+                                if (!show) {
+                                    element.style.display = 'none';
+                                }
+                            });
+                        }
+                        else { //No animation
+                            element.style.display = (lastValue_1 ? showValue : 'none');
+                        }
+                    }
+                }, element);
+            }
+            else {
+                region.GetState().TrapGetAccess(function () {
+                    element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
+                }, true, element);
+            }
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.If = function (region, element, directive) {
@@ -2071,7 +2098,17 @@ var InlineJS;
                 if (!scope.falseIfCondition) {
                     scope.falseIfCondition = new Array();
                 }
-                var predicate = !!evaluate(myRegion);
+                var predicate = !!evaluate(myRegion), onHide = function () {
+                    scope.preserve = true; //Don't remove scope
+                    __spreadArrays(scope.falseIfCondition).forEach(function (callback) { return callback(); });
+                    if (!ifFirstEntry) {
+                        info.attributes.forEach(function (attr) { return element.removeAttribute(attr.name); });
+                    }
+                    if (element.parentElement) {
+                        element.parentElement.removeChild(element);
+                        scope.removed = true;
+                    }
+                };
                 if (predicate) {
                     if (!isInserted) {
                         isInserted = true;
@@ -2079,7 +2116,7 @@ var InlineJS;
                             CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker); //Temporarily insert element into DOM
                             scope.removed = false;
                         }
-                        animator(true, function () {
+                        animator(true, null, function () {
                             CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info); //Execute directives
                         });
                     }
@@ -2089,17 +2126,7 @@ var InlineJS;
                 }
                 else if (isInserted) {
                     isInserted = false;
-                    animator(false, function () {
-                        scope.preserve = true; //Don't remove scope
-                        __spreadArrays(scope.falseIfCondition).forEach(function (callback) { return callback(); });
-                        if (!ifFirstEntry) {
-                            info.attributes.forEach(function (attr) { return element.removeAttribute(attr.name); });
-                        }
-                        if (element.parentElement) {
-                            element.parentElement.removeChild(element);
-                            scope.removed = true;
-                        }
-                    }, !ifFirstEntry);
+                    animator(false, null, onHide);
                 }
                 ifFirstEntry = false;
             }, true, null, function () { region.GetElementScope(element).preserve = false; });
@@ -2211,7 +2238,7 @@ var InlineJS;
             var empty = function (myRegion) {
                 if (Array.isArray(options.clones)) {
                     (options.clones || []).forEach(function (myInfo) {
-                        myInfo.animator(false, function () {
+                        myInfo.animator(false, null, function () {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2220,7 +2247,7 @@ var InlineJS;
                 else { //Map
                     Object.keys(options.clones || {}).forEach(function (key) {
                         var myInfo = options.clones[key];
-                        myInfo.animator(false, function () {
+                        myInfo.animator(false, null, function () {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2257,7 +2284,7 @@ var InlineJS;
                     options.clones.splice(index, 1).forEach(function (myInfo) {
                         --options.count;
                         addSizeChange(myRegion);
-                        myInfo.animator(false, function () {
+                        myInfo.animator(false, null, function () {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2275,7 +2302,7 @@ var InlineJS;
                     --options.count;
                     addSizeChange(myRegion);
                     var myInfo_1 = options.clones[key];
-                    myInfo_1.animator(false, function () {
+                    myInfo_1.animator(false, null, function () {
                         info.parent.removeChild(myInfo_1.element);
                         myRegion.MarkElementAsRemoved(myInfo_1.element);
                         delete options.clones[key];
@@ -2301,7 +2328,7 @@ var InlineJS;
                         addSizeChange(myRegion);
                         options.items.splice(target, diff);
                         options.clones.splice(target, diff).forEach(function (myInfo) {
-                            myInfo.animator(false, function () {
+                            myInfo.animator(false, null, function () {
                                 info.parent.removeChild(myInfo.element);
                                 myRegion.MarkElementAsRemoved(myInfo.element);
                             });
@@ -2555,12 +2582,16 @@ var InlineJS;
                 parent.appendChild(element);
             }
         };
-        CoreDirectiveHandlers.GetAnimator = function (animate, element, options) {
+        CoreDirectiveHandlers.GetAnimator = function (animate, element, options, always) {
+            if (always === void 0) { always = true; }
             var animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(element, options) : null);
-            if (!animator) { //Use a dummy animator
-                animator = function (show, callback, animate) {
-                    if (callback) {
-                        callback();
+            if (!animator && always) { //Use a dummy animator
+                animator = function (show, beforeCallback, afterCallback) {
+                    if (beforeCallback) {
+                        beforeCallback(show);
+                    }
+                    if (afterCallback) {
+                        afterCallback(show);
                     }
                 };
             }
