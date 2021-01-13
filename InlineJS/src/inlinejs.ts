@@ -322,7 +322,7 @@ namespace InlineJS{
                     return;
                 }
                 
-                scope.uninitCallbacks.forEach((callback) => {
+                scope.uninitCallbacks.splice(0).forEach((callback) => {
                     try{
                         callback();
                     }
@@ -331,7 +331,6 @@ namespace InlineJS{
                     }
                 });
 
-                scope.uninitCallbacks = [];
                 if (!preserve && !scope.preserve && !scope.preserveSubscriptions){
                     Region.UnsubscribeAll(scope.changeRefs);
     
@@ -665,7 +664,7 @@ namespace InlineJS{
                 return;
             }
             
-            Region.postProcessCallbacks_.forEach((callback) => {
+            Region.postProcessCallbacks_.splice(0).forEach((callback) => {
                 try{
                     callback();
                 }
@@ -673,8 +672,6 @@ namespace InlineJS{
                     console.error(err, `InlineJs.Region<NIL>.ExecutePostProcessCallbacks`);
                 }
             });
-
-            Region.postProcessCallbacks_ = [];
         }
 
         public static AddGlobalOutsideEventCallback(element: HTMLElement, events: string | Array<string>, callback: (event: Event) => void){
@@ -1983,7 +1980,7 @@ namespace InlineJS{
     }
 
     export class CoreDirectiveHandlers{
-        public static PrepareAnimation: (element: HTMLElement, options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => void) = null;
+        public static PrepareAnimation: (region: Region, element: HTMLElement, options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void) = null;
         
         public static Noop(region: Region, element: HTMLElement, directive: Directive){
             return DirectiveHandlerReturn.Handled;
@@ -2224,16 +2221,16 @@ namespace InlineJS{
         }
 
         public static TextOrHtml(region: Region, element: HTMLElement, directive: Directive, isHtml: boolean, callback?: () => boolean){
-            let onChange: () => void;
+            let onChange: (value: any) => void;
             let regionId = region.GetId();
             
             if (isHtml){
-                onChange = () => element.innerHTML = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                onChange = (value: any) => element.innerHTML = CoreDirectiveHandlers.ToString(value);
             }
             else if (element.tagName === 'INPUT'){
                 if ((element as HTMLInputElement).type === 'checkbox' || (element as HTMLInputElement).type === 'radio'){
-                    onChange = () => {
-                        let value = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value), valueAttr = element.getAttribute('value');
+                    onChange = (value: any) => {
+                        let valueAttr = element.getAttribute('value');
                         if (valueAttr){
                             if (value && Array.isArray(value)){
                                 (element as HTMLInputElement).checked = ((value as Array<any>).findIndex(item => (item == valueAttr)) != -1);
@@ -2248,19 +2245,38 @@ namespace InlineJS{
                     };
                 }
                 else{
-                    onChange = () => (element as HTMLInputElement).value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                    onChange = (value: any) => (element as HTMLInputElement).value = CoreDirectiveHandlers.ToString(value);
                 }
             }
             else if (element.tagName === 'TEXTAREA' || element.tagName === 'SELECT'){
-                onChange = () => (element as HTMLTextAreaElement).value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                onChange = (value: any) => (element as HTMLTextAreaElement).value = CoreDirectiveHandlers.ToString(value);
             }
             else{//Unknown
-                onChange = () => element.textContent = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                onChange = (value: any) => element.textContent = CoreDirectiveHandlers.ToString(value);
+            }
+
+            let animator: ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void) = null;
+            if (directive.arg.key === 'animate'){
+                if (!directive.arg.options.includes('counter')){
+                    directive.arg.options.unshift('counter');
+                }
+
+                animator = CoreDirectiveHandlers.GetAnimator(region, true, element, directive.arg.options, false);
             }
 
             region.GetState().TrapGetAccess(() => {
                 if (!callback || callback()){
-                    onChange();
+                    if (animator){
+                        animator(true, null, null, {
+                            value: CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value),
+                            callback: (result: string) => {
+                                onChange(result);
+                            },
+                        });
+                    }
+                    else{
+                        onChange(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                    }
                 }
             }, true, element);
             
@@ -2562,7 +2578,7 @@ namespace InlineJS{
                 showValue = 'block';
             }
 
-            let regionId = region.GetId(), animator = CoreDirectiveHandlers.GetAnimator((directive.arg.key === 'animate'), element, directive.arg.options, false);
+            let regionId = region.GetId(), animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options, false);
             if (animator){
                 let lastValue: boolean = null, showOnly = directive.arg.options.includes('show'), hideOnly = (!showOnly && directive.arg.options.includes('hide'));
                 region.GetState().TrapGetAccess(() => {
@@ -2616,7 +2632,7 @@ namespace InlineJS{
                 return result;
             };
             
-            let animator = CoreDirectiveHandlers.GetAnimator((directive.arg.key === 'animate'), element, directive.arg.options);
+            let animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options);
             region.GetState().TrapGetAccess(() => {
                 let myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition){
@@ -2764,7 +2780,7 @@ namespace InlineJS{
             };
 
             let append = (myRegion: Region, key?: string) => {
-                let clone = (element.cloneNode(true) as HTMLElement), animator = CoreDirectiveHandlers.GetAnimator(animate, clone, directive.arg.options);
+                let clone = (element.cloneNode(true) as HTMLElement), animator = CoreDirectiveHandlers.GetAnimator(region, animate, clone, directive.arg.options);
                 if (key){
                     (options.clones as Record<string, EachCloneInfo>)[key] = {
                         key : key,
@@ -3183,8 +3199,8 @@ namespace InlineJS{
             }
         }
 
-        public static GetAnimator(animate: boolean, element: HTMLElement, options: Array<string>, always = true){
-            let animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(element, options) : null);
+        public static GetAnimator(region: Region, animate: boolean, element: HTMLElement, options: Array<string>, always = true){
+            let animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(region, element, options) : null);
             if (!animator && always){//Use a dummy animator
                 animator = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => {
                     if (beforeCallback){
@@ -3283,7 +3299,7 @@ namespace InlineJS{
         public static PreOrPost(region: Region, element: HTMLElement, scopeKey: string, name: string){
             let scope = region.GetElementScope(element);
             if (scope){
-                (scope[scopeKey] as Array<() => void>).forEach((callback) => {
+                (scope[scopeKey] as Array<() => void>).splice(0).forEach((callback) => {
                     try{
                         callback();
                     }
@@ -3291,8 +3307,6 @@ namespace InlineJS{
                         region.GetState().ReportError(err, `InlineJs.Region<${region.GetId()}>.Processor.${name}(Element@${element.nodeName})`);
                     }
                 });
-
-                scope[scopeKey] = [];
             }
         }
         

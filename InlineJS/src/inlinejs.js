@@ -296,42 +296,47 @@ export var InlineJS;
             var scope = this.GetElementScope(element);
             return (scope && !scope.removed);
         };
-        Region.prototype.AddOutsideEventCallback = function (element, event, callback) {
+        Region.prototype.AddOutsideEventCallback = function (element, events, callback) {
+            var _this = this;
             var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
             if (!scope) {
                 return;
             }
-            if (!(event in scope.outsideEventCallbacks)) {
-                scope.outsideEventCallbacks[event] = new Array();
-            }
-            scope.outsideEventCallbacks[event].push(callback);
-            if (this.outsideEvents_.indexOf(event) == -1) {
-                this.outsideEvents_.push(event);
-                document.body.addEventListener(event, function (e) {
-                    var myRegion = Region.Get(id);
-                    if (myRegion) {
-                        Object.keys(myRegion.elementScopes_).forEach(function (key) {
-                            var scope = myRegion.elementScopes_[key];
-                            if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target)) {
-                                scope.outsideEventCallbacks[e.type].forEach(function (callback) { return callback(e); });
-                            }
-                        });
-                    }
-                }, true);
-            }
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in scope.outsideEventCallbacks)) {
+                    scope.outsideEventCallbacks[event] = new Array();
+                }
+                scope.outsideEventCallbacks[event].push(callback);
+                if (!_this.outsideEvents_.includes(event)) {
+                    _this.outsideEvents_.push(event);
+                    document.body.addEventListener(event, function (e) {
+                        var myRegion = Region.Get(id);
+                        if (myRegion) {
+                            Object.keys(myRegion.elementScopes_).forEach(function (key) {
+                                var scope = myRegion.elementScopes_[key];
+                                if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target)) {
+                                    scope.outsideEventCallbacks[e.type].forEach(function (callback) { return callback(e); });
+                                }
+                            });
+                        }
+                    }, true);
+                }
+            });
         };
-        Region.prototype.RemoveOutsideEventCallback = function (element, event, callback) {
+        Region.prototype.RemoveOutsideEventCallback = function (element, events, callback) {
             var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
-            if (!scope || !(event in scope.outsideEventCallbacks)) {
+            if (!scope) {
                 return;
             }
-            var list = scope.outsideEventCallbacks[event];
-            for (var i = 0; i < list.length; ++i) {
-                if (list[i] === callback) {
-                    list.splice(i, 1);
-                    break;
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in scope.outsideEventCallbacks)) {
+                    return;
                 }
-            }
+                var index = scope.outsideEventCallbacks[event].findIndex(function (handler) { return (handler === callback); });
+                if (index != -1) {
+                    scope.outsideEventCallbacks[event].splice(index, 1);
+                }
+            });
         };
         Region.prototype.AddNextTickCallback = function (callback) {
             this.nextTickCallbacks_.push(callback);
@@ -520,6 +525,41 @@ export var InlineJS;
             });
             Region.postProcessCallbacks_ = [];
         };
+        Region.AddGlobalOutsideEventCallback = function (element, events, callback) {
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in Region.outsideEventCallbacks_)) {
+                    Region.outsideEventCallbacks_[event] = new Array();
+                }
+                Region.outsideEventCallbacks_[event].push({
+                    target: element,
+                    handler: callback
+                });
+                if (!Region.globalOutsideEvents_.includes(event)) {
+                    Region.globalOutsideEvents_.push(event);
+                    document.body.addEventListener(event, function (e) {
+                        if (!(e.type in Region.outsideEventCallbacks_)) {
+                            return;
+                        }
+                        Region.outsideEventCallbacks_[e.type].forEach(function (info) {
+                            if (e.target !== info.target && e.type in Region.outsideEventCallbacks_ && !info.target.contains(e.target)) {
+                                info.handler(e);
+                            }
+                        });
+                    }, true);
+                }
+            });
+        };
+        Region.RemoveGlobalOutsideEventCallback = function (element, events, callback) {
+            ((typeof events === 'string') ? [events] : events).forEach(function (event) {
+                if (!(event in Region.outsideEventCallbacks_)) {
+                    return;
+                }
+                var index = Region.outsideEventCallbacks_[event].findIndex(function (info) { return (info.target === element && info.handler === callback); });
+                if (index != -1) {
+                    Region.outsideEventCallbacks_[event].splice(index, 1);
+                }
+            });
+        };
         Region.SetDirectivePrefix = function (value) {
             Region.directivePrfix = value;
             Region.directiveRegex = new RegExp("^(data-)?" + value + "-(.+)$");
@@ -607,6 +647,8 @@ export var InlineJS;
         Region.components_ = {};
         Region.globals_ = {};
         Region.postProcessCallbacks_ = new Array();
+        Region.outsideEventCallbacks_ = {};
+        Region.globalOutsideEvents_ = new Array();
         Region.enableOptimizedBinds = true;
         Region.directivePrfix = 'x';
         Region.directiveRegex = /^(data-)?x-(.+)$/;
@@ -1717,12 +1759,12 @@ export var InlineJS;
             var onChange;
             var regionId = region.GetId();
             if (isHtml) {
-                onChange = function () { return element.innerHTML = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)); };
+                onChange = function (value) { return element.innerHTML = CoreDirectiveHandlers.ToString(value); };
             }
             else if (element.tagName === 'INPUT') {
                 if (element.type === 'checkbox' || element.type === 'radio') {
-                    onChange = function () {
-                        var value = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value), valueAttr = element.getAttribute('value');
+                    onChange = function (value) {
+                        var valueAttr = element.getAttribute('value');
                         if (valueAttr) {
                             if (value && Array.isArray(value)) {
                                 element.checked = (value.findIndex(function (item) { return (item == valueAttr); }) != -1);
@@ -1737,18 +1779,35 @@ export var InlineJS;
                     };
                 }
                 else {
-                    onChange = function () { return element.value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)); };
+                    onChange = function (value) { return element.value = CoreDirectiveHandlers.ToString(value); };
                 }
             }
             else if (element.tagName === 'TEXTAREA' || element.tagName === 'SELECT') {
-                onChange = function () { return element.value = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)); };
+                onChange = function (value) { return element.value = CoreDirectiveHandlers.ToString(value); };
             }
             else { //Unknown
-                onChange = function () { return element.textContent = CoreDirectiveHandlers.ToString(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value)); };
+                onChange = function (value) { return element.textContent = CoreDirectiveHandlers.ToString(value); };
+            }
+            var animator = null;
+            if (directive.arg.key === 'animate') {
+                if (!directive.arg.options.includes('counter')) {
+                    directive.arg.options.unshift('counter');
+                }
+                animator = CoreDirectiveHandlers.GetAnimator(region, true, element, directive.arg.options, false);
             }
             region.GetState().TrapGetAccess(function () {
                 if (!callback || callback()) {
-                    onChange();
+                    if (animator) {
+                        animator(true, null, null, {
+                            value: CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value),
+                            callback: function (result) {
+                                onChange(result);
+                            }
+                        });
+                    }
+                    else {
+                        onChange(CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+                    }
                 }
             }, true, element);
             return DirectiveHandlerReturn.Handled;
@@ -2001,10 +2060,37 @@ export var InlineJS;
             if (showValue === 'none') {
                 showValue = 'block';
             }
-            var regionId = region.GetId();
-            region.GetState().TrapGetAccess(function () {
-                element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
-            }, true, element);
+            var regionId = region.GetId(), animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options, false);
+            if (animator) {
+                var lastValue_1 = null, showOnly_1 = directive.arg.options.includes('show'), hideOnly_1 = (!showOnly_1 && directive.arg.options.includes('hide'));
+                region.GetState().TrapGetAccess(function () {
+                    lastValue_1 = !!CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
+                    element.style.display = (lastValue_1 ? showValue : 'none');
+                }, function () {
+                    if (lastValue_1 != (!!CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value))) {
+                        lastValue_1 = !lastValue_1;
+                        if ((lastValue_1 ? !hideOnly_1 : !showOnly_1)) {
+                            animator(lastValue_1, function (show) {
+                                if (show) {
+                                    element.style.display = showValue;
+                                }
+                            }, function (show) {
+                                if (!show) {
+                                    element.style.display = 'none';
+                                }
+                            });
+                        }
+                        else { //No animation
+                            element.style.display = (lastValue_1 ? showValue : 'none');
+                        }
+                    }
+                }, element);
+            }
+            else {
+                region.GetState().TrapGetAccess(function () {
+                    element.style.display = (CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value) ? showValue : 'none');
+                }, true, element);
+            }
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.If = function (region, element, directive) {
@@ -2022,13 +2108,23 @@ export var InlineJS;
                 }
                 return result;
             };
-            var animator = CoreDirectiveHandlers.GetAnimator((directive.arg.key === 'animate'), element, directive.arg.options);
+            var animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options);
             region.GetState().TrapGetAccess(function () {
                 var myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition) {
                     scope.falseIfCondition = new Array();
                 }
-                var predicate = !!evaluate(myRegion);
+                var predicate = !!evaluate(myRegion), onHide = function () {
+                    scope.preserve = true; //Don't remove scope
+                    __spreadArrays(scope.falseIfCondition).forEach(function (callback) { return callback(); });
+                    if (!ifFirstEntry) {
+                        info.attributes.forEach(function (attr) { return element.removeAttribute(attr.name); });
+                    }
+                    if (element.parentElement) {
+                        element.parentElement.removeChild(element);
+                        scope.removed = true;
+                    }
+                };
                 if (predicate) {
                     if (!isInserted) {
                         isInserted = true;
@@ -2036,7 +2132,7 @@ export var InlineJS;
                             CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, info.marker); //Temporarily insert element into DOM
                             scope.removed = false;
                         }
-                        animator(true, function () {
+                        animator(true, null, function () {
                             CoreDirectiveHandlers.InsertIfOrEach(myRegion, element, info); //Execute directives
                         });
                     }
@@ -2046,17 +2142,7 @@ export var InlineJS;
                 }
                 else if (isInserted) {
                     isInserted = false;
-                    animator(false, function () {
-                        scope.preserve = true; //Don't remove scope
-                        __spreadArrays(scope.falseIfCondition).forEach(function (callback) { return callback(); });
-                        if (!ifFirstEntry) {
-                            info.attributes.forEach(function (attr) { return element.removeAttribute(attr.name); });
-                        }
-                        if (element.parentElement) {
-                            element.parentElement.removeChild(element);
-                            scope.removed = true;
-                        }
-                    }, !ifFirstEntry);
+                    animator(false, null, onHide);
                 }
                 ifFirstEntry = false;
             }, true, null, function () { region.GetElementScope(element).preserve = false; });
@@ -2145,7 +2231,7 @@ export var InlineJS;
                 }
             };
             var append = function (myRegion, key) {
-                var clone = element.cloneNode(true), animator = CoreDirectiveHandlers.GetAnimator(animate, clone, directive.arg.options);
+                var clone = element.cloneNode(true), animator = CoreDirectiveHandlers.GetAnimator(region, animate, clone, directive.arg.options);
                 if (key) {
                     options.clones[key] = {
                         key: key,
@@ -2168,7 +2254,7 @@ export var InlineJS;
             var empty = function (myRegion) {
                 if (Array.isArray(options.clones)) {
                     (options.clones || []).forEach(function (myInfo) {
-                        myInfo.animator(false, function () {
+                        myInfo.animator(false, null, function () {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2177,7 +2263,7 @@ export var InlineJS;
                 else { //Map
                     Object.keys(options.clones || {}).forEach(function (key) {
                         var myInfo = options.clones[key];
-                        myInfo.animator(false, function () {
+                        myInfo.animator(false, null, function () {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2214,7 +2300,7 @@ export var InlineJS;
                     options.clones.splice(index, 1).forEach(function (myInfo) {
                         --options.count;
                         addSizeChange(myRegion);
-                        myInfo.animator(false, function () {
+                        myInfo.animator(false, null, function () {
                             info.parent.removeChild(myInfo.element);
                             myRegion.MarkElementAsRemoved(myInfo.element);
                         });
@@ -2232,7 +2318,7 @@ export var InlineJS;
                     --options.count;
                     addSizeChange(myRegion);
                     var myInfo_1 = options.clones[key];
-                    myInfo_1.animator(false, function () {
+                    myInfo_1.animator(false, null, function () {
                         info.parent.removeChild(myInfo_1.element);
                         myRegion.MarkElementAsRemoved(myInfo_1.element);
                         delete options.clones[key];
@@ -2258,7 +2344,7 @@ export var InlineJS;
                         addSizeChange(myRegion);
                         options.items.splice(target, diff);
                         options.clones.splice(target, diff).forEach(function (myInfo) {
-                            myInfo.animator(false, function () {
+                            myInfo.animator(false, null, function () {
                                 info.parent.removeChild(myInfo.element);
                                 myRegion.MarkElementAsRemoved(myInfo.element);
                             });
@@ -2512,12 +2598,16 @@ export var InlineJS;
                 parent.appendChild(element);
             }
         };
-        CoreDirectiveHandlers.GetAnimator = function (animate, element, options) {
-            var animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(element, options) : null);
-            if (!animator) { //Use a dummy animator
-                animator = function (show, callback, animate) {
-                    if (callback) {
-                        callback();
+        CoreDirectiveHandlers.GetAnimator = function (region, animate, element, options, always) {
+            if (always === void 0) { always = true; }
+            var animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(region, element, options) : null);
+            if (!animator && always) { //Use a dummy animator
+                animator = function (show, beforeCallback, afterCallback) {
+                    if (beforeCallback) {
+                        beforeCallback(show);
+                    }
+                    if (afterCallback) {
+                        afterCallback(show);
                     }
                 };
             }
@@ -2778,16 +2868,16 @@ export var InlineJS;
     var Bootstrap = /** @class */ (function () {
         function Bootstrap() {
         }
-        Bootstrap.Attach = function (anchors) {
+        Bootstrap.Attach = function (anchors, node) {
             Bootstrap.anchors_ = anchors;
-            Bootstrap.Attach_();
+            Bootstrap.Attach_(node);
         };
-        Bootstrap.Reattach = function () {
-            Bootstrap.Attach_();
+        Bootstrap.Reattach = function (node) {
+            Bootstrap.Attach_(node);
         };
-        Bootstrap.Attach_ = function () {
+        Bootstrap.Attach_ = function (node) {
             (Bootstrap.anchors_ || ["data-" + Region.directivePrfix + "-data", Region.directivePrfix + "-data"]).forEach(function (anchor) {
-                document.querySelectorAll("[" + anchor + "]").forEach(function (element) {
+                (node || document).querySelectorAll("[" + anchor + "]").forEach(function (element) {
                     if (!element.hasAttribute(anchor)) { //Probably contained inside another region
                         return;
                     }

@@ -2839,17 +2839,25 @@ namespace InlineJS{
             container.appendChild(mount);
             document.body.appendChild(container);
 
-            let animator = (CoreDirectiveHandlers.PrepareAnimation ? CoreDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']) : null);
+            let animator = (CoreDirectiveHandlers.PrepareAnimation ? CoreDirectiveHandlers.PrepareAnimation(region, container, ['zoom', 'faster']) : null);
             let setShow = (value: boolean) => {
                 if (value !== show){
                     show = value;
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'show', scope);
 
                     if (animator){
-                        animator(show);
+                        animator(show, (show) => {
+                            if (show){
+                                container.style.display = 'flex';
+                            }
+                        }, (show) => {
+                            if (!show){
+                                container.style.display = 'none';
+                            }
+                        });
                     }
                     else if (show){
-                        container.style.display = 'block';
+                        container.style.display = 'flex';
                     }
                     else{
                         container.style.display = 'none';
@@ -3276,6 +3284,15 @@ namespace InlineJS{
             return ExtendedDirectiveHandlers.scopes_[id];
         }
 
+        public static BuildGlobal(name: string){
+            Region.AddGlobal(`$$${name}`, (regionId: string) => {
+                return (target: HTMLElement) => {
+                    let local = (Region.Infer(target) || Region.Get(regionId)).GetLocal(target, `$${name}`, true);
+                    return ((local instanceof Value) ? local.Get() : local);
+                };
+            });
+        }
+        
         public static AddAll(){
             DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
@@ -3310,24 +3327,15 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
 
-            let buildGlobal = (name: string) => {
-                Region.AddGlobal(`$$${name}`, (regionId: string) => {
-                    return (target: HTMLElement) => {
-                        let local = (Region.Infer(target) || Region.Get(regionId)).GetLocal(target, `$${name}`, true);
-                        return ((local instanceof Value) ? local.Get() : local);
-                    };
-                });
-            };
-
-            buildGlobal('state');
-            buildGlobal('attr');
-            buildGlobal('xhr');
-            buildGlobal('lazyLoad');
-            buildGlobal('intersection');
-            buildGlobal('busy');
-            buildGlobal('db');
-            buildGlobal('form');
-            buildGlobal('counter');
+            ExtendedDirectiveHandlers.BuildGlobal('state');
+            ExtendedDirectiveHandlers.BuildGlobal('attr');
+            ExtendedDirectiveHandlers.BuildGlobal('xhr');
+            ExtendedDirectiveHandlers.BuildGlobal('lazyLoad');
+            ExtendedDirectiveHandlers.BuildGlobal('intersection');
+            ExtendedDirectiveHandlers.BuildGlobal('busy');
+            ExtendedDirectiveHandlers.BuildGlobal('db');
+            ExtendedDirectiveHandlers.BuildGlobal('form');
+            ExtendedDirectiveHandlers.BuildGlobal('counter');
         }
     }
 

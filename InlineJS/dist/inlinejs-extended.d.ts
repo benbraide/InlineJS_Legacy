@@ -136,6 +136,7 @@ declare namespace InlineJS {
         static Report(regionId: string, info: any): boolean;
         static ReportServerError(regionId: string, err: any): boolean;
         static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>): ExtendedDirectiveHandlerScope;
+        static BuildGlobal(name: string): void;
         static AddAll(): void;
     }
 }

@@ -2296,16 +2296,24 @@ var InlineJS;
             }
             container.appendChild(mount);
             document.body.appendChild(container);
-            var animator = (InlineJS.CoreDirectiveHandlers.PrepareAnimation ? InlineJS.CoreDirectiveHandlers.PrepareAnimation(container, ['opacity', 'faster']) : null);
+            var animator = (InlineJS.CoreDirectiveHandlers.PrepareAnimation ? InlineJS.CoreDirectiveHandlers.PrepareAnimation(region, container, ['zoom', 'faster']) : null);
             var setShow = function (value) {
                 if (value !== show) {
                     show = value;
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'show', scope);
                     if (animator) {
-                        animator(show);
+                        animator(show, function (show) {
+                            if (show) {
+                                container.style.display = 'flex';
+                            }
+                        }, function (show) {
+                            if (!show) {
+                                container.style.display = 'none';
+                            }
+                        });
                     }
                     else if (show) {
-                        container.style.display = 'block';
+                        container.style.display = 'flex';
                     }
                     else {
                         container.style.display = 'none';
@@ -2668,6 +2676,14 @@ var InlineJS;
             (callbacks || []).forEach(function (key) { return ExtendedDirectiveHandlers.scopes_[id].callbacks[key] = new Array(); });
             return ExtendedDirectiveHandlers.scopes_[id];
         };
+        ExtendedDirectiveHandlers.BuildGlobal = function (name) {
+            InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
+                return function (target) {
+                    var local = (InlineJS.Region.Infer(target) || InlineJS.Region.Get(regionId)).GetLocal(target, "$" + name, true);
+                    return ((local instanceof InlineJS.Value) ? local.Get() : local);
+                };
+            });
+        };
         ExtendedDirectiveHandlers.AddAll = function () {
             InlineJS.DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             InlineJS.DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
@@ -2693,23 +2709,15 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('formButton', ExtendedDirectiveHandlers.FormSubmit);
             InlineJS.DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             InlineJS.DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
-            var buildGlobal = function (name) {
-                InlineJS.Region.AddGlobal("$$" + name, function (regionId) {
-                    return function (target) {
-                        var local = (InlineJS.Region.Infer(target) || InlineJS.Region.Get(regionId)).GetLocal(target, "$" + name, true);
-                        return ((local instanceof InlineJS.Value) ? local.Get() : local);
-                    };
-                });
-            };
-            buildGlobal('state');
-            buildGlobal('attr');
-            buildGlobal('xhr');
-            buildGlobal('lazyLoad');
-            buildGlobal('intersection');
-            buildGlobal('busy');
-            buildGlobal('db');
-            buildGlobal('form');
-            buildGlobal('counter');
+            ExtendedDirectiveHandlers.BuildGlobal('state');
+            ExtendedDirectiveHandlers.BuildGlobal('attr');
+            ExtendedDirectiveHandlers.BuildGlobal('xhr');
+            ExtendedDirectiveHandlers.BuildGlobal('lazyLoad');
+            ExtendedDirectiveHandlers.BuildGlobal('intersection');
+            ExtendedDirectiveHandlers.BuildGlobal('busy');
+            ExtendedDirectiveHandlers.BuildGlobal('db');
+            ExtendedDirectiveHandlers.BuildGlobal('form');
+            ExtendedDirectiveHandlers.BuildGlobal('counter');
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;
         ExtendedDirectiveHandlers.scopes_ = {};

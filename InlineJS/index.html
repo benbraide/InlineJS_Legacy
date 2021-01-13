@@ -184,14 +184,15 @@
             <span>Value (from '$attr'): </span><strong x-text="$attr.value"></strong>
         </div>
     </div>
-    <div x-component="animate" x-data="{ show: false, showSide: false, animating: false }">
+    <div x-component="animate" x-data="{ show: false, showSide: false, animating: false, count: 999 }">
         <h2 x-style:color="color" x-on:click="color = 'red'">Animate Component</h2>
-        <label><input type="checkbox" x-model.out="show"> Toggle form</label>
-        <label><input type="checkbox" x-model.out="showSide"> Toggle Side</label>
-        <span style="display: inline-block; font-size: 2rem; font-weight: 900;" x-on:animation-enter.join="animating = true" x-on:animation-leave.join="animating = false" x-show:animate.zoom.rotate-180.fatser="showSide">+</span>
+        <label style="display: inline-block;" x-animate.pulse.slow="showSide"><input type="checkbox" x-model.out="show"> Toggle form</label>
+        <label style="display: inline-block;" x-animate.pulse.sine-in-out.slow="showSide"><input type="checkbox" x-model.out="showSide"> Toggle Side</label>
+        <button type="button" x-busy-view="showSide" x-init="$busyView.dots.forEach(dot => dot.style.backgroundColor = 'cyan')">Do Something</button>
+        <span style="display: inline-block; font-size: 2rem; font-weight: 900;" x-show:animate.zoom.rotate.180.faster="showSide" x-bind="animating = $animate.animating">+</span>
         <span style="display: inline-block; font-size: 2rem; font-weight: 900;" x-style:visibility="$and(!animating, !showSide) ? 'visible' : 'hidden'" x-on:click="console.log('clicked')">-</span>
         <div style="position: relative;">
-            <div style="top: 0; left: 0; overflow: hidden; width: 100%;" x-style:position="!show ? 'absolute' : 'static'" x-cloak="hide" x-show:animate.height="show">
+            <div style="top: 0; left: 0; overflow: hidden; width: 100%;" x-style:position="!show ? 'absolute' : 'static'" x-cloak="hide" x-show:animate.height.bounce="show">
                 <div style="padding: 10px 5px; border: 1px solid gray;">
                     <div>
                         <span>Name: </span>
@@ -207,7 +208,7 @@
                     </div>
                 </div>
             </div>
-            <div style="top: 0; left: 0; overflow: hidden; width: 100%;" x-style:position="show ? 'absolute' : 'static'" x-cloak="hide" x-show:animate.height-reverse="!show">
+            <div style="top: 0; left: 0; overflow: hidden; width: 100%;" x-style:position="show ? 'absolute' : 'static'" x-cloak="hide" x-show:animate.height-reverse.bounce="!show">
                 <div style="padding: 10px 5px; border: 1px solid gray;">
                     <div>
                         <span>Name: </span>
@@ -223,9 +224,10 @@
                     </div>
                 </div>
             </div>
+            <span x-text:animate.slower="$raw($proxy)"></span>
         </div>
 
-        <div style="height: 100vh; width: 500px; background-color: gray; position: fixed; right: 0; top: 0;" x-cloak="hide" x-animate.rotate.bounce.slower="showSide"></div>
+        <div style="height: 100vh; width: 500px; background-color: gray; position: fixed; right: 0; top: 0;" x-cloak="hide" x-animate.zoom-out.2000.back.faster="showSide"></div>
     </div>
     <div x-data>
         <h2>Borrowed Component</h2>
