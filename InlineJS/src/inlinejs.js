@@ -227,7 +227,7 @@ export var InlineJS;
                     scope.paused = false;
                     return;
                 }
-                scope.uninitCallbacks.forEach(function (callback) {
+                scope.uninitCallbacks.splice(0).forEach(function (callback) {
                     try {
                         callback();
                     }
@@ -235,7 +235,6 @@ export var InlineJS;
                         _this.state_.ReportError(err, "InlineJs.Region<" + _this.id_ + ">.$uninit");
                     }
                 });
-                scope.uninitCallbacks = [];
                 if (!preserve && !scope.preserve && !scope.preserveSubscriptions) {
                     Region.UnsubscribeAll(scope.changeRefs);
                     scope.changeRefs = [];
@@ -515,7 +514,7 @@ export var InlineJS;
             if (Region.postProcessCallbacks_.length == 0) {
                 return;
             }
-            Region.postProcessCallbacks_.forEach(function (callback) {
+            Region.postProcessCallbacks_.splice(0).forEach(function (callback) {
                 try {
                     callback();
                 }
@@ -523,7 +522,6 @@ export var InlineJS;
                     console.error(err, "InlineJs.Region<NIL>.ExecutePostProcessCallbacks");
                 }
             });
-            Region.postProcessCallbacks_ = [];
         };
         Region.AddGlobalOutsideEventCallback = function (element, events, callback) {
             ((typeof events === 'string') ? [events] : events).forEach(function (event) {
@@ -2680,7 +2678,7 @@ export var InlineJS;
         Processor.PreOrPost = function (region, element, scopeKey, name) {
             var scope = region.GetElementScope(element);
             if (scope) {
-                scope[scopeKey].forEach(function (callback) {
+                scope[scopeKey].splice(0).forEach(function (callback) {
                     try {
                         callback();
                     }
@@ -2688,7 +2686,6 @@ export var InlineJS;
                         region.GetState().ReportError(err, "InlineJs.Region<" + region.GetId() + ">.Processor." + name + "(Element@" + element.nodeName + ")");
                     }
                 });
-                scope[scopeKey] = [];
             }
         };
         Processor.DispatchDirective = function (region, element, directive) {

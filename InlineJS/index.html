@@ -186,8 +186,8 @@
     </div>
     <div x-component="animate" x-data="{ show: false, showSide: false, animating: false, count: 999 }">
         <h2 x-style:color="color" x-on:click="color = 'red'">Animate Component</h2>
-        <label style="display: inline-block;" x-animate.pulse.slow="showSide"><input type="checkbox" x-model.out="show"> Toggle form</label>
-        <label style="display: inline-block;" x-animate.pulse.sine-in-out.slow="showSide"><input type="checkbox" x-model.out="showSide"> Toggle Side</label>
+        <label style="display: inline-block;" x-animate.swing.slow="showSide"><input type="checkbox" x-model.out="show"> Toggle form</label>
+        <label style="display: inline-block;" x-animate.pulse.sine-in-out.slower="showSide"><input type="checkbox" x-model.out="showSide"> Toggle Side</label>
         <button type="button" x-busy-view="showSide" x-init="$busyView.dots.forEach(dot => dot.style.backgroundColor = 'cyan')">Do Something</button>
         <span style="display: inline-block; font-size: 2rem; font-weight: 900;" x-show:animate.zoom.rotate.180.faster="showSide" x-bind="animating = $animate.animating">+</span>
         <span style="display: inline-block; font-size: 2rem; font-weight: 900;" x-style:visibility="$and(!animating, !showSide) ? 'visible' : 'hidden'" x-on:click="console.log('clicked')">-</span>

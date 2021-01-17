@@ -21,428 +21,6 @@ var __spreadArrays = (this && this.__spreadArrays) || function () {
 };
 var InlineJS;
 (function (InlineJS) {
-    var OpacityAnimator = /** @class */ (function () {
-        function OpacityAnimator() {
-        }
-        OpacityAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
-            if (element) {
-                element.style.opacity = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration))).toString();
-            }
-        };
-        return OpacityAnimator;
-    }());
-    InlineJS.OpacityAnimator = OpacityAnimator;
-    var WidthHeightAnimator = /** @class */ (function () {
-        function WidthHeightAnimator(type_, reversed_) {
-            this.type_ = type_;
-            this.reversed_ = reversed_;
-        }
-        WidthHeightAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
-            if (!element) {
-                return;
-            }
-            var value = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration)));
-            if (this.type_ === 'both') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scale(" + value + ", " + value + ")"));
-                element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
-            }
-            else if (this.type_ === 'width') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleX(" + value + ")"));
-                element.style.transformOrigin = (this.reversed_ ? '100% 0%' : '0% 0%');
-            }
-            else {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleY(" + value + ")"));
-                element.style.transformOrigin = (this.reversed_ ? '0% 100%' : '0% 0%');
-            }
-        };
-        return WidthHeightAnimator;
-    }());
-    InlineJS.WidthHeightAnimator = WidthHeightAnimator;
-    var ZoomAnimator = /** @class */ (function () {
-        function ZoomAnimator(type_, direction_, scale_) {
-            if (scale_ === void 0) { scale_ = 1; }
-            this.type_ = type_;
-            this.direction_ = direction_;
-            this.scale_ = scale_;
-        }
-        ZoomAnimator.prototype.init = function (options, nextOptionIndex) {
-            var regex = /^[0-9]+$/;
-            if (nextOptionIndex < options.length) {
-                if (options[nextOptionIndex].match(regex)) {
-                    this.scale_ = (parseInt(options[nextOptionIndex]) / 1000);
-                    return 1;
-                }
-            }
-            return 0;
-        };
-        ZoomAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
-            if (!element) {
-                return;
-            }
-            var value = ease(ellapsed, duration);
-            if ((show && this.direction_ === 'out') || (!show && this.direction_ === 'in')) {
-                value = (1 - value);
-            }
-            if (this.scale_ != 1) {
-                if (this.direction_ === 'out') {
-                    var scale = (1 / this.scale_);
-                    value = ((value * scale) + scale);
-                }
-                else { //Grow
-                    value = ((value * (this.scale_ - 1)) + 1);
-                }
-            }
-            if (this.type_ === 'both') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scale(" + value + ", " + value + ")"));
-            }
-            else if (this.type_ === 'width') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleX(" + value + ")"));
-            }
-            else {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleY(" + value + ")"));
-            }
-        };
-        return ZoomAnimator;
-    }());
-    InlineJS.ZoomAnimator = ZoomAnimator;
-    var RotationAnimator = /** @class */ (function () {
-        function RotationAnimator(type_, direction_, angle_) {
-            if (angle_ === void 0) { angle_ = 360; }
-            this.type_ = type_;
-            this.direction_ = direction_;
-            this.angle_ = angle_;
-        }
-        RotationAnimator.prototype.init = function (options, nextOptionIndex) {
-            var regex = /^[0-9]+$/;
-            if (nextOptionIndex < options.length) {
-                if (options[nextOptionIndex].match(regex)) {
-                    this.angle_ = parseInt(options[nextOptionIndex]);
-                    return 1;
-                }
-            }
-            return 0;
-        };
-        RotationAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
-            if (!element) {
-                return;
-            }
-            var value = ease(ellapsed, duration);
-            if ((show && this.direction_ === 'counterclockwise') || (!show && this.direction_ === 'clockwise')) {
-                value = (1 - value);
-            }
-            if (this.type_ === 'x') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" rotateX(" + (value * this.angle_) + "deg)"));
-            }
-            else if (this.type_ === 'y') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" rotateY(" + value * this.angle_ + "deg)"));
-            }
-            else {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" rotateZ(" + value * this.angle_ + "deg)"));
-            }
-        };
-        return RotationAnimator;
-    }());
-    InlineJS.RotationAnimator = RotationAnimator;
-    var SlideAnimator = /** @class */ (function () {
-        function SlideAnimator(direction_, displacement_) {
-            if (displacement_ === void 0) { displacement_ = 9999; }
-            this.direction_ = direction_;
-            this.displacement_ = displacement_;
-        }
-        SlideAnimator.prototype.init = function (options, nextOptionIndex) {
-            var regex = /^[0-9]+$/;
-            if (nextOptionIndex < options.length) {
-                if (options[nextOptionIndex].match(regex)) {
-                    this.displacement_ = parseInt(options[nextOptionIndex]);
-                    return 1;
-                }
-            }
-            return 0;
-        };
-        SlideAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
-            if (!element) {
-                return;
-            }
-            var value = (show ? (1 - ease(ellapsed, duration)) : ease(ellapsed, duration));
-            value = (value * ((this.displacement_ <= 0) ? 9999 : this.displacement_));
-            if (this.direction_ === 'down') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateY(" + value + "px)"));
-            }
-            else if (this.direction_ === 'left') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateX(" + -value + "px)"));
-            }
-            else if (this.direction_ === 'up') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateY(" + -value + "px)"));
-            }
-            else if (this.direction_ === 'right') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateX(" + value + "px)"));
-            }
-        };
-        return SlideAnimator;
-    }());
-    InlineJS.SlideAnimator = SlideAnimator;
-    var CounterAnimator = /** @class */ (function () {
-        function CounterAnimator(direction_, offset_, round_) {
-            if (offset_ === void 0) { offset_ = 0; }
-            if (round_ === void 0) { round_ = -1; }
-            this.direction_ = direction_;
-            this.offset_ = offset_;
-            this.round_ = round_;
-            this.arg_ = {
-                value: 0,
-                callback: null
-            };
-        }
-        CounterAnimator.prototype.init = function (options, nextOptionIndex, element) {
-            var regex = /^[0-9]+$/;
-            var count = 0;
-            if (nextOptionIndex < options.length) {
-                if (options[nextOptionIndex].match(regex)) {
-                    this.offset_ = parseInt(options[nextOptionIndex]);
-                    ++nextOptionIndex;
-                    ++count;
-                }
-                if (nextOptionIndex < options.length && options[nextOptionIndex] === 'round') {
-                    this.round_ = 0;
-                    ++nextOptionIndex;
-                    ++count;
-                    if (nextOptionIndex < options.length && options[nextOptionIndex].match(regex)) {
-                        this.round_ = parseInt(options[nextOptionIndex]);
-                        ++count;
-                    }
-                }
-            }
-            if (element) {
-                this.arg_.value = parseFloat(element.textContent);
-            }
-            return count;
-        };
-        CounterAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease, args) {
-            var value = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration)));
-            if (this.direction_ === 'down') {
-                value = (1 - value);
-            }
-            var result = this.doStep_(value, (args ? args.value : this.arg_.value));
-            if (args && args.callback) {
-                args.callback(result);
-            }
-            else if (element) {
-                element.textContent = InlineJS.CoreDirectiveHandlers.ToString(result);
-            }
-        };
-        CounterAnimator.prototype.doStep_ = function (value, content) {
-            var _this = this;
-            if (Array.isArray(content)) {
-                return content.map(function (item) { return _this.doStep_(value, item); });
-            }
-            if (typeof content === 'function') {
-                return content(value);
-            }
-            if (InlineJS.Region.IsObject(content)) {
-                var converted_1 = {};
-                Object.keys(content).forEach(function (key) {
-                    converted_1[key] = _this.doStep_(value, content[key]);
-                });
-                return converted_1;
-            }
-            if (typeof content !== 'number') {
-                content = InlineJS.CoreDirectiveHandlers.ToString(content);
-                if (!content) {
-                    return;
-                }
-                return content.substr(0, (value * content.length));
-            }
-            return ((value * (content - this.offset_)) + this.offset_).toFixed((0 <= this.round_) ? this.round_ : 0);
-        };
-        return CounterAnimator;
-    }());
-    InlineJS.CounterAnimator = CounterAnimator;
-    var SceneAnimator = /** @class */ (function () {
-        function SceneAnimator(handler_) {
-            this.handler_ = handler_;
-        }
-        SceneAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease, args) {
-            this.handler_.handle(((show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration))) * 100), isFirst, element, show);
-        };
-        SceneAnimator.prototype.getPreferredEase = function () {
-            return this.handler_.getPreferredEase();
-        };
-        SceneAnimator.setTransform = function (isFirst, element, value) {
-            element.style.transform = ((isFirst ? '' : element.style.transform + " ") + value);
-        };
-        return SceneAnimator;
-    }());
-    InlineJS.SceneAnimator = SceneAnimator;
-    var GenericSceneAnimatorHandler = /** @class */ (function () {
-        function GenericSceneAnimatorHandler(frames_, preferredEase_) {
-            var _this = this;
-            if (preferredEase_ === void 0) { preferredEase_ = null; }
-            this.frames_ = frames_;
-            this.preferredEase_ = preferredEase_;
-            this.wildcardFrame_ = null;
-            this.frames_.forEach(function (frame) {
-                if (!Array.isArray(frame.frames) && frame.frames.from === frame.frames.to && frame.frames.from === null) {
-                    _this.wildcardFrame_ = frame;
-                }
-            });
-        }
-        GenericSceneAnimatorHandler.prototype.handle = function (frame, isFirst, element, show) {
-            var executed = false;
-            this.frames_.forEach(function (frameInfo) {
-                var inside = (GenericSceneAnimatorHandler.getFrameInside(frame, frameInfo.frames));
-                if (inside) {
-                    frameInfo.callback(frame, inside, isFirst, element, show);
-                    executed = true;
-                }
-            });
-            if (!executed && this.wildcardFrame_) {
-                this.wildcardFrame_.callback(frame, this.wildcardFrame_.frames, isFirst, element, show);
-            }
-        };
-        GenericSceneAnimatorHandler.prototype.getPreferredEase = function () {
-            return this.preferredEase_;
-        };
-        GenericSceneAnimatorHandler.getFrameInside = function (frame, frames) {
-            if (Array.isArray(frames)) {
-                for (var i = 0; i < frames.length; ++i) {
-                    if (frames[i].from !== null && frames[i].to != null && frames[i].from <= frame && frame < frames[i].to) {
-                        return frames[i];
-                    }
-                }
-                return null;
-            }
-            if (frames.from === null || frames.to === null) {
-                return null;
-            }
-            return ((frames.from <= frame && frame < frames.to) ? frames : null);
-        };
-        return GenericSceneAnimatorHandler;
-    }());
-    InlineJS.GenericSceneAnimatorHandler = GenericSceneAnimatorHandler;
-    var ShakeSceneAnimatorHandler = /** @class */ (function (_super) {
-        __extends(ShakeSceneAnimatorHandler, _super);
-        function ShakeSceneAnimatorHandler(type_, action_) {
-            var _this = _super.call(this, [{
-                    frames: [{ from: 1, to: 10 }, { from: 20, to: 30 }, { from: 40, to: 50 }, { from: 60, to: 70 }, { from: 80, to: 90 }],
-                    callback: function (frame, inside, isFirst, element, show) {
-                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(" + (1 - ((inside.to - frame) / 100)) * -_this.multiplier_ + _this.unit_ + ")");
-                    }
-                }, {
-                    frames: [{ from: 10, to: 20 }, { from: 30, to: 40 }, { from: 50, to: 60 }, { from: 70, to: 80 }, { from: 90, to: 100 }],
-                    callback: function (frame, inside, isFirst, element, show) {
-                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(" + (1 - ((inside.to - frame) / 100)) * _this.multiplier_ + _this.unit_ + ")");
-                    }
-                }, {
-                    frames: { from: null, to: null },
-                    callback: function (frame, inside, isFirst, element, show) {
-                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(0)");
-                    }
-                }]) || this;
-            _this.type_ = type_;
-            _this.action_ = action_;
-            if (_this.action_ === 'translate') {
-                _this.conductor_ = "translate" + _this.type_.toUpperCase();
-                _this.multiplier_ = 10;
-                _this.unit_ = 'px';
-            }
-            else {
-                _this.conductor_ = "rotate" + _this.type_.toUpperCase();
-                _this.multiplier_ = 4;
-                _this.unit_ = 'deg';
-            }
-            return _this;
-        }
-        return ShakeSceneAnimatorHandler;
-    }(GenericSceneAnimatorHandler));
-    InlineJS.ShakeSceneAnimatorHandler = ShakeSceneAnimatorHandler;
-    var HeartbeatSceneAnimatorHandler = /** @class */ (function (_super) {
-        __extends(HeartbeatSceneAnimatorHandler, _super);
-        function HeartbeatSceneAnimatorHandler() {
-            return _super.call(this, [{
-                    frames: [{ from: 1, to: 14 }, { from: 28, to: 42 }],
-                    callback: function (frame, inside, isFirst, element, show) {
-                        SceneAnimator.setTransform(isFirst, element, "scale(" + (1 - ((inside.to - frame) / 100)) * 1.3 + ")");
-                    }
-                }, {
-                    frames: { from: null, to: null },
-                    callback: function (frame, inside, isFirst, element, show) {
-                        SceneAnimator.setTransform(isFirst, element, 'scale(1)');
-                    }
-                }]) || this;
-        }
-        return HeartbeatSceneAnimatorHandler;
-    }(GenericSceneAnimatorHandler));
-    InlineJS.HeartbeatSceneAnimatorHandler = HeartbeatSceneAnimatorHandler;
-    var PulseSceneAnimatorHandler = /** @class */ (function (_super) {
-        __extends(PulseSceneAnimatorHandler, _super);
-        function PulseSceneAnimatorHandler() {
-            return _super.call(this, [{
-                    frames: { from: 1, to: 50 },
-                    callback: function (frame, inside, isFirst, element, show) {
-                        var value = (((1 - ((inside.to - frame) / 100)) * 0.15) + 1);
-                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + value + ", " + value + ", " + value + ")");
-                    }
-                }, {
-                    frames: { from: 50, to: 100 },
-                    callback: function (frame, inside, isFirst, element, show) {
-                        var value = ((((inside.to - frame) / 100) * 0.15) + 1);
-                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + value + ", " + value + ", " + value + ")");
-                    }
-                }, {
-                    frames: { from: null, to: null },
-                    callback: function (frame, inside, isFirst, element, show) {
-                        SceneAnimator.setTransform(isFirst, element, 'scale3d(1, 1, 1)');
-                    }
-                }], AnimationEasings.circleInOut) || this;
-        }
-        return PulseSceneAnimatorHandler;
-    }(GenericSceneAnimatorHandler));
-    InlineJS.PulseSceneAnimatorHandler = PulseSceneAnimatorHandler;
-    InlineJS.Animators = {
-        opacity: function () { return new OpacityAnimator(); },
-        height: function () { return new WidthHeightAnimator('height', false); },
-        heightReverse: function () { return new WidthHeightAnimator('height', true); },
-        width: function () { return new WidthHeightAnimator('width', false); },
-        widthReverse: function () { return new WidthHeightAnimator('width', true); },
-        widthHeight: function () { return new WidthHeightAnimator('both', false); },
-        widthHeightReverse: function () { return new WidthHeightAnimator('both', true); },
-        zoom: function () { return new ZoomAnimator('both', 'in'); },
-        zoomHeight: function () { return new ZoomAnimator('height', 'in'); },
-        zoomWidth: function () { return new ZoomAnimator('width', 'in'); },
-        zoomIn: function () { return new ZoomAnimator('both', 'in'); },
-        zoomInHeight: function () { return new ZoomAnimator('height', 'in'); },
-        zoomInWidth: function () { return new ZoomAnimator('width', 'in'); },
-        zoomOut: function () { return new ZoomAnimator('both', 'out'); },
-        zoomOutHeight: function () { return new ZoomAnimator('height', 'out'); },
-        zoomOutWidth: function () { return new ZoomAnimator('width', 'out'); },
-        rotate: function () { return new RotationAnimator('z', 'clockwise'); },
-        rotateX: function () { return new RotationAnimator('x', 'clockwise'); },
-        rotateY: function () { return new RotationAnimator('y', 'clockwise'); },
-        rotateZ: function () { return new RotationAnimator('z', 'clockwise'); },
-        rotateReverse: function () { return new RotationAnimator('z', 'counterclockwise'); },
-        rotateXReverse: function () { return new RotationAnimator('x', 'counterclockwise'); },
-        rotateYReverse: function () { return new RotationAnimator('y', 'counterclockwise'); },
-        rotateZReverse: function () { return new RotationAnimator('z', 'counterclockwise'); },
-        slide: function () { return new SlideAnimator('down'); },
-        slideDown: function () { return new SlideAnimator('down'); },
-        slideLeft: function () { return new SlideAnimator('left'); },
-        slideUp: function () { return new SlideAnimator('up'); },
-        slideRight: function () { return new SlideAnimator('right'); },
-        counter: function () { return new CounterAnimator('up'); },
-        counterUp: function () { return new CounterAnimator('up'); },
-        counterDown: function () { return new CounterAnimator('down'); },
-        shake: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('x', 'translate')); },
-        shakeX: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('x', 'translate')); },
-        shakeY: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('y', 'translate')); },
-        shakeZ: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('z', 'translate')); },
-        vibrate: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('z', 'rotate')); },
-        vibrateX: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('x', 'rotate')); },
-        vibrateY: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('y', 'rotate')); },
-        vibrateZ: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('z', 'rotate')); },
-        heartbeat: function () { return new SceneAnimator(new HeartbeatSceneAnimatorHandler()); },
-        heartBeat: function () { return new SceneAnimator(new HeartbeatSceneAnimatorHandler()); },
-        pulse: function () { return new SceneAnimator(new PulseSceneAnimatorHandler()); }
-    };
     var AnimationEasings = /** @class */ (function () {
         function AnimationEasings() {
         }
@@ -632,6 +210,690 @@ var InlineJS;
         return AnimationEasings;
     }());
     InlineJS.AnimationEasings = AnimationEasings;
+    var OpacityAnimator = /** @class */ (function () {
+        function OpacityAnimator() {
+        }
+        OpacityAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
+            if (element) {
+                element.style.opacity = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration))).toString();
+            }
+        };
+        return OpacityAnimator;
+    }());
+    InlineJS.OpacityAnimator = OpacityAnimator;
+    var WidthHeightAnimator = /** @class */ (function () {
+        function WidthHeightAnimator(type_, reversed_) {
+            this.type_ = type_;
+            this.reversed_ = reversed_;
+        }
+        WidthHeightAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
+            if (!element) {
+                return;
+            }
+            var value = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration)));
+            if (this.type_ === 'both') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scale(" + value + ", " + value + ")"));
+                element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+            }
+            else if (this.type_ === 'width') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleX(" + value + ")"));
+                element.style.transformOrigin = (this.reversed_ ? '100% 0%' : '0% 0%');
+            }
+            else {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleY(" + value + ")"));
+                element.style.transformOrigin = (this.reversed_ ? '0% 100%' : '0% 0%');
+            }
+        };
+        return WidthHeightAnimator;
+    }());
+    InlineJS.WidthHeightAnimator = WidthHeightAnimator;
+    var ZoomAnimator = /** @class */ (function () {
+        function ZoomAnimator(type_, direction_, scale_) {
+            if (scale_ === void 0) { scale_ = 1; }
+            this.type_ = type_;
+            this.direction_ = direction_;
+            this.scale_ = scale_;
+        }
+        ZoomAnimator.prototype.init = function (options, nextOptionIndex) {
+            var regex = /^[0-9]+$/;
+            if (nextOptionIndex < options.length) {
+                if (options[nextOptionIndex].match(regex)) {
+                    this.scale_ = (parseInt(options[nextOptionIndex]) / 1000);
+                    return 1;
+                }
+            }
+            return 0;
+        };
+        ZoomAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
+            if (!element) {
+                return;
+            }
+            var value = ease(ellapsed, duration);
+            if ((show && this.direction_ === 'out') || (!show && this.direction_ === 'in')) {
+                value = (1 - value);
+            }
+            if (this.scale_ != 1) {
+                if (this.direction_ === 'out') {
+                    var scale = (1 / this.scale_);
+                    value = ((value * scale) + scale);
+                }
+                else { //Grow
+                    value = ((value * (this.scale_ - 1)) + 1);
+                }
+            }
+            if (this.type_ === 'both') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scale(" + value + ", " + value + ")"));
+            }
+            else if (this.type_ === 'width') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleX(" + value + ")"));
+            }
+            else {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleY(" + value + ")"));
+            }
+        };
+        ZoomAnimator.prototype.getPreferredEase = function (show) {
+            return (show ? ZoomAnimator.preferredEase_ : null);
+        };
+        ZoomAnimator.preferredEase_ = {
+            target: AnimationEasings.back,
+            args: []
+        };
+        return ZoomAnimator;
+    }());
+    InlineJS.ZoomAnimator = ZoomAnimator;
+    var RotationAnimator = /** @class */ (function () {
+        function RotationAnimator(type_, direction_, angle_) {
+            if (angle_ === void 0) { angle_ = 360; }
+            this.type_ = type_;
+            this.direction_ = direction_;
+            this.angle_ = angle_;
+        }
+        RotationAnimator.prototype.init = function (options, nextOptionIndex) {
+            var regex = /^[0-9]+$/;
+            if (nextOptionIndex < options.length) {
+                if (options[nextOptionIndex].match(regex)) {
+                    this.angle_ = parseInt(options[nextOptionIndex]);
+                    return 1;
+                }
+            }
+            return 0;
+        };
+        RotationAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
+            if (!element) {
+                return;
+            }
+            var value = ease(ellapsed, duration);
+            if ((show && this.direction_ === 'counterclockwise') || (!show && this.direction_ === 'clockwise')) {
+                value = (1 - value);
+            }
+            if (this.type_ === 'x') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" rotateX(" + (value * this.angle_) + "deg)"));
+            }
+            else if (this.type_ === 'y') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" rotateY(" + value * this.angle_ + "deg)"));
+            }
+            else {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" rotateZ(" + value * this.angle_ + "deg)"));
+            }
+        };
+        return RotationAnimator;
+    }());
+    InlineJS.RotationAnimator = RotationAnimator;
+    var SlideAnimator = /** @class */ (function () {
+        function SlideAnimator(direction_, displacement_) {
+            if (displacement_ === void 0) { displacement_ = 9999; }
+            this.direction_ = direction_;
+            this.displacement_ = displacement_;
+        }
+        SlideAnimator.prototype.init = function (options, nextOptionIndex) {
+            var regex = /^[0-9]+$/;
+            if (nextOptionIndex < options.length) {
+                if (options[nextOptionIndex].match(regex)) {
+                    this.displacement_ = parseInt(options[nextOptionIndex]);
+                    return 1;
+                }
+            }
+            return 0;
+        };
+        SlideAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
+            if (!element) {
+                return;
+            }
+            var value = (show ? (1 - ease(ellapsed, duration)) : ease(ellapsed, duration));
+            value = (value * ((this.displacement_ <= 0) ? 9999 : this.displacement_));
+            if (this.direction_ === 'down') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateY(" + value + "px)"));
+            }
+            else if (this.direction_ === 'left') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateX(" + -value + "px)"));
+            }
+            else if (this.direction_ === 'up') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateY(" + -value + "px)"));
+            }
+            else if (this.direction_ === 'right') {
+                element.style.transform = ((isFirst ? '' : element.style.transform) + (" translateX(" + value + "px)"));
+            }
+        };
+        SlideAnimator.prototype.getPreferredEase = function (show) {
+            return (show ? SlideAnimator.preferredEase_ : null);
+        };
+        SlideAnimator.preferredEase_ = {
+            target: AnimationEasings.back,
+            args: []
+        };
+        return SlideAnimator;
+    }());
+    InlineJS.SlideAnimator = SlideAnimator;
+    var CounterAnimator = /** @class */ (function () {
+        function CounterAnimator(direction_, offset_, round_) {
+            if (offset_ === void 0) { offset_ = 0; }
+            if (round_ === void 0) { round_ = -1; }
+            this.direction_ = direction_;
+            this.offset_ = offset_;
+            this.round_ = round_;
+            this.arg_ = {
+                value: 0,
+                callback: null
+            };
+        }
+        CounterAnimator.prototype.init = function (options, nextOptionIndex, element) {
+            var regex = /^[0-9]+$/;
+            var count = 0;
+            if (nextOptionIndex < options.length) {
+                if (options[nextOptionIndex].match(regex)) {
+                    this.offset_ = parseInt(options[nextOptionIndex]);
+                    ++nextOptionIndex;
+                    ++count;
+                }
+                if (nextOptionIndex < options.length && options[nextOptionIndex] === 'round') {
+                    this.round_ = 0;
+                    ++nextOptionIndex;
+                    ++count;
+                    if (nextOptionIndex < options.length && options[nextOptionIndex].match(regex)) {
+                        this.round_ = parseInt(options[nextOptionIndex]);
+                        ++count;
+                    }
+                }
+            }
+            if (element) {
+                this.arg_.value = parseFloat(element.textContent);
+            }
+            return count;
+        };
+        CounterAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease, args) {
+            var value = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration)));
+            if (this.direction_ === 'down') {
+                value = (1 - value);
+            }
+            var result = this.doStep_(value, (args ? args.value : this.arg_.value));
+            if (args && args.callback) {
+                args.callback(result);
+            }
+            else if (element) {
+                element.textContent = InlineJS.CoreDirectiveHandlers.ToString(result);
+            }
+        };
+        CounterAnimator.prototype.doStep_ = function (value, content) {
+            var _this = this;
+            if (Array.isArray(content)) {
+                return content.map(function (item) { return _this.doStep_(value, item); });
+            }
+            if (typeof content === 'function') {
+                return content(value);
+            }
+            if (InlineJS.Region.IsObject(content)) {
+                var converted_1 = {};
+                Object.keys(content).forEach(function (key) {
+                    converted_1[key] = _this.doStep_(value, content[key]);
+                });
+                return converted_1;
+            }
+            if (typeof content !== 'number') {
+                content = InlineJS.CoreDirectiveHandlers.ToString(content);
+                if (!content) {
+                    return;
+                }
+                return content.substr(0, (value * content.length));
+            }
+            return ((value * (content - this.offset_)) + this.offset_).toFixed((0 <= this.round_) ? this.round_ : 0);
+        };
+        return CounterAnimator;
+    }());
+    InlineJS.CounterAnimator = CounterAnimator;
+    var SceneAnimator = /** @class */ (function () {
+        function SceneAnimator(handler_) {
+            this.handler_ = handler_;
+        }
+        SceneAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease, args) {
+            this.handler_.handle(((show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration))) * 100), isFirst, element, show);
+        };
+        SceneAnimator.prototype.getPreferredEase = function (show) {
+            return this.handler_.getPreferredEase(show);
+        };
+        SceneAnimator.setTransform = function (isFirst, element, value) {
+            element.style.transform = ((isFirst ? '' : element.style.transform + " ") + value);
+        };
+        return SceneAnimator;
+    }());
+    InlineJS.SceneAnimator = SceneAnimator;
+    var GenericSceneAnimatorHandler = /** @class */ (function () {
+        function GenericSceneAnimatorHandler(frames_, preferredShowEase, preferredHideEase) {
+            var _this = this;
+            if (preferredShowEase === void 0) { preferredShowEase = null; }
+            if (preferredHideEase === void 0) { preferredHideEase = null; }
+            this.frames_ = frames_;
+            this.wildcardFrame_ = null;
+            this.preferredShowEase_ = null;
+            this.preferredHideEase_ = null;
+            if (typeof preferredShowEase === 'function') {
+                this.preferredShowEase_ = {
+                    target: preferredShowEase,
+                    args: []
+                };
+            }
+            else {
+                this.preferredShowEase_ = preferredShowEase;
+            }
+            if (typeof preferredHideEase === 'function') {
+                this.preferredHideEase_ = {
+                    target: preferredHideEase,
+                    args: []
+                };
+            }
+            else {
+                this.preferredHideEase_ = preferredHideEase;
+            }
+            this.frames_.forEach(function (frame) {
+                if (!Array.isArray(frame.frames) && frame.frames.from === frame.frames.to && frame.frames.from === null) {
+                    _this.wildcardFrame_ = frame;
+                }
+            });
+        }
+        GenericSceneAnimatorHandler.prototype.handle = function (frame, isFirst, element, show) {
+            var executed = false;
+            this.frames_.forEach(function (frameInfo) {
+                var inside = (GenericSceneAnimatorHandler.getFrameInside(frame, frameInfo.frames));
+                if (inside) {
+                    frameInfo.callback(frame, inside, isFirst, element, show);
+                    executed = true;
+                }
+            });
+            if (!executed && this.wildcardFrame_) {
+                this.wildcardFrame_.callback(frame, this.wildcardFrame_.frames, isFirst, element, show);
+            }
+        };
+        GenericSceneAnimatorHandler.prototype.getPreferredEase = function (show) {
+            return (show ? this.preferredShowEase_ : this.preferredHideEase_);
+        };
+        GenericSceneAnimatorHandler.getFrameInside = function (frame, frames) {
+            if (Array.isArray(frames)) {
+                for (var i = 0; i < frames.length; ++i) {
+                    if (frames[i].from !== null && frames[i].to != null && frames[i].from <= frame && frame < frames[i].to) {
+                        return frames[i];
+                    }
+                }
+                return null;
+            }
+            if (frames.from === null || frames.to === null) {
+                return null;
+            }
+            return ((frames.from <= frame && frame < frames.to) ? frames : null);
+        };
+        GenericSceneAnimatorHandler.advance = function (from, to, frame, insideFrom, insideTo) {
+            var frameWidth = (insideTo - insideFrom), progress = ((frame - insideFrom) / frameWidth), displacement = (to - from);
+            return ((displacement * progress) + from);
+        };
+        return GenericSceneAnimatorHandler;
+    }());
+    InlineJS.GenericSceneAnimatorHandler = GenericSceneAnimatorHandler;
+    var ShakeSceneAnimatorHandler = /** @class */ (function (_super) {
+        __extends(ShakeSceneAnimatorHandler, _super);
+        function ShakeSceneAnimatorHandler(type_, action_) {
+            var _this = _super.call(this, [{
+                    frames: { from: 0, to: 10 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(" + -GenericSceneAnimatorHandler.advance(0, _this.multiplier_, frame, inside.from, inside.to) + _this.unit_ + ")");
+                    }
+                }, {
+                    frames: [{ from: 20, to: 30 }, { from: 40, to: 50 }, { from: 60, to: 70 }, { from: 80, to: 90 }],
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(" + GenericSceneAnimatorHandler.advance(_this.multiplier_, -_this.multiplier_, frame, inside.from, inside.to) + _this.unit_ + ")");
+                    }
+                }, {
+                    frames: [{ from: 10, to: 20 }, { from: 30, to: 40 }, { from: 50, to: 60 }, { from: 70, to: 80 }],
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(" + GenericSceneAnimatorHandler.advance(-_this.multiplier_, _this.multiplier_, frame, inside.from, inside.to) + _this.unit_ + ")");
+                    }
+                }, {
+                    frames: { from: 90, to: 100 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(" + GenericSceneAnimatorHandler.advance(-_this.multiplier_, 0, frame, inside.from, inside.to) + _this.unit_ + ")");
+                    }
+                }, {
+                    frames: { from: null, to: null },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, _this.conductor_ + "(0)");
+                    }
+                }]) || this;
+            _this.type_ = type_;
+            _this.action_ = action_;
+            if (_this.action_ === 'translate') {
+                _this.conductor_ = "translate" + _this.type_.toUpperCase();
+                _this.multiplier_ = 10;
+                _this.unit_ = 'px';
+            }
+            else {
+                _this.conductor_ = "rotate" + _this.type_.toUpperCase();
+                _this.multiplier_ = 4;
+                _this.unit_ = 'deg';
+            }
+            return _this;
+        }
+        return ShakeSceneAnimatorHandler;
+    }(GenericSceneAnimatorHandler));
+    InlineJS.ShakeSceneAnimatorHandler = ShakeSceneAnimatorHandler;
+    var HeartbeatSceneAnimatorHandler = /** @class */ (function (_super) {
+        __extends(HeartbeatSceneAnimatorHandler, _super);
+        function HeartbeatSceneAnimatorHandler() {
+            return _super.call(this, [{
+                    frames: [{ from: 0, to: 14 }, { from: 28, to: 42 }],
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, "scale(" + GenericSceneAnimatorHandler.advance(1, 1.3, frame, inside.from, inside.to) + ")");
+                    }
+                }, {
+                    frames: [{ from: 14, to: 28 }, { from: 42, to: 70 }],
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, "scale(" + GenericSceneAnimatorHandler.advance(1.3, 1, frame, inside.from, inside.to) + ")");
+                    }
+                }, {
+                    frames: { from: null, to: null },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, 'scale(1)');
+                    }
+                }]) || this;
+        }
+        return HeartbeatSceneAnimatorHandler;
+    }(GenericSceneAnimatorHandler));
+    InlineJS.HeartbeatSceneAnimatorHandler = HeartbeatSceneAnimatorHandler;
+    var PulseSceneAnimatorHandler = /** @class */ (function (_super) {
+        __extends(PulseSceneAnimatorHandler, _super);
+        function PulseSceneAnimatorHandler() {
+            return _super.call(this, [{
+                    frames: { from: 0, to: 50 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(1, 1.08, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + value + ", " + value + ", " + value + ")");
+                    }
+                }, {
+                    frames: { from: 50, to: 100 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(1.08, 1, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + value + ", " + value + ", " + value + ")");
+                    }
+                }, {
+                    frames: { from: null, to: null },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, 'scale3d(1, 1, 1)');
+                    }
+                }]) || this;
+        }
+        return PulseSceneAnimatorHandler;
+    }(GenericSceneAnimatorHandler));
+    InlineJS.PulseSceneAnimatorHandler = PulseSceneAnimatorHandler;
+    var TadaSceneAnimatorHandler = /** @class */ (function (_super) {
+        __extends(TadaSceneAnimatorHandler, _super);
+        function TadaSceneAnimatorHandler() {
+            return _super.call(this, [{
+                    frames: { from: 0, to: 10 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var scaleValue = GenericSceneAnimatorHandler.advance(1, 0.9, frame, inside.from, inside.to);
+                        var rotateValue = GenericSceneAnimatorHandler.advance(0, -3, frame, inside.from, inside.to);
+                        var rotateTranslateValue = GenericSceneAnimatorHandler.advance(0, 1, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + scaleValue + ", " + scaleValue + ", " + scaleValue + ") rotate3d(0, 0, " + rotateTranslateValue + ", " + rotateValue + "deg)");
+                    }
+                }, {
+                    frames: { from: 10, to: 20 },
+                    callback: function (frame, inside, isFirst, element, show) { }
+                }, {
+                    frames: { from: 20, to: 30 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var scaleValue = GenericSceneAnimatorHandler.advance(0.9, 1.1, frame, inside.from, inside.to);
+                        var rotateValue = GenericSceneAnimatorHandler.advance(-3, 3, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + scaleValue + ", " + scaleValue + ", " + scaleValue + ") rotate3d(0, 0, 1, " + rotateValue + "deg)");
+                    }
+                }, {
+                    frames: [{ from: 40, to: 50 }, { from: 60, to: 70 }, { from: 80, to: 90 }],
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var rotateValue = GenericSceneAnimatorHandler.advance(-3, 3, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, " + rotateValue + "deg)");
+                    }
+                }, {
+                    frames: [{ from: 50, to: 60 }, { from: 70, to: 80 }],
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var rotateValue = GenericSceneAnimatorHandler.advance(3, -3, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, " + rotateValue + "deg)");
+                    }
+                }, {
+                    frames: { from: 90, to: 100 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var scaleValue = GenericSceneAnimatorHandler.advance(1.1, 1, frame, inside.from, inside.to);
+                        var rotateValue = GenericSceneAnimatorHandler.advance(3, 0, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + scaleValue + ", " + scaleValue + ", " + scaleValue + ") rotate3d(0, 0, 1, " + rotateValue + "deg)");
+                    }
+                }, {
+                    frames: { from: null, to: null },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, 'scale3d(1, 1, 1)');
+                    }
+                }]) || this;
+        }
+        return TadaSceneAnimatorHandler;
+    }(GenericSceneAnimatorHandler));
+    InlineJS.TadaSceneAnimatorHandler = TadaSceneAnimatorHandler;
+    var JelloSceneAnimatorHandler = /** @class */ (function (_super) {
+        __extends(JelloSceneAnimatorHandler, _super);
+        function JelloSceneAnimatorHandler() {
+            return _super.call(this, [{
+                    frames: { from: 11.1, to: 22.2 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(0, -12.5, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: 22.2, to: 33.3 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(-12.5, 6.25, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: 33.3, to: 44.4 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(6.25, -3.125, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: 44.4, to: 55.5 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(-3.125, 1.5625, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: 55.5, to: 66.6 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(1.5625, -0.78125, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: 66.6, to: 77.7 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(-0.78125, 0.390625, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: 77.7, to: 88.8 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(0.390625, -0.1953125, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: 88.8, to: 100 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var value = GenericSceneAnimatorHandler.advance(-0.1953125, 0, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "skewX(" + value + "deg) skewY(" + value + "deg)");
+                    }
+                }, {
+                    frames: { from: null, to: null },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, 'translate3d(0, 0, 0)');
+                    }
+                }]) || this;
+        }
+        return JelloSceneAnimatorHandler;
+    }(GenericSceneAnimatorHandler));
+    InlineJS.JelloSceneAnimatorHandler = JelloSceneAnimatorHandler;
+    var RubberBandSceneAnimatorHandler = /** @class */ (function (_super) {
+        __extends(RubberBandSceneAnimatorHandler, _super);
+        function RubberBandSceneAnimatorHandler() {
+            return _super.call(this, [{
+                    frames: { from: 0, to: 30 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var xValue = GenericSceneAnimatorHandler.advance(1, 1.25, frame, inside.from, inside.to);
+                        var yValue = GenericSceneAnimatorHandler.advance(1, 0.75, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + xValue + ", " + yValue + ", 1)");
+                    }
+                }, {
+                    frames: { from: 30, to: 40 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var xValue = GenericSceneAnimatorHandler.advance(1.25, 0.75, frame, inside.from, inside.to);
+                        var yValue = GenericSceneAnimatorHandler.advance(0.75, 1.25, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + xValue + ", " + yValue + ", 1)");
+                    }
+                }, {
+                    frames: { from: 40, to: 50 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var xValue = GenericSceneAnimatorHandler.advance(0.75, 1.15, frame, inside.from, inside.to);
+                        var yValue = GenericSceneAnimatorHandler.advance(1.25, 0.85, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + xValue + ", " + yValue + ", 1)");
+                    }
+                }, {
+                    frames: { from: 50, to: 65 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var xValue = GenericSceneAnimatorHandler.advance(1.15, 0.95, frame, inside.from, inside.to);
+                        var yValue = GenericSceneAnimatorHandler.advance(0.85, 1.05, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + xValue + ", " + yValue + ", 1)");
+                    }
+                }, {
+                    frames: { from: 65, to: 75 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var xValue = GenericSceneAnimatorHandler.advance(0.95, 1.05, frame, inside.from, inside.to);
+                        var yValue = GenericSceneAnimatorHandler.advance(1.05, 0.95, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + xValue + ", " + yValue + ", 1)");
+                    }
+                }, {
+                    frames: { from: 75, to: 100 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        var xValue = GenericSceneAnimatorHandler.advance(1.05, 1, frame, inside.from, inside.to);
+                        var yValue = GenericSceneAnimatorHandler.advance(0.95, 1, frame, inside.from, inside.to);
+                        SceneAnimator.setTransform(isFirst, element, "scale3d(" + xValue + ", " + yValue + ", 1)");
+                    }
+                }, {
+                    frames: { from: null, to: null },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, 'scale3d(1, 1, 1)');
+                    }
+                }]) || this;
+        }
+        return RubberBandSceneAnimatorHandler;
+    }(GenericSceneAnimatorHandler));
+    InlineJS.RubberBandSceneAnimatorHandler = RubberBandSceneAnimatorHandler;
+    var SwingSceneAnimatorHandler = /** @class */ (function (_super) {
+        __extends(SwingSceneAnimatorHandler, _super);
+        function SwingSceneAnimatorHandler() {
+            return _super.call(this, [{
+                    frames: { from: 0, to: 20 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, "rotate3d(0, 0, 1, " + GenericSceneAnimatorHandler.advance(0, 15, frame, inside.from, inside.to) + "deg)");
+                    }
+                }, {
+                    frames: { from: 20, to: 40 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, "rotate3d(0, 0, 1, " + GenericSceneAnimatorHandler.advance(15, -10, frame, inside.from, inside.to) + "deg)");
+                    }
+                }, {
+                    frames: { from: 40, to: 60 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, "rotate3d(0, 0, 1, " + GenericSceneAnimatorHandler.advance(-10, 5, frame, inside.from, inside.to) + "deg)");
+                    }
+                }, {
+                    frames: { from: 60, to: 80 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, "rotate3d(0, 0, 1, " + GenericSceneAnimatorHandler.advance(5, -5, frame, inside.from, inside.to) + "deg)");
+                    }
+                }, {
+                    frames: { from: 80, to: 100 },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, "rotate3d(0, 0, 1, " + GenericSceneAnimatorHandler.advance(-5, 0, frame, inside.from, inside.to) + "deg)");
+                    }
+                }, {
+                    frames: { from: null, to: null },
+                    callback: function (frame, inside, isFirst, element, show) {
+                        SceneAnimator.setTransform(isFirst, element, 'rotate3d(0, 1, 1, 0deg)');
+                    }
+                }]) || this;
+        }
+        return SwingSceneAnimatorHandler;
+    }(GenericSceneAnimatorHandler));
+    InlineJS.SwingSceneAnimatorHandler = SwingSceneAnimatorHandler;
+    InlineJS.Animators = {
+        opacity: function () { return new OpacityAnimator(); },
+        height: function () { return new WidthHeightAnimator('height', false); },
+        heightReverse: function () { return new WidthHeightAnimator('height', true); },
+        width: function () { return new WidthHeightAnimator('width', false); },
+        widthReverse: function () { return new WidthHeightAnimator('width', true); },
+        widthHeight: function () { return new WidthHeightAnimator('both', false); },
+        widthHeightReverse: function () { return new WidthHeightAnimator('both', true); },
+        zoom: function () { return new ZoomAnimator('both', 'in'); },
+        zoomHeight: function () { return new ZoomAnimator('height', 'in'); },
+        zoomWidth: function () { return new ZoomAnimator('width', 'in'); },
+        zoomIn: function () { return new ZoomAnimator('both', 'in'); },
+        zoomInHeight: function () { return new ZoomAnimator('height', 'in'); },
+        zoomInWidth: function () { return new ZoomAnimator('width', 'in'); },
+        zoomOut: function () { return new ZoomAnimator('both', 'out'); },
+        zoomOutHeight: function () { return new ZoomAnimator('height', 'out'); },
+        zoomOutWidth: function () { return new ZoomAnimator('width', 'out'); },
+        rotate: function () { return new RotationAnimator('z', 'clockwise'); },
+        rotateX: function () { return new RotationAnimator('x', 'clockwise'); },
+        rotateY: function () { return new RotationAnimator('y', 'clockwise'); },
+        rotateZ: function () { return new RotationAnimator('z', 'clockwise'); },
+        rotateReverse: function () { return new RotationAnimator('z', 'counterclockwise'); },
+        rotateXReverse: function () { return new RotationAnimator('x', 'counterclockwise'); },
+        rotateYReverse: function () { return new RotationAnimator('y', 'counterclockwise'); },
+        rotateZReverse: function () { return new RotationAnimator('z', 'counterclockwise'); },
+        slide: function () { return new SlideAnimator('down'); },
+        slideDown: function () { return new SlideAnimator('down'); },
+        slideLeft: function () { return new SlideAnimator('left'); },
+        slideUp: function () { return new SlideAnimator('up'); },
+        slideRight: function () { return new SlideAnimator('right'); },
+        counter: function () { return new CounterAnimator('up'); },
+        counterUp: function () { return new CounterAnimator('up'); },
+        counterDown: function () { return new CounterAnimator('down'); },
+        shake: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('x', 'translate')); },
+        shakeX: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('x', 'translate')); },
+        shakeY: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('y', 'translate')); },
+        shakeZ: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('z', 'translate')); },
+        vibrate: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('z', 'rotate')); },
+        vibrateX: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('x', 'rotate')); },
+        vibrateY: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('y', 'rotate')); },
+        vibrateZ: function () { return new SceneAnimator(new ShakeSceneAnimatorHandler('z', 'rotate')); },
+        heartbeat: function () { return new SceneAnimator(new HeartbeatSceneAnimatorHandler()); },
+        heartBeat: function () { return new SceneAnimator(new HeartbeatSceneAnimatorHandler()); },
+        pulse: function () { return new SceneAnimator(new PulseSceneAnimatorHandler()); },
+        tada: function () { return new SceneAnimator(new TadaSceneAnimatorHandler()); },
+        jello: function () { return new SceneAnimator(new JelloSceneAnimatorHandler()); },
+        rubberband: function () { return new SceneAnimator(new RubberBandSceneAnimatorHandler()); },
+        rubberBand: function () { return new SceneAnimator(new RubberBandSceneAnimatorHandler()); },
+        swing: function () { return new SceneAnimator(new SwingSceneAnimatorHandler()); }
+    };
     var AnimateDirectiveHandlers = /** @class */ (function () {
         function AnimateDirectiveHandlers() {
         }
@@ -657,7 +919,7 @@ var InlineJS;
             if (animators.length == 0) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var regionId = region.GetId(), isOnce = directive.arg.options.includes('once'), lastValue = null, nextIndex = 0, animateNext = function () {
+            var regionId = region.GetId(), isOnce = directive.arg.options.includes('once'), concurrent = directive.arg.options.includes('concurrent'), lastValue = null, nextIndex = 0, animateNext = function () {
                 if (!lastValue) {
                     return;
                 }
@@ -667,12 +929,25 @@ var InlineJS;
                         return;
                     }
                 }
-                var animator = animators[nextIndex], lastIndex = nextIndex;
-                animator(true, null, function () {
-                    animator(false);
-                    animateNext();
-                });
-                ++nextIndex;
+                if (concurrent) {
+                    animators.forEach(function (animator) {
+                        animator(true, null, function () {
+                            animator(false, null, function () {
+                                if (animators.length <= ++nextIndex) {
+                                    animateNext();
+                                }
+                            });
+                        });
+                    });
+                }
+                else {
+                    var animator_1 = animators[nextIndex];
+                    animator_1(true, null, function () {
+                        animator_1(false);
+                        animateNext();
+                    });
+                    ++nextIndex;
+                }
             };
             region.GetState().TrapGetAccess(function () {
                 var value = !!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value);
@@ -691,7 +966,7 @@ var InlineJS;
             container.classList.add('inlinejs-loader');
             container.setAttribute(InlineJS.Region.directivePrfix + "-data", '');
             container.setAttribute(InlineJS.Region.directivePrfix + "-cloak", 'hide');
-            container.setAttribute(InlineJS.Region.directivePrfix + "-show:animate.zoom.faster", "" + directive.value);
+            container.setAttribute(InlineJS.Region.directivePrfix + "-show:animate.zoom.default-ease.faster", "" + directive.value);
             container.setAttribute(InlineJS.Region.directivePrfix + "-animate-inner.zoom.1500", "" + directive.value);
             dots.forEach(function (dot) {
                 dot.classList.add('inlinejs-loader-dot');
@@ -857,13 +1132,41 @@ var InlineJS;
             return animators;
         };
         AnimateDirectiveHandlers.PrepareAnimation = function (region, element, options) {
-            var duration = null, ease, easeArgs = [];
+            var duration = null, showEase = null, hideEase = null, defaultEase = {
+                target: function (time, duration) {
+                    return ((time < duration) ? (-1 * Math.cos((time / duration) * (Math.PI / 2)) + 1) : 1);
+                },
+                args: []
+            };
             var animators = AnimateDirectiveHandlers.InitAnimation(element, options, function (key, index) {
                 var skipCount = 0;
                 if (key in AnimationEasings) {
-                    ease = AnimationEasings[key];
-                    if (2 < ease.length) {
-                        easeArgs = Array.from({ length: (ease.length - 2) }, function () { return parseInt(options[index + skipCount++]); });
+                    if (!showEase) {
+                        showEase = {
+                            target: AnimationEasings[key],
+                            args: []
+                        };
+                        if (2 < showEase.target.length) {
+                            showEase.args = Array.from({ length: (showEase.target.length - 2) }, function () { return parseInt(options[index + skipCount++]); });
+                        }
+                    }
+                    else if (!hideEase) {
+                        hideEase = {
+                            target: AnimationEasings[key],
+                            args: []
+                        };
+                        if (2 < hideEase.target.length) {
+                            hideEase.args = Array.from({ length: (hideEase.target.length - 2) }, function () { return parseInt(options[index + skipCount++]); });
+                        }
+                    }
+                    return skipCount;
+                }
+                if (key === 'defaultEase') {
+                    if (!showEase) {
+                        showEase = defaultEase;
+                    }
+                    else if (!hideEase) {
+                        hideEase = defaultEase;
                     }
                     return skipCount;
                 }
@@ -889,18 +1192,18 @@ var InlineJS;
                 }
                 return skipCount;
             });
-            var keys = Object.keys(animators), usingDefaultEase = false;
+            var keys = Object.keys(animators);
             if (keys.length == 0) { //Default
                 animators['opacity'] = ((typeof InlineJS.Animators.opacity === 'function') ? InlineJS.Animators.opacity(element) : InlineJS.Animators.opacity);
                 keys.push('opacity');
             }
             duration = (duration || 300);
-            if (!ease) {
-                usingDefaultEase = true;
-                ease = function (time, duration) {
-                    return ((time < duration) ? (-1 * Math.cos(time / duration * (Math.PI / 2)) + 1) : 1);
-                };
-            }
+            var getEase = function (animator, show) {
+                if (show) {
+                    return (showEase || (animator.getPreferredEase ? animator.getPreferredEase(true) : null) || defaultEase);
+                }
+                return (hideEase || (animator.getPreferredEase ? animator.getPreferredEase(false) : null) || showEase || defaultEase);
+            };
             var checkpoint = 0, animating = false, elementScope = (element ? region.AddElement(element, true) : null);
             var scope = (elementScope ? InlineJS.ExtendedDirectiveHandlers.AddScope('animate', elementScope, []) : null), regionId = region.GetId();
             if (scope) {
@@ -928,10 +1231,8 @@ var InlineJS;
                 keys.forEach(function (key) {
                     var animator = animators[key];
                     if (!animator.handle || !animator.handle(element, show, duration, function (time, duration) {
-                        if (usingDefaultEase && animator.getPreferredEase) {
-                            return (animator.getPreferredEase() || ease).apply(void 0, __spreadArrays([time, duration], easeArgs));
-                        }
-                        return ease.apply(void 0, __spreadArrays([time, duration], easeArgs));
+                        var ease = getEase(animator, show);
+                        return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
                     }, args)) {
                         unhandledKeys.push(key);
                     }
@@ -950,10 +1251,8 @@ var InlineJS;
                     unhandledKeys.forEach(function (key) {
                         var animator = animators[key];
                         animator.step(isFirst, element, show, duration, duration, function (time, duration) {
-                            if (usingDefaultEase && animator.getPreferredEase) {
-                                return (animator.getPreferredEase() || ease).apply(void 0, __spreadArrays([time, duration], easeArgs));
-                            }
-                            return ease.apply(void 0, __spreadArrays([time, duration], easeArgs));
+                            var ease = getEase(animator, show);
+                            return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
                         }, args);
                         isFirst = false;
                     });
@@ -994,10 +1293,8 @@ var InlineJS;
                         unhandledKeys.forEach(function (key) {
                             var animator = animators[key];
                             animator.step(isFirst, element, show, ellapsed, duration, function (time, duration) {
-                                if (usingDefaultEase && animator.getPreferredEase) {
-                                    return (animator.getPreferredEase() || ease).apply(void 0, __spreadArrays([time, duration], easeArgs));
-                                }
-                                return ease.apply(void 0, __spreadArrays([time, duration], easeArgs));
+                                var ease = getEase(animator, show);
+                                return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
                             }, args);
                             isFirst = false;
                         });

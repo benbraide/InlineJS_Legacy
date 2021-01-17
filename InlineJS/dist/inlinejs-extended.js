@@ -40,6 +40,95 @@ var InlineJS;
             }, true, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Mouse = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$mouse')) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            InlineJS.Region.AddGlobal('$mouse', function (regionId, contextElement) {
+                if (!contextElement) {
+                    return null;
+                }
+                var elementScope = InlineJS.Region.Get(regionId).AddElement(contextElement, true);
+                if (elementScope && '$mouse' in elementScope.locals) {
+                    return elementScope.locals['$mouse'];
+                }
+                var scope = (elementScope ? ExtendedDirectiveHandlers.AddScope('mouse', elementScope, []) : null);
+                if (!scope) {
+                    return null;
+                }
+                var inside = false, listening = {
+                    inside: false
+                };
+                var callbacks = {
+                    click: new Array(),
+                    mousemove: new Array(),
+                    mouseenter: new Array(),
+                    mouseleave: new Array(),
+                    mouseover: new Array(),
+                    mouseout: new Array(),
+                    mousedown: new Array(),
+                    mouseup: new Array()
+                };
+                Object.keys(callbacks).forEach(function (key) { return listening[key] = false; });
+                var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                    if (prop === 'inside') {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                        if (!listening.inside) {
+                            listening.inside = true;
+                            contextElement.addEventListener('mouseenter', function () {
+                                if (!inside) {
+                                    inside = true;
+                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'inside', scope);
+                                }
+                            });
+                            contextElement.addEventListener('mouseleave', function () {
+                                if (inside) {
+                                    inside = false;
+                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'inside', scope);
+                                }
+                            });
+                        }
+                        return inside;
+                    }
+                    if (prop in callbacks) {
+                        return function (callback, remove) {
+                            if (remove === void 0) { remove = false; }
+                            if (remove) {
+                                callbacks[prop].splice(callbacks[prop].indexOf(callback), 1);
+                                return;
+                            }
+                            if (!callbacks[prop].includes(callback)) {
+                                callbacks[prop].push(callback);
+                            }
+                            if (!listening[prop]) {
+                                listening[prop] = true;
+                                contextElement.addEventListener(prop, function (e) {
+                                    callbacks[prop].forEach(function (callback) { return callback(e); });
+                                });
+                            }
+                        };
+                    }
+                    if (prop === 'parent') {
+                        return InlineJS.Region.GetGlobalValue(regionId, '$$mouse')(InlineJS.Region.Get(regionId).GetElementAncestor(contextElement, 0));
+                    }
+                    if (prop === 'ancestor') {
+                        return function (index) {
+                            return InlineJS.Region.GetGlobalValue(regionId, '$$mouse')(InlineJS.Region.Get(regionId).GetElementAncestor(contextElement, index));
+                        };
+                    }
+                }, __spreadArrays(['inside', 'parent', 'ancestor'], Object.keys(callbacks)));
+                elementScope.locals['$mouse'] = proxy;
+                return proxy;
+            });
+            InlineJS.Region.AddGlobal('$$mouse', function (regionId) { return function (target) {
+                if (!target) {
+                    return null;
+                }
+                var mouseGlobal = InlineJS.Region.GetGlobal(regionId, '$mouse');
+                return (mouseGlobal ? mouseGlobal(regionId, target) : null);
+            }; });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.Input = function (region, element, directive) {
             var wrapper = document.createElement('div'), innerWrapper = document.createElement('div'), label = document.createElement('span'), hiddenLabel = document.createElement('span'), style = getComputedStyle(element);
             var cachedValues = {
@@ -1687,7 +1776,7 @@ var InlineJS;
                         userData = (data || null);
                     });
                 },
-                desync: function (logout, callback) {
+                desync: function (logout, callback, after) {
                     if (!userData) {
                         return;
                     }
@@ -1703,18 +1792,27 @@ var InlineJS;
                                 detail: false
                             }));
                             redirect(false);
+                            if (after) {
+                                after(true);
+                            }
+                        }
+                        else if (after) {
+                            after(false);
                         }
                     })["catch"](function (err) {
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback) {
                             callback(null, err);
                         }
+                        if (after) {
+                            after(false);
+                        }
                     });
                 },
-                logout: function (callback) {
-                    methods.desync(true, callback);
+                logout: function (callback, after) {
+                    methods.desync(true, callback, after);
                 },
-                authenticate: function (login, form, callback) {
+                authenticate: function (login, form, callback, after) {
                     if (userData) {
                         return;
                     }
@@ -1739,18 +1837,27 @@ var InlineJS;
                                 detail: true
                             }));
                             redirect(true);
+                            if (after) {
+                                after(true);
+                            }
+                        }
+                        else if (after) {
+                            after(false);
                         }
                     })["catch"](function (err) {
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback) {
                             callback(null, err);
                         }
+                        if (after) {
+                            after(false);
+                        }
                     });
                 },
-                login: function (form, callback) {
-                    methods.authenticate(true, form, callback);
+                login: function (form, callback, after) {
+                    methods.authenticate(true, form, callback, after);
                 },
-                register: function (form, errorBag, callback) {
+                register: function (form, errorBag, callback, after) {
                     methods.authenticate(false, form, function (data, err) {
                         if (errorBag && 'failed' in data) {
                             for (var key in errorBag) {
@@ -1760,9 +1867,9 @@ var InlineJS;
                             return false;
                         }
                         return (!callback || callback(data, err));
-                    });
+                    }, after);
                 },
-                update: function (form, errorBag, callback) {
+                update: function (form, errorBag, callback, after) {
                     if (!userData) {
                         return;
                     }
@@ -1793,15 +1900,27 @@ var InlineJS;
                                 var value = (data.failed[key] || []);
                                 errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
+                            if (after) {
+                                after(false);
+                            }
                         }
                         else if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))) {
                             userData = (data || {});
                             alertAll();
+                            if (after) {
+                                after(true);
+                            }
+                        }
+                        else if (after) {
+                            after(false);
                         }
                     })["catch"](function (err) {
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback) {
                             callback(null, err);
+                        }
+                        if (after) {
+                            after(false);
                         }
                     });
                 },
@@ -1864,24 +1983,16 @@ var InlineJS;
                 if (!InlineJS.Region.IsObject(data)) {
                     data = {};
                 }
-                innerElement.addEventListener('submit', function (e) {
-                    e.preventDefault();
-                    methods.register(innerElement, data.errorBag, data.callback);
-                });
-                var redirectWatch = function (e) {
-                    setTimeout(function () {
-                        if (redirectWatch) {
-                            redirect(e.detail, true);
+                ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], function (after) {
+                    methods.register(innerElement, data.errorBag, data.callback, function (state) {
+                        if (state) {
+                            redirect(true, true);
                         }
-                    }, 3000);
-                };
-                if (!shouldRefresh) {
-                    window.addEventListener('auth.authentication', redirectWatch);
-                    innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
-                        window.removeEventListener('auth.authentication', redirectWatch);
-                        redirectWatch = null;
+                        else {
+                            after();
+                        }
                     });
-                }
+                });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('authLogin', function (innerRegion, innerElement, innerDirective) {
@@ -1889,21 +2000,15 @@ var InlineJS;
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
                 var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                innerElement.addEventListener('submit', function (e) {
-                    e.preventDefault();
-                    methods.login(innerElement, callback);
-                });
-                var redirectWatch = function (e) {
-                    setTimeout(function () {
-                        if (redirectWatch) {
-                            redirect(e.detail, true);
+                ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], function (after) {
+                    methods.login(innerElement, callback, function (state) {
+                        if (state) {
+                            redirect(true, true);
                         }
-                    }, 3000);
-                };
-                window.addEventListener('auth.authentication', redirectWatch);
-                innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
-                    window.removeEventListener('auth.authentication', redirectWatch);
-                    redirectWatch = null;
+                        else {
+                            after();
+                        }
+                    });
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
@@ -1915,18 +2020,20 @@ var InlineJS;
                 if (!InlineJS.Region.IsObject(data)) {
                     data = {};
                 }
-                innerElement.addEventListener('submit', function (e) {
-                    e.preventDefault();
-                    methods.update(innerElement, data.errorBag, data.callback);
+                ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], function (after) {
+                    methods.update(innerElement, data.errorBag, data.callback, function (state) {
+                        after();
+                    });
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('authLogout', function (innerRegion, innerElement, innerDirective) {
                 var callback = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 if (innerElement instanceof HTMLFormElement) {
-                    innerElement.addEventListener('submit', function (e) {
-                        e.preventDefault();
-                        methods.logout(callback);
+                    ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], function (after) {
+                        methods.logout(callback, function (state) {
+                            after();
+                        });
                     });
                 }
                 else { //Click
@@ -2159,28 +2266,48 @@ var InlineJS;
             if (!(element instanceof HTMLFormElement)) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var data = (InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}), regionId = region.GetId(), active = false;
-            var info = {
+            var data = (InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {});
+            ExtendedDirectiveHandlers.BindForm(region, element, {
                 action: (data.action || element.action),
                 method: (data.method || element.method),
                 errorBag: data.errorBag,
                 callback: data.callback,
                 confirmInfo: data.confirmInfo
-            };
-            if (!info.action) {
+            }, directive.arg.options);
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        ExtendedDirectiveHandlers.BindForm = function (region, element, info, directiveOptions, onSubmit) {
+            if (!info.action && !onSubmit) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var options = {
-                confirm: false,
                 reload: false,
                 files: false
             };
-            Object.keys(options).forEach(function (key) {
-                if (directive.arg.options.indexOf(key) != -1) {
+            var regionId = region.GetId(), middlewares = new Array();
+            directiveOptions.forEach(function (key) {
+                if (key in options) {
                     options[key] = true;
                 }
+                else {
+                    var handler = InlineJS.Region.GetGlobalValue(regionId, "$form." + key, element);
+                    if (handler) {
+                        middlewares.push(handler);
+                    }
+                    else if (key === 'confirm') {
+                        middlewares.push(function (callback) {
+                            var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
+                            if (reporter && reporter.confirm) { //Confirm before proceeding
+                                reporter.confirm((info.confirmInfo || 'Please confirm your action.'), function () { return callback(true); }, function () { return callback(false); });
+                            }
+                            else { //Dummy confirmation
+                                callback(true);
+                            }
+                        });
+                    }
+                }
             });
-            var elementScope = region.AddElement(element, true);
+            var active = false, elementScope = region.AddElement(element, true);
             var scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
             elementScope.locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'active') {
@@ -2201,14 +2328,12 @@ var InlineJS;
                 }
             };
             options.files = (options.files || !!element.querySelector('input[type="file"]'));
-            var submit = function (checkConfirm) {
-                if (checkConfirm === void 0) { checkConfirm = true; }
-                if (checkConfirm && options.confirm) {
-                    var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');
-                    if (reporter && reporter.confirm) { //Confirm before proceeding
-                        reporter.confirm((info.confirmInfo || 'Please confirm your action.'), function () { return submit(false); });
-                        return;
-                    }
+            var submit = function () {
+                if (onSubmit) { //Pass to handler
+                    onSubmit(function () {
+                        setActiveState(false);
+                    }, info);
+                    return;
                 }
                 var body = null;
                 if (options.files) {
@@ -2236,45 +2361,71 @@ var InlineJS;
                 else { //No files embedded
                     body = new FormData(element);
                 }
-                setActiveState(true);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
                     body: body
                 }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
-                    setActiveState(false);
-                    if (info.errorBag && 'failed' in data) {
-                        for (var key in info.errorBag) {
-                            var value = (data.failed[key] || []);
-                            info.errorBag[key] = (Array.isArray(value) ? value : [value]);
-                        }
-                    }
-                    if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))) {
-                        element.dispatchEvent(new CustomEvent('form.success', {
-                            detail: data
-                        }));
-                        if (options.reload) {
-                            var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
-                            if (router) {
-                                router.reload();
-                                return;
+                    try {
+                        if (info.errorBag && 'failed' in data) {
+                            for (var key in info.errorBag) {
+                                var value = (data.failed[key] || []);
+                                info.errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
                         }
-                        element.reset();
+                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))) {
+                            element.dispatchEvent(new CustomEvent('form.success', {
+                                detail: data
+                            }));
+                            if (options.reload) {
+                                var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
+                                if (router) {
+                                    router.reload();
+                                    return;
+                                }
+                            }
+                            element.reset();
+                        }
                     }
-                })["catch"](function (err) {
+                    catch (err) {
+                        InlineJS.Region.Get(regionId).GetState().ReportError(err, "InlineJs.Region<" + regionId + ">.ExtendedDirectiveHandlers.BindForm(Element@" + element.nodeName + ", x-form)");
+                    }
                     setActiveState(false);
-                    ExtendedDirectiveHandlers.ReportServerError(regionId, err);
-                    if (info.callback) {
-                        info.callback(null, err);
+                })["catch"](function (err) {
+                    try {
+                        ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                        if (info.callback) {
+                            info.callback(null, err);
+                        }
                     }
+                    catch (err) {
+                        InlineJS.Region.Get(regionId).GetState().ReportError(err, "InlineJs.Region<" + regionId + ">.ExtendedDirectiveHandlers.BindForm(Element@" + element.nodeName + ", x-form)");
+                    }
+                    setActiveState(false);
                 });
+            };
+            var runMiddleWares = function (index) {
+                if (index < middlewares.length) {
+                    middlewares[index](function (state) {
+                        if (state) { //Run next
+                            runMiddleWares(index + 1);
+                        }
+                        else { //Rejected
+                            setActiveState(false);
+                        }
+                    }, element);
+                }
+                else {
+                    submit();
+                }
             };
             element.addEventListener('submit', function (e) {
                 e.preventDefault();
-                submit();
+                if (!active) {
+                    setActiveState(true);
+                    runMiddleWares(0);
+                }
             });
-            return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.FormSubmit = function (region, element, directive) {
             InlineJS.CoreDirectiveHandlers.Attr(region, element, InlineJS.Processor.GetDirectiveWith('x-attr:disabled', '$form.active'));
@@ -2688,6 +2839,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             InlineJS.DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             InlineJS.DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
+            InlineJS.DirectiveHandlerManager.AddHandler('mouse', ExtendedDirectiveHandlers.Mouse);
             InlineJS.DirectiveHandlerManager.AddHandler('input', ExtendedDirectiveHandlers.Input);
             InlineJS.DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             InlineJS.DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);

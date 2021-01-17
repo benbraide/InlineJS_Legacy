@@ -103,7 +103,7 @@ namespace InlineJS{
     export interface ReporterInfo{
         report: (info: any) => boolean;
         reportServerError: (err: any) => boolean;
-        confirm: (info: string | Record<string, any>, callback: string | (() => void)) => void;
+        confirm: (info: string | Record<string, any>, confirmed: string | (() => void), canceled?: string | (() => void)) => void;
         prompt: (info: string | Record<string, any>, callback: (response: string | Array<string>) => void) => void;
     }
 
@@ -148,6 +148,110 @@ namespace InlineJS{
                 }
                 return true;
             }, true, element);
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Mouse(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal(region.GetId(), '$mouse')){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            Region.AddGlobal('$mouse', (regionId: string, contextElement: HTMLElement) => {
+                if (!contextElement){
+                    return null;
+                }
+
+                let elementScope = Region.Get(regionId).AddElement(contextElement, true);
+                if (elementScope && '$mouse' in elementScope.locals){
+                    return elementScope.locals['$mouse'];
+                }
+                
+                let scope = (elementScope ? ExtendedDirectiveHandlers.AddScope('mouse', elementScope, []) : null)
+                if (!scope){
+                    return null;
+                }
+
+                let inside = false, listening = {
+                    inside: false,
+                };
+
+                let callbacks = {
+                    click: new Array<(event?: Event) => void>(),
+                    mousemove: new Array<(event?: Event) => void>(),
+                    mouseenter: new Array<(event?: Event) => void>(),
+                    mouseleave: new Array<(event?: Event) => void>(),
+                    mouseover: new Array<(event?: Event) => void>(),
+                    mouseout: new Array<(event?: Event) => void>(),
+                    mousedown: new Array<(event?: Event) => void>(),
+                    mouseup: new Array<(event?: Event) => void>(),
+                };
+
+                Object.keys(callbacks).forEach(key => listening[key] = false);
+                let proxy = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                    if (prop === 'inside'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                        if (!listening.inside){
+                            listening.inside = true;
+                            contextElement.addEventListener('mouseenter', () => {
+                                if (!inside){
+                                    inside = true;
+                                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'inside', scope);
+                                }
+                            });
+                            contextElement.addEventListener('mouseleave', () => {
+                                if (inside){
+                                    inside = false;
+                                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'inside', scope);
+                                }
+                            });
+                        }
+                        return inside;
+                    }
+
+                    if (prop in callbacks){
+                        return (callback: (event?: Event) => void, remove = false) => {
+                            if (remove){
+                                (callbacks[prop] as Array<(event?: Event) => void>).splice((callbacks[prop] as Array<(event?: Event) => void>).indexOf(callback), 1);
+                                return;
+                            }
+                            
+                            if (!(callbacks[prop] as Array<(event?: Event) => void>).includes(callback)){
+                                (callbacks[prop] as Array<(event?: Event) => void>).push(callback);
+                            }
+                            
+                            if (!listening[prop]){
+                                listening[prop] = true;
+                                contextElement.addEventListener(prop, (e) => {
+                                    (callbacks[prop] as Array<(event?: Event) => void>).forEach(callback => callback(e));
+                                });
+                            }
+                        };
+                    }
+
+                    if (prop === 'parent'){
+                        return (Region.GetGlobalValue(regionId, '$$mouse') as (target: HTMLElement) => any)(Region.Get(regionId).GetElementAncestor(contextElement, 0));
+                    }
+
+                    if (prop === 'ancestor'){
+                        return (index: number) => {
+                            return (Region.GetGlobalValue(regionId, '$$mouse') as (target: HTMLElement) => any)(Region.Get(regionId).GetElementAncestor(contextElement, index));
+                        };
+                    }
+                }, ['inside', 'parent', 'ancestor', ...Object.keys(callbacks)]);
+
+                elementScope.locals['$mouse'] = proxy;
+                return proxy;
+            });
+
+            Region.AddGlobal('$$mouse', (regionId: string) => (target: HTMLElement) => {
+                if (!target){
+                    return null;
+                }
+
+                let mouseGlobal = Region.GetGlobal(regionId, '$mouse');
+                return (mouseGlobal ? mouseGlobal(regionId, target) : null);
+            });
+
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -2115,7 +2219,7 @@ namespace InlineJS{
                         userData = (data || null);
                     });
                 },
-                desync: (logout: boolean, callback?: (data: any, err?: any) => boolean) => {
+                desync: (logout: boolean, callback?: (data: any, err?: any) => boolean, after?: (state: boolean) => void) => {
                     if (!userData){
                         return;
                     }
@@ -2134,18 +2238,28 @@ namespace InlineJS{
                             }));
 
                             redirect(false);
+                            if (after){
+                                after(true);
+                            }
+                        }
+                        else if (after){
+                            after(false);
                         }
                     }).catch((err) => {
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback){
                             callback(null, err);
                         }
+
+                        if (after){
+                            after(false);
+                        }
                     });
                 },
-                logout: (callback?: (data: any, err?: any) => boolean) => {
-                    methods.desync(true, callback);
+                logout: (callback?: (data: any, err?: any) => boolean, after?: (state: boolean) => void) => {
+                    methods.desync(true, callback, after);
                 },
-                authenticate: (login: boolean, form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
+                authenticate: (login: boolean, form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean, after?: (state: boolean) => void) => {
                     if (userData){
                         return;
                     }
@@ -2174,18 +2288,28 @@ namespace InlineJS{
                             }));
 
                             redirect(true);
+                            if (after){
+                                after(true);
+                            }
+                        }
+                        else if (after){
+                            after(false);
                         }
                     }).catch((err) => {
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback){
                             callback(null, err);
                         }
+
+                        if (after){
+                            after(false);
+                        }
                     });
                 },
-                login: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean) => {
-                    methods.authenticate(true, form, callback);
+                login: (form: HTMLFormElement | Record<string, string>, callback?: (data: any, err?: any) => boolean, after?: (state: boolean) => void) => {
+                    methods.authenticate(true, form, callback, after);
                 },
-                register: (form: HTMLFormElement | Record<string, string>, errorBag?: Record<string, Array<string>>, callback?: (data: any, err?: any) => boolean) => {
+                register: (form: HTMLFormElement | Record<string, string>, errorBag?: Record<string, Array<string>>, callback?: (data: any, err?: any) => boolean, after?: (state: boolean) => void) => {
                     methods.authenticate(false, form, (data, err) => {
                         if (errorBag && 'failed' in data){
                             for (let key in errorBag){
@@ -2197,9 +2321,9 @@ namespace InlineJS{
                         }
 
                         return (!callback || callback(data, err));
-                    });
+                    }, after);
                 },
-                update: (form: HTMLFormElement | Record<string, string>, errorBag?: Record<string, Array<string>>, callback?: (data: any, err?: any) => boolean) => {
+                update: (form: HTMLFormElement | Record<string, string>, errorBag?: Record<string, Array<string>>, callback?: (data: any, err?: any) => boolean, after?: (state: boolean) => void) => {
                     if (!userData){
                         return;
                     }
@@ -2233,15 +2357,29 @@ namespace InlineJS{
                                 let value = (data.failed[key] || []);
                                 errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
+
+                            if (after){
+                                after(false);
+                            }
                         }
                         else if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!callback || callback(data))){
                             userData = (data || {});
                             alertAll();
+                            if (after){
+                                after(true);
+                            }
+                        }
+                        else if (after){
+                            after(false);
                         }
                     }).catch((err) => {
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (callback){
                             callback(null, err);
+                        }
+
+                        if (after){
+                            after(false);
                         }
                     });
                 },
@@ -2311,33 +2449,23 @@ namespace InlineJS{
                 if (!(innerElement instanceof HTMLFormElement)){
                     return DirectiveHandlerReturn.Nil;    
                 }
-                
+
                 let data = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 if (!Region.IsObject(data)){
                     data = {};
                 }
                 
-                innerElement.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    methods.register(innerElement, data.errorBag, data.callback);
-                });
-
-                let redirectWatch = (e: Event) => {
-                    setTimeout(() => {
-                        if (redirectWatch){
-                            redirect((e as CustomEvent).detail, true);
+                ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], (after: () => void) => {
+                    methods.register(innerElement, data.errorBag, data.callback, (state) => {
+                        if (state){
+                            redirect(true, true);
                         }
-                    }, 3000);
-                };
-
-                if (!shouldRefresh){
-                    window.addEventListener('auth.authentication', redirectWatch);
-                    innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
-                        window.removeEventListener('auth.authentication', redirectWatch);
-                        redirectWatch = null;
+                        else{
+                            after();
+                        }
                     });
-                }
-
+                });
+                
                 return DirectiveHandlerReturn.Handled;
             });
             
@@ -2345,27 +2473,19 @@ namespace InlineJS{
                 if (!(innerElement instanceof HTMLFormElement)){
                     return DirectiveHandlerReturn.Nil;    
                 }
-                
+
                 let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                innerElement.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    methods.login(innerElement, callback);
-                });
-
-                let redirectWatch = (e: Event) => {
-                    setTimeout(() => {
-                        if (redirectWatch){
-                            redirect((e as CustomEvent).detail, true);
+                ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], (after: () => void) => {
+                    methods.login(innerElement, callback, (state) => {
+                        if (state){
+                            redirect(true, true);
                         }
-                    }, 3000);
-                };
-
-                window.addEventListener('auth.authentication', redirectWatch);
-                innerRegion.AddElement(innerElement).uninitCallbacks.push(() => {
-                    window.removeEventListener('auth.authentication', redirectWatch);
-                    redirectWatch = null;
+                        else{
+                            after();
+                        }
+                    });
                 });
-
+                
                 return DirectiveHandlerReturn.Handled;
             });
             
@@ -2378,10 +2498,11 @@ namespace InlineJS{
                 if (!Region.IsObject(data)){
                     data = {};
                 }
-
-                innerElement.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    methods.update(innerElement, data.errorBag, data.callback);
+                
+                ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], (after: () => void) => {
+                    methods.update(innerElement, data.errorBag, data.callback, (state) => {
+                        after();
+                    });
                 });
 
                 return DirectiveHandlerReturn.Handled;
@@ -2390,9 +2511,10 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('authLogout', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let callback = CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 if (innerElement instanceof HTMLFormElement){
-                    innerElement.addEventListener('submit', (e) => {
-                        e.preventDefault();
-                        methods.logout(callback as (data: any, err?: any) => boolean);
+                    ExtendedDirectiveHandlers.BindForm(innerRegion, innerElement, {}, [], (after: () => void) => {
+                        methods.logout(callback as (data: any, err?: any) => boolean, (state) => {
+                            after();
+                        });
                     });
                 }
                 else{//Click
@@ -2679,32 +2801,53 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let data = ((CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}) as FormInfo), regionId = region.GetId(), active = false;
-            let info: FormInfo = {
+            let data = ((CoreDirectiveHandlers.Evaluate(region, element, directive.value) || {}) as FormInfo);
+            ExtendedDirectiveHandlers.BindForm(region, element, {
                 action: (data.action || element.action),
                 method: (data.method || element.method),
                 errorBag: data.errorBag,
                 callback: data.callback,
                 confirmInfo: data.confirmInfo,
-            };
+            }, directive.arg.options);
 
-            if (!info.action){
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static BindForm(region: Region, element: HTMLFormElement, info: FormInfo, directiveOptions: Array<string>, onSubmit?: (after: () => void, info?: FormInfo) => void){
+            if (!info.action && !onSubmit){
                 return DirectiveHandlerReturn.Nil;
             }
 
             let options = {
-                confirm: false,
                 reload: false,
                 files: false,
             };
 
-            Object.keys(options).forEach((key) => {
-                if (directive.arg.options.indexOf(key) != -1){
+            let regionId = region.GetId(), middlewares = new Array<(callback: (state: boolean) => void, form?: HTMLFormElement) => void>();
+            directiveOptions.forEach((key) => {
+                if (key in options){
                     options[key] = true;
+                }
+                else{
+                    let handler = (Region.GetGlobalValue(regionId, `$form.${key}`, element) as (callback: (state: boolean) => void) => void);
+                    if (handler){
+                        middlewares.push(handler);
+                    }
+                    else if (key === 'confirm'){
+                        middlewares.push((callback) => {
+                            let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
+                            if (reporter && reporter.confirm){//Confirm before proceeding
+                                reporter.confirm((info.confirmInfo || 'Please confirm your action.'), () => callback(true), () => callback(false));
+                            }
+                            else{//Dummy confirmation
+                                callback(true);
+                            }
+                        });
+                    }
                 }
             });
             
-            let elementScope = region.AddElement(element, true);
+            let active = false, elementScope = region.AddElement(element, true);
             let scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
 
             elementScope.locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
@@ -2730,13 +2873,13 @@ namespace InlineJS{
             };
 
             options.files = (options.files || !! element.querySelector('input[type="file"]'));
-            let submit = (checkConfirm = true) => {
-                if (checkConfirm && options.confirm){
-                    let reporter = (Region.GetGlobalValue(regionId, '$reporter') as ReporterInfo);
-                    if (reporter && reporter.confirm){//Confirm before proceeding
-                        reporter.confirm((info.confirmInfo || 'Please confirm your action.'), () => submit(false));
-                        return;
-                    }
+            let submit = () => {
+                if (onSubmit){//Pass to handler
+                    onSubmit(() => {
+                        setActiveState(false);
+                    }, info);
+
+                    return;
                 }
                 
                 let body: any = null;
@@ -2767,50 +2910,78 @@ namespace InlineJS{
                     body = new FormData(element);
                 }
                 
-                setActiveState(true);
                 fetch(info.action, {
                     method: (info.method || 'POST'),
                     credentials: 'same-origin',
                     body: body,
                 }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
-                    setActiveState(false);
-                    if (info.errorBag && 'failed' in data){
-                        for (let key in info.errorBag){
-                            let value = (data.failed[key] || []);
-                            info.errorBag[key] = (Array.isArray(value) ? value : [value]);
-                        }
-                    }
-                    
-                    if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))){
-                        element.dispatchEvent(new CustomEvent('form.success', {
-                            detail: data
-                        }));
-
-                        if (options.reload){
-                            let router = Region.GetGlobalValue(regionId, '$router');
-                            if (router){
-                                router.reload();
-                                return;
+                    try{
+                        if (info.errorBag && 'failed' in data){
+                            for (let key in info.errorBag){
+                                let value = (data.failed[key] || []);
+                                info.errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
                         }
-
-                        element.reset();
+                        
+                        if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))){
+                            element.dispatchEvent(new CustomEvent('form.success', {
+                                detail: data
+                            }));
+    
+                            if (options.reload){
+                                let router = Region.GetGlobalValue(regionId, '$router');
+                                if (router){
+                                    router.reload();
+                                    return;
+                                }
+                            }
+    
+                            element.reset();
+                        }
                     }
-                }).catch((err) => {
+                    catch (err){
+                        Region.Get(regionId).GetState().ReportError(err, `InlineJs.Region<${regionId}>.ExtendedDirectiveHandlers.BindForm(Element@${element.nodeName}, x-form)`);
+                    }
+                    
                     setActiveState(false);
-                    ExtendedDirectiveHandlers.ReportServerError(regionId, err);
-                    if (info.callback){
-                        info.callback(null, err);
+                }).catch((err) => {
+                    try{
+                        ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                        if (info.callback){
+                            info.callback(null, err);
+                        }
                     }
+                    catch (err){
+                        Region.Get(regionId).GetState().ReportError(err, `InlineJs.Region<${regionId}>.ExtendedDirectiveHandlers.BindForm(Element@${element.nodeName}, x-form)`);
+                    }
+
+                    setActiveState(false);
                 });
+            };
+
+            let runMiddleWares = (index: number) => {
+                if (index < middlewares.length){
+                    middlewares[index]((state) => {
+                        if (state){//Run next
+                            runMiddleWares(index + 1);
+                        }
+                        else{//Rejected
+                            setActiveState(false);
+                        }
+                    }, element);
+                }
+                else{
+                    submit();
+                }
             };
             
             element.addEventListener('submit', (e) => {
                 e.preventDefault();
-                submit();
+                if (!active){
+                    setActiveState(true);
+                    runMiddleWares(0);   
+                }
             });
-
-            return DirectiveHandlerReturn.Handled;
         }
 
         public static FormSubmit(region: Region, element: HTMLElement, directive: Directive){
@@ -3297,6 +3468,8 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('watch', ExtendedDirectiveHandlers.Watch);
             DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
+
+            DirectiveHandlerManager.AddHandler('mouse', ExtendedDirectiveHandlers.Mouse);
 
             DirectiveHandlerManager.AddHandler('input', ExtendedDirectiveHandlers.Input);
             DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);

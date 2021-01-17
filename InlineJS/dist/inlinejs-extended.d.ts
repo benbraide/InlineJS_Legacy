@@ -90,7 +90,7 @@ declare namespace InlineJS {
     interface ReporterInfo {
         report: (info: any) => boolean;
         reportServerError: (err: any) => boolean;
-        confirm: (info: string | Record<string, any>, callback: string | (() => void)) => void;
+        confirm: (info: string | Record<string, any>, confirmed: string | (() => void), canceled?: string | (() => void)) => void;
         prompt: (info: string | Record<string, any>, callback: (response: string | Array<string>) => void) => void;
     }
     interface FormInfo {
@@ -106,6 +106,7 @@ declare namespace InlineJS {
         static Watch(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static When(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Once(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static Mouse(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Input(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static State(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, submit: boolean, info: StateDirectiveInfo): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
@@ -124,6 +125,7 @@ declare namespace InlineJS {
         static Reporter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Overlay(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Form(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static BindForm(region: Region, element: HTMLFormElement, info: FormInfo, directiveOptions: Array<string>, onSubmit?: (after: () => void, info?: FormInfo) => void): DirectiveHandlerReturn;
         static FormSubmit(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Modal(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Counter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
