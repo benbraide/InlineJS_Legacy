@@ -3407,6 +3407,9 @@ namespace InlineJS{
                 if (options[i] === 'camel'){
                     arg.key = Processor.GetCamelCaseDirectiveName(arg.key);
                 }
+                else if (options[i] === 'capitalize'){
+                    arg.key = Processor.GetCamelCaseDirectiveName(arg.key, true);
+                }
                 else if (options[i] === 'join'){
                     arg.key = arg.key.split('-').join('.');
                 }
