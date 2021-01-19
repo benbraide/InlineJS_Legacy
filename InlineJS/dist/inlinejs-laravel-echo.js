@@ -43,7 +43,7 @@ var InlineJS;
         };
         LaravelEchoDirectiveHandlers.On = function (region, element, directive) {
             var knownEvents = ['success', 'error', 'status'];
-            if (!knownEvents.includes(directive.key)) {
+            if (!knownEvents.includes(directive.arg.key)) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var echo = InlineJS.Region.GetGlobalValue(region.GetId(), '$echo');
@@ -52,7 +52,7 @@ var InlineJS;
             }
             var regionId = region.GetId();
             echo.status(function (status) {
-                if (directive.key !== 'status' && status != (directive.key === 'success')) {
+                if (directive.arg.key !== 'status' && status != (directive.arg.key === 'success')) {
                     return;
                 }
                 var myRegion = InlineJS.Region.Get(regionId), e = new CustomEvent((status ? 'echo.success' : 'echo.error'), {

@@ -2037,12 +2037,14 @@ namespace InlineJS{
                     return myProxy[key][prop];
                 }, ['parent', 'key'], (target: object, prop: string | number | symbol, value: any) => {
                     if (prop in target || typeof prop !== 'string'){
-                        return target[prop];
+                        target[prop] = value;
+                        return true;
                     }
 
                     let myRegion = Region.Get(regionId), myProxy = myRegion.GetRootProxy().GetNativeProxy();
                     if ('__InlineJS_Target__' in myProxy[key] && prop in myProxy[key]['__InlineJS_Target__']){
-                        return (myProxy[key][prop] = value);
+                        myProxy[key][prop] = value;
+                        return true;
                     }
                     
                     if (prop === 'parent' || prop === 'key'){

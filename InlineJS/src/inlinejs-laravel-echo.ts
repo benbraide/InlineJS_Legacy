@@ -45,7 +45,7 @@ namespace InlineJS{
 
         public static On(region: Region, element: HTMLElement, directive: Directive){
             const knownEvents = ['success', 'error', 'status'];
-            if (!knownEvents.includes(directive.key)){
+            if (!knownEvents.includes(directive.arg.key)){
                 return DirectiveHandlerReturn.Nil;
             }
 
@@ -56,7 +56,7 @@ namespace InlineJS{
 
             let regionId = region.GetId();
             (echo.status as (handler: (status: boolean) => void) => void)((status) => {
-                if (directive.key !== 'status' && status != (directive.key === 'success')){
+                if (directive.arg.key !== 'status' && status != (directive.arg.key === 'success')){
                     return;
                 }
                 

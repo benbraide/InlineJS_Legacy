@@ -1604,11 +1604,13 @@ var InlineJS;
                     return myProxy[key_1][prop];
                 }, ['parent', 'key'], function (target, prop, value) {
                     if (prop in target || typeof prop !== 'string') {
-                        return target[prop];
+                        target[prop] = value;
+                        return true;
                     }
                     var myRegion = Region.Get(regionId_1), myProxy = myRegion.GetRootProxy().GetNativeProxy();
                     if ('__InlineJS_Target__' in myProxy[key_1] && prop in myProxy[key_1]['__InlineJS_Target__']) {
-                        return (myProxy[key_1][prop] = value);
+                        myProxy[key_1][prop] = value;
+                        return true;
                     }
                     if (prop === 'parent' || prop === 'key') {
                         return false;
