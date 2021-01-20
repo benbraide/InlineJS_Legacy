@@ -257,6 +257,10 @@ namespace InlineJS{
         getPreferredEase?: (show?: boolean) => StepEaseInfo;
     }
 
+    export class NullAnimator implements Animator{
+        public step(isFirst: boolean, element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: AnimatorEaseType){}
+    }
+
     export class OpacityAnimator implements Animator{
         public step(isFirst: boolean, element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: AnimatorEaseType){
             if (element){
@@ -917,6 +921,7 @@ namespace InlineJS{
     }
 
     export let Animators = {
+        null: () => new NullAnimator(),
         opacity: () => new OpacityAnimator(),
         height: () => new WidthHeightAnimator('height', false),
         heightReverse: () => new WidthHeightAnimator('height', true),

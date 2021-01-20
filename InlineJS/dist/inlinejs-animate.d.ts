@@ -58,6 +58,9 @@ declare namespace InlineJS {
         isExclusive?: () => boolean;
         getPreferredEase?: (show?: boolean) => StepEaseInfo;
     }
+    class NullAnimator implements Animator {
+        step(isFirst: boolean, element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: AnimatorEaseType): void;
+    }
     class OpacityAnimator implements Animator {
         step(isFirst: boolean, element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: AnimatorEaseType): void;
     }
@@ -165,6 +168,7 @@ declare namespace InlineJS {
         constructor();
     }
     let Animators: {
+        null: () => NullAnimator;
         opacity: () => OpacityAnimator;
         height: () => WidthHeightAnimator;
         heightReverse: () => WidthHeightAnimator;

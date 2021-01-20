@@ -210,6 +210,13 @@ var InlineJS;
         return AnimationEasings;
     }());
     InlineJS.AnimationEasings = AnimationEasings;
+    var NullAnimator = /** @class */ (function () {
+        function NullAnimator() {
+        }
+        NullAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) { };
+        return NullAnimator;
+    }());
+    InlineJS.NullAnimator = NullAnimator;
     var OpacityAnimator = /** @class */ (function () {
         function OpacityAnimator() {
         }
@@ -845,6 +852,7 @@ var InlineJS;
     }(GenericSceneAnimatorHandler));
     InlineJS.SwingSceneAnimatorHandler = SwingSceneAnimatorHandler;
     InlineJS.Animators = {
+        "null": function () { return new NullAnimator(); },
         opacity: function () { return new OpacityAnimator(); },
         height: function () { return new WidthHeightAnimator('height', false); },
         heightReverse: function () { return new WidthHeightAnimator('height', true); },
