@@ -1785,7 +1785,22 @@ namespace InlineJS{
         private proxies_: Record<string, ChildProxy> = {};
         
         public constructor (private regionId_: string, private parentPath_: string, private name_: string, private target_: object){
-            let regionId = this.regionId_, parentPath = this.parentPath_, name = this.name_;
+            let regionId = this.regionId_, parentPath = this.parentPath_, name = this.name_, isArray = Array.isArray(this.target_), tempProxy = new window.Proxy(this.target_, {
+                get(target: object, prop: string | number | symbol): any{
+                    if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')){
+                        return Reflect.get(target, prop);
+                    }
+                    
+                    return ProxyGetter(target, prop.toString(), regionId, parentPath, name);
+                },
+                set(target: object, prop: string | number | symbol, value: any): boolean{
+                    if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')){
+                        return Reflect.set(target, prop, value);
+                    }
+
+                    return ProxySetter(target, prop.toString(), value, regionId, parentPath, name);
+                },
+            });
             let handler = {
                 get(target: object, prop: string | number | symbol): any{
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')){
@@ -1794,6 +1809,35 @@ namespace InlineJS{
 
                     if ('__InlineJS_Target__' in target){
                         return target[prop];
+                    }
+
+                    if (isArray && typeof prop === 'string'){
+                        if (prop === 'unshift'){
+                            return (...items: any[]) => {
+                                let path = (parentPath ? `${parentPath}.${name}.unshift` : `${name}.unshift`);
+                                AddChanges(Region.Get(regionId).GetChanges(), 'set', `${path}.${items.length}`, `${items.length}`);
+                                return tempProxy['unshift'](...items);
+                            };
+                        }
+                        else if (prop === 'shift'){
+                            return () => {
+                                let path = (parentPath ? `${parentPath}.${name}.shift` : `${name}.shift`);
+                                AddChanges(Region.Get(regionId).GetChanges(), 'set', `${path}.1`, '1');
+                                return tempProxy['shift']();
+                            };
+                        }
+                        else if (prop === 'splice'){
+                            return (start: number, deleteCount?: number, ...items: any[]) => {
+                                if ((target as Array<any>).length <= start){
+                                    return tempProxy['splice'](start, deleteCount, ...items);
+                                }
+
+                                let path = (parentPath ? `${parentPath}.${name}.splice` : `${name}.splice`);
+                                AddChanges(Region.Get(regionId).GetChanges(), 'set', `${path}.${start}.${deleteCount}.${items.length}`, `${start}.${deleteCount}.${items.length}`);
+
+                                return tempProxy['splice'](start, deleteCount, ...items);
+                            };
+                        }
                     }
 
                     return ProxyGetter(target, prop.toString(), regionId, parentPath, name);
@@ -2749,13 +2793,20 @@ namespace InlineJS{
             };
 
             let locals = (myRegion: Region, cloneInfo: EachCloneInfo) => {
+                let myScope: ElementScope = null;
                 myRegion.AddLocal(cloneInfo.element, '$each', CoreDirectiveHandlers.CreateProxy((prop) => {
+                    let innerRegion = Region.Get(info.regionId);
                     if (prop === 'count'){
-                        Region.Get(info.regionId).GetChanges().AddGetAccess(`${scope.key}.$each.count`);
+                        innerRegion.GetChanges().AddGetAccess(`${scope.key}.$each.count`);
                         return options.count;
                     }
                     
                     if (prop === 'index'){
+                        if (typeof cloneInfo.key === 'number'){
+                            myScope = (myScope || innerRegion.AddElement(cloneInfo.element));
+                            innerRegion.GetChanges().AddGetAccess(`${myScope.key}.$each.index`);
+                        }
+                        
                         return cloneInfo.key;
                     }
 
@@ -2768,7 +2819,7 @@ namespace InlineJS{
                     }
 
                     if (prop === 'parent'){
-                        return Region.Get(info.regionId).GetLocal(cloneInfo.element.parentElement, '$each', true);
+                        return innerRegion.GetLocal(cloneInfo.element.parentElement, '$each', true);
                     }
 
                     return null;
@@ -2781,9 +2832,9 @@ namespace InlineJS{
                 }
             };
 
-            let append = (myRegion: Region, key?: string) => {
+            let append = (myRegion: Region, key?: string | number) => {
                 let clone = (element.cloneNode(true) as HTMLElement), animator = CoreDirectiveHandlers.GetAnimator(region, animate, clone, directive.arg.options);
-                if (key){
+                if (typeof key === 'string'){
                     (options.clones as Record<string, EachCloneInfo>)[key] = {
                         key : key,
                         element: clone,
@@ -2791,6 +2842,24 @@ namespace InlineJS{
                     };
                     
                     CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, (options.clones as Record<string, EachCloneInfo>)[key]), (Object.keys(options.clones).length - 1));
+                }
+                else if (typeof key === 'number'){
+                    for (let index = key; index < (options.clones as Array<EachCloneInfo>).length; ++index){
+                        let cloneInfo = (options.clones as Array<EachCloneInfo>)[index], myScope = myRegion.GetElementScope(cloneInfo.element);
+                        if (myScope){
+                            AddChanges(myRegion.GetChanges(), 'set', `${myScope.key}.$each.index`, 'index');
+                        }
+                        
+                        ++(cloneInfo.key as number);
+                    }
+                    
+                    (options.clones as Array<EachCloneInfo>).splice(key, 0, {
+                        key : key,
+                        element: clone,
+                        animator: animator,
+                    });
+
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, () => locals(myRegion, (options.clones as Array<EachCloneInfo>)[key]), key);
                 }
                 else{//Array
                     let index = (options.clones as Array<EachCloneInfo>).length;
@@ -2847,7 +2916,76 @@ namespace InlineJS{
                 return result;
             };
             
-            let arrayChangeHandler = (myRegion: Region, change: Change) => {
+            let arrayChangeHandler = (myRegion: Region, change: Change, isOriginal: boolean) => {
+                if (isOriginal){
+                    if (change.path === `${options.path}.unshift.${change.prop}`){
+                        let count = (Number.parseInt(change.prop) || 0);
+                        
+                        options.count += count;
+                        addSizeChange(myRegion);
+
+                        for (let index = 0; index < count; ++index){
+                            append(myRegion, index);
+                        }
+                    }
+                    else if (change.path === `${options.path}.shift.${change.prop}`){
+                        let count = (Number.parseInt(change.prop) || 0);
+                        
+                        options.count -= count;
+                        addSizeChange(myRegion);
+
+                        (options.clones as Array<EachCloneInfo>).splice(0, count).forEach((myInfo) => {
+                            myInfo.animator(false, null, () => {
+                                info.parent.removeChild(myInfo.element);
+                                myRegion.MarkElementAsRemoved(myInfo.element);
+                            });
+                        });
+
+                        (options.clones as Array<EachCloneInfo>).forEach((cloneInfo) => {
+                            let myScope = myRegion.GetElementScope(cloneInfo.element);
+                            if (myScope){
+                                AddChanges(myRegion.GetChanges(), 'set', `${myScope.key}.$each.index`, 'index');
+                            }
+                            
+                            (cloneInfo.key as number) -= count;
+                        });
+                    }
+                    else if (change.path === `${options.path}.splice.${change.prop}`){
+                        let parts = change.prop.split('.');//start.deleteCount.itemsCount
+
+                        let index = (Number.parseInt(parts[0]) || 0);
+                        let itemsCount = (Number.parseInt(parts[2]) || 0);
+                        let removedClones = (options.clones as Array<EachCloneInfo>).splice(index, (Number.parseInt(parts[1]) || 0));
+
+                        removedClones.forEach((myInfo) => {
+                            myInfo.animator(false, null, () => {
+                                info.parent.removeChild(myInfo.element);
+                                myRegion.MarkElementAsRemoved(myInfo.element);
+                            });
+                        });
+
+                        for (let i = index; i < (itemsCount + index); ++i){
+                            append(myRegion, i);
+                        }
+                        
+                        options.count += (itemsCount - removedClones.length);
+                        addSizeChange(myRegion);
+
+                        for (let i = (index + itemsCount); i < (options.clones as Array<EachCloneInfo>).length; ++i){
+                            let cloneInfo = (options.clones as Array<EachCloneInfo>)[i], myScope = myRegion.GetElementScope(cloneInfo.element);
+                            if (myScope){
+                                AddChanges(myRegion.GetChanges(), 'set', `${myScope.key}.$each.index`, 'index');
+                            }
+                            
+                            (cloneInfo.key as number) -= removedClones.length;
+                        }
+                    }
+                    
+                    if (change.path !== `${options.path}.${change.prop}`){
+                        return;
+                    }
+                }
+                
                 let index = ((change.prop === 'length') ? null : Number.parseInt(change.prop));
                 if (!index && index !== 0){//Not an index
                     return;
@@ -2871,7 +3009,11 @@ namespace InlineJS{
                 }
             };
 
-            let mapChangeHandler = (myRegion: Region, change: Change) => {
+            let mapChangeHandler = (myRegion: Region, change: Change, isOriginal: boolean) => {
+                if (isOriginal && change.path !== `${options.path}.${change.prop}`){
+                    return;
+                }
+                
                 let key = change.prop;
                 if (change.type === 'set' && !(key in (options.clones as Record<string, EachCloneInfo>))){//Element added
                     ++options.count;
@@ -2891,8 +3033,8 @@ namespace InlineJS{
                 }
             };
 
-            let changeHandler: (myRegion: Region, change: Change) => void, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
-            let initOptions = (target: any, count: number, handler: (myRegion: Region, change: Change) => void, createClones: () => any) => {
+            let changeHandler: (myRegion: Region, change: Change, isOriginal: boolean) => void, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
+            let initOptions = (target: any, count: number, handler: (myRegion: Region, change: Change, isOriginal: boolean) => void, createClones: () => any) => {
                 if (Region.IsObject(target) && '__InlineJS_Path__' in target){
                     options.path = target['__InlineJS_Path__'];
                 }
@@ -2991,9 +3133,7 @@ namespace InlineJS{
                 let myRegion = Region.Get(info.regionId), hasBeenInit = false;
                 changes.forEach((change) => {
                     if ('original' in change){//Bubbled change
-                        if (change.original.path === `${options.path}.${change.original.prop}`){
-                            changeHandler(myRegion, change.original);
-                        }
+                        changeHandler(myRegion, change.original, true);
                     }
                     else if (!hasBeenInit && change.type === 'set' && (change.path === options.path || options.rangeValue !== null)){//Target changed
                         let target = evaluate(myRegion);
@@ -3004,7 +3144,7 @@ namespace InlineJS{
                         hasBeenInit = init(myRegion, target);
                     }
                     else if (change.type === 'delete' && change.path === options.path){//Item deleted
-                        changeHandler(myRegion, change);
+                        changeHandler(myRegion, change, false);
                     }
                 });
 

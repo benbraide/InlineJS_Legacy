@@ -65,7 +65,7 @@
             <span>Value(alt): </span><strong x-text="item"></strong> | 
             <span>Count: </span><strong x-text="$each.count"></strong>
         </div>
-        <button x-on:click="list.push('Pushed!')">Click me</button>
+        <button x-on:click="list.length < 5 ? list.splice(1, 0, 'Pushed!') : list.splice(1, 1)">Click me</button>
     </div>
     <div x-data="{range: 9}">
         <h2>Range Loop</h2>

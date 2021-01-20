@@ -1434,7 +1434,20 @@ export var InlineJS;
             this.name_ = name_;
             this.target_ = target_;
             this.proxies_ = {};
-            var regionId = this.regionId_, parentPath = this.parentPath_, name = this.name_;
+            var regionId = this.regionId_, parentPath = this.parentPath_, name = this.name_, isArray = Array.isArray(this.target_), tempProxy = new window.Proxy(this.target_, {
+                get: function (target, prop) {
+                    if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
+                        return Reflect.get(target, prop);
+                    }
+                    return ProxyGetter(target, prop.toString(), regionId, parentPath, name);
+                },
+                set: function (target, prop, value) {
+                    if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
+                        return Reflect.set(target, prop, value);
+                    }
+                    return ProxySetter(target, prop.toString(), value, regionId, parentPath, name);
+                }
+            });
             var handler = {
                 get: function (target, prop) {
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
@@ -1442,6 +1455,40 @@ export var InlineJS;
                     }
                     if ('__InlineJS_Target__' in target) {
                         return target[prop];
+                    }
+                    if (isArray && typeof prop === 'string') {
+                        if (prop === 'unshift') {
+                            return function () {
+                                var items = [];
+                                for (var _i = 0; _i < arguments.length; _i++) {
+                                    items[_i] = arguments[_i];
+                                }
+                                var path = (parentPath ? parentPath + "." + name + ".unshift" : name + ".unshift");
+                                AddChanges(Region.Get(regionId).GetChanges(), 'set', path + "." + items.length, "" + items.length);
+                                return tempProxy['unshift'].apply(tempProxy, items);
+                            };
+                        }
+                        else if (prop === 'shift') {
+                            return function () {
+                                var path = (parentPath ? parentPath + "." + name + ".shift" : name + ".shift");
+                                AddChanges(Region.Get(regionId).GetChanges(), 'set', path + ".1", '1');
+                                return tempProxy['shift']();
+                            };
+                        }
+                        else if (prop === 'splice') {
+                            return function (start, deleteCount) {
+                                var items = [];
+                                for (var _i = 2; _i < arguments.length; _i++) {
+                                    items[_i - 2] = arguments[_i];
+                                }
+                                if (target.length <= start) {
+                                    return tempProxy['splice'].apply(tempProxy, __spreadArrays([start, deleteCount], items));
+                                }
+                                var path = (parentPath ? parentPath + "." + name + ".splice" : name + ".splice");
+                                AddChanges(Region.Get(regionId).GetChanges(), 'set', path + "." + start + "." + deleteCount + "." + items.length, start + "." + deleteCount + "." + items.length);
+                                return tempProxy['splice'].apply(tempProxy, __spreadArrays([start, deleteCount], items));
+                            };
+                        }
                     }
                     return ProxyGetter(target, prop.toString(), regionId, parentPath, name);
                 },
@@ -2205,12 +2252,18 @@ export var InlineJS;
                 });
             };
             var locals = function (myRegion, cloneInfo) {
+                var myScope = null;
                 myRegion.AddLocal(cloneInfo.element, '$each', CoreDirectiveHandlers.CreateProxy(function (prop) {
+                    var innerRegion = Region.Get(info.regionId);
                     if (prop === 'count') {
-                        Region.Get(info.regionId).GetChanges().AddGetAccess(scope.key + ".$each.count");
+                        innerRegion.GetChanges().AddGetAccess(scope.key + ".$each.count");
                         return options.count;
                     }
                     if (prop === 'index') {
+                        if (typeof cloneInfo.key === 'number') {
+                            myScope = (myScope || innerRegion.AddElement(cloneInfo.element));
+                            innerRegion.GetChanges().AddGetAccess(myScope.key + ".$each.index");
+                        }
                         return cloneInfo.key;
                     }
                     if (prop === 'value') {
@@ -2220,7 +2273,7 @@ export var InlineJS;
                         return options.items;
                     }
                     if (prop === 'parent') {
-                        return Region.Get(info.regionId).GetLocal(cloneInfo.element.parentElement, '$each', true);
+                        return innerRegion.GetLocal(cloneInfo.element.parentElement, '$each', true);
                     }
                     return null;
                 }, ['count', 'index', 'value', 'collection', 'parent']));
@@ -2232,13 +2285,28 @@ export var InlineJS;
             };
             var append = function (myRegion, key) {
                 var clone = element.cloneNode(true), animator = CoreDirectiveHandlers.GetAnimator(region, animate, clone, directive.arg.options);
-                if (key) {
+                if (typeof key === 'string') {
                     options.clones[key] = {
                         key: key,
                         element: clone,
                         animator: animator
                     };
                     CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, options.clones[key]); }, (Object.keys(options.clones).length - 1));
+                }
+                else if (typeof key === 'number') {
+                    for (var index = key; index < options.clones.length; ++index) {
+                        var cloneInfo = options.clones[index], myScope = myRegion.GetElementScope(cloneInfo.element);
+                        if (myScope) {
+                            AddChanges(myRegion.GetChanges(), 'set', myScope.key + ".$each.index", 'index');
+                        }
+                        ++cloneInfo.key;
+                    }
+                    options.clones.splice(key, 0, {
+                        key: key,
+                        element: clone,
+                        animator: animator
+                    });
+                    CoreDirectiveHandlers.InsertIfOrEach(myRegion, clone, info, function () { return locals(myRegion, options.clones[key]); }, key);
                 }
                 else { //Array
                     var index_1 = options.clones.length;
@@ -2286,7 +2354,62 @@ export var InlineJS;
                 myRegion.RemoveLocalHandler(element);
                 return result;
             };
-            var arrayChangeHandler = function (myRegion, change) {
+            var arrayChangeHandler = function (myRegion, change, isOriginal) {
+                if (isOriginal) {
+                    if (change.path === options.path + ".unshift." + change.prop) {
+                        var count = (Number.parseInt(change.prop) || 0);
+                        options.count += count;
+                        addSizeChange(myRegion);
+                        for (var index_2 = 0; index_2 < count; ++index_2) {
+                            append(myRegion, index_2);
+                        }
+                    }
+                    else if (change.path === options.path + ".shift." + change.prop) {
+                        var count_1 = (Number.parseInt(change.prop) || 0);
+                        options.count -= count_1;
+                        addSizeChange(myRegion);
+                        options.clones.splice(0, count_1).forEach(function (myInfo) {
+                            myInfo.animator(false, null, function () {
+                                info.parent.removeChild(myInfo.element);
+                                myRegion.MarkElementAsRemoved(myInfo.element);
+                            });
+                        });
+                        options.clones.forEach(function (cloneInfo) {
+                            var myScope = myRegion.GetElementScope(cloneInfo.element);
+                            if (myScope) {
+                                AddChanges(myRegion.GetChanges(), 'set', myScope.key + ".$each.index", 'index');
+                            }
+                            cloneInfo.key -= count_1;
+                        });
+                    }
+                    else if (change.path === options.path + ".splice." + change.prop) {
+                        var parts = change.prop.split('.'); //start.deleteCount.itemsCount
+                        var index_3 = (Number.parseInt(parts[0]) || 0);
+                        var itemsCount = (Number.parseInt(parts[2]) || 0);
+                        var removedClones = options.clones.splice(index_3, (Number.parseInt(parts[1]) || 0));
+                        removedClones.forEach(function (myInfo) {
+                            myInfo.animator(false, null, function () {
+                                info.parent.removeChild(myInfo.element);
+                                myRegion.MarkElementAsRemoved(myInfo.element);
+                            });
+                        });
+                        for (var i = index_3; i < (itemsCount + index_3); ++i) {
+                            append(myRegion, i);
+                        }
+                        options.count += (itemsCount - removedClones.length);
+                        addSizeChange(myRegion);
+                        for (var i = (index_3 + itemsCount); i < options.clones.length; ++i) {
+                            var cloneInfo = options.clones[i], myScope = myRegion.GetElementScope(cloneInfo.element);
+                            if (myScope) {
+                                AddChanges(myRegion.GetChanges(), 'set', myScope.key + ".$each.index", 'index');
+                            }
+                            cloneInfo.key -= removedClones.length;
+                        }
+                    }
+                    if (change.path !== options.path + "." + change.prop) {
+                        return;
+                    }
+                }
                 var index = ((change.prop === 'length') ? null : Number.parseInt(change.prop));
                 if (!index && index !== 0) { //Not an index
                     return;
@@ -2307,7 +2430,10 @@ export var InlineJS;
                     });
                 }
             };
-            var mapChangeHandler = function (myRegion, change) {
+            var mapChangeHandler = function (myRegion, change, isOriginal) {
+                if (isOriginal && change.path !== options.path + "." + change.prop) {
+                    return;
+                }
                 var key = change.prop;
                 if (change.type === 'set' && !(key in options.clones)) { //Element added
                     ++options.count;
@@ -2407,9 +2533,7 @@ export var InlineJS;
                 var myRegion = Region.Get(info.regionId), hasBeenInit = false;
                 changes.forEach(function (change) {
                     if ('original' in change) { //Bubbled change
-                        if (change.original.path === options.path + "." + change.original.prop) {
-                            changeHandler(myRegion, change.original);
-                        }
+                        changeHandler(myRegion, change.original, true);
                     }
                     else if (!hasBeenInit && change.type === 'set' && (change.path === options.path || options.rangeValue !== null)) { //Target changed
                         var target = evaluate(myRegion);
@@ -2419,7 +2543,7 @@ export var InlineJS;
                         hasBeenInit = init(myRegion, target);
                     }
                     else if (change.type === 'delete' && change.path === options.path) { //Item deleted
-                        changeHandler(myRegion, change);
+                        changeHandler(myRegion, change, false);
                     }
                 });
                 return (!!options.path || options.rangeValue !== null);
