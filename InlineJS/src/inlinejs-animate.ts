@@ -1069,7 +1069,7 @@ namespace InlineJS{
             });
 
             let elementScope = region.AddElement(element, true);
-            let scope = (elementScope ? ExtendedDirectiveHandlers.AddScope('busyView', elementScope, []) : null)
+            let scope = (elementScope ? ExtendedDirectiveHandlers.AddScope('busyView', elementScope, []) : null);
 
             if (scope){
                 elementScope.locals['$busyView'] = CoreDirectiveHandlers.CreateProxy((prop) =>{

@@ -3526,7 +3526,7 @@ namespace InlineJS{
         public static Attach_(node?: HTMLElement){
             (Bootstrap.anchors_ || [`data-${Region.directivePrfix}-data`, `${Region.directivePrfix}-data`]).forEach((anchor) => {//Traverse anchors
                 (node || document).querySelectorAll(`[${anchor}]`).forEach((element) => {//Traverse elements
-                    if (!element.hasAttribute(anchor)){//Probably contained inside another region
+                    if (!element.hasAttribute(anchor) || !document.contains(element)){//Probably contained inside another region
                         return;
                     }
 

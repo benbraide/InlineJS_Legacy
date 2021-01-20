@@ -2881,7 +2881,7 @@ var InlineJS;
         Bootstrap.Attach_ = function (node) {
             (Bootstrap.anchors_ || ["data-" + Region.directivePrfix + "-data", Region.directivePrfix + "-data"]).forEach(function (anchor) {
                 (node || document).querySelectorAll("[" + anchor + "]").forEach(function (element) {
-                    if (!element.hasAttribute(anchor)) { //Probably contained inside another region
+                    if (!element.hasAttribute(anchor) || !document.contains(element)) { //Probably contained inside another region
                         return;
                     }
                     var regionId = (Bootstrap.lastRegionId_ = (Bootstrap.lastRegionId_ || 0)), regionSubId;
