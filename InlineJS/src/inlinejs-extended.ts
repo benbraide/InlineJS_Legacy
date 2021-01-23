@@ -2882,8 +2882,30 @@ namespace InlineJS{
                     return;
                 }
                 
-                let body: any = null;
-                if (options.files){
+                let body: FormData = null, initInfo: RequestInit = {
+                    method: (info.method || 'POST'),
+                    credentials: 'same-origin',
+                };
+
+                let action = info.action;
+                if (initInfo.method.toUpperCase() !== 'POST'){
+                    let hasQuest = action.includes('?'), query = '';
+                    for (let i = 0; i < element.elements.length; ++i){
+                        let key = element.elements[i].getAttribute('name');
+                        if (key && 'value' in element.elements[i]){
+                            let pair = `${encodeURIComponent(key)}=${encodeURIComponent((element.elements[i] as HTMLInputElement).value.toString())}`;
+                            if (query){
+                                query += `&${pair}`;
+                            }
+                            else{
+                                query = (hasQuest ? pair : `?${pair}`);
+                            }
+                        }
+                    }
+
+                    action += query;
+                }
+                else if (options.files){
                     body = new FormData();
                     for (let i = 0; i < element.elements.length; ++i){
                         let key = element.elements[i].getAttribute('name');
@@ -2909,12 +2931,12 @@ namespace InlineJS{
                 else{//No files embedded
                     body = new FormData(element);
                 }
+
+                if (body){
+                    initInfo.body = body;
+                }
                 
-                fetch(info.action, {
-                    method: (info.method || 'POST'),
-                    credentials: 'same-origin',
-                    body: body,
-                }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
+                fetch(action, initInfo).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
                     try{
                         if (info.errorBag && 'failed' in data){
                             for (let key in info.errorBag){
@@ -3423,14 +3445,24 @@ namespace InlineJS{
             });
         }
 
-        public static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string){
-            region.GetChanges().Add({
+        public static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string, target?: string){
+            let change: Change = {
                 regionId: region.GetId(),
                 type: 'set',
                 path: (prefix ? `${((typeof prefix === 'string') ? prefix : prefix.path)}.${prop}` : prop),
                 prop: prop,
                 origin: region.GetChanges().GetOrigin()
-            });
+            };
+
+            if (target){
+                region.GetChanges().Add({
+                    original: change,
+                    path: target,
+                });
+            }
+            else{
+                region.GetChanges().Add(change);
+            }
         }
 
         public static Report(regionId: string, info: any){

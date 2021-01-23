@@ -2335,8 +2335,28 @@ var InlineJS;
                     }, info);
                     return;
                 }
-                var body = null;
-                if (options.files) {
+                var body = null, initInfo = {
+                    method: (info.method || 'POST'),
+                    credentials: 'same-origin'
+                };
+                var action = info.action;
+                if (initInfo.method.toUpperCase() !== 'POST') {
+                    var hasQuest = action.includes('?'), query = '';
+                    for (var i = 0; i < element.elements.length; ++i) {
+                        var key = element.elements[i].getAttribute('name');
+                        if (key && 'value' in element.elements[i]) {
+                            var pair = encodeURIComponent(key) + "=" + encodeURIComponent(element.elements[i].value.toString());
+                            if (query) {
+                                query += "&" + pair;
+                            }
+                            else {
+                                query = (hasQuest ? pair : "?" + pair);
+                            }
+                        }
+                    }
+                    action += query;
+                }
+                else if (options.files) {
                     body = new FormData();
                     for (var i = 0; i < element.elements.length; ++i) {
                         var key = element.elements[i].getAttribute('name');
@@ -2361,11 +2381,10 @@ var InlineJS;
                 else { //No files embedded
                     body = new FormData(element);
                 }
-                fetch(info.action, {
-                    method: (info.method || 'POST'),
-                    credentials: 'same-origin',
-                    body: body
-                }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
+                if (body) {
+                    initInfo.body = body;
+                }
+                fetch(action, initInfo).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
                     try {
                         if (info.errorBag && 'failed' in data) {
                             for (var key in info.errorBag) {
@@ -2800,14 +2819,23 @@ var InlineJS;
                 statusText: response.statusText
             });
         };
-        ExtendedDirectiveHandlers.Alert = function (region, prop, prefix) {
-            region.GetChanges().Add({
+        ExtendedDirectiveHandlers.Alert = function (region, prop, prefix, target) {
+            var change = {
                 regionId: region.GetId(),
                 type: 'set',
                 path: (prefix ? ((typeof prefix === 'string') ? prefix : prefix.path) + "." + prop : prop),
                 prop: prop,
                 origin: region.GetChanges().GetOrigin()
-            });
+            };
+            if (target) {
+                region.GetChanges().Add({
+                    original: change,
+                    path: target
+                });
+            }
+            else {
+                region.GetChanges().Add(change);
+            }
         };
         ExtendedDirectiveHandlers.Report = function (regionId, info) {
             var reporter = InlineJS.Region.GetGlobalValue(regionId, '$reporter');

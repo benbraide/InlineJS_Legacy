@@ -2011,6 +2011,7 @@ namespace InlineJS{
     export interface EachOptions{
         clones: Array<EachCloneInfo> | Record<string, EachCloneInfo>;
         items: Array<any> | Record<string, any> | number;
+        itemsTarget: Array<any> | Record<string, any> | number;
         count: number;
         path: string;
         rangeValue: number;
@@ -2768,6 +2769,7 @@ namespace InlineJS{
             let options: EachOptions = {
                 clones: null,
                 items: null,
+                itemsTarget: null,
                 count: 0,
                 path: null,
                 rangeValue: null,
@@ -3040,6 +3042,7 @@ namespace InlineJS{
                 }
 
                 options.items = target;
+                options.itemsTarget = getTarget(target);
                 options.count = count;
                 options.clones = createClones();
 
@@ -3097,14 +3100,14 @@ namespace InlineJS{
                     }
                 }
                 else if (Array.isArray(target)){
-                    let items = (('__InlineJS_Target__' in target) ? (target['__InlineJS_Target__'] as Array<any>) : target);
+                    let items = (getTarget(target) as Array<any>);
 
                     options.rangeValue = null;
                     initOptions(target, items.length, arrayChangeHandler, () => new Array<EachCloneInfo>());
                     items.forEach(item => append(myRegion));
                 }
                 else if (Region.IsObject(target)){
-                    let keys = Object.keys(('__InlineJS_Target__' in target) ? (target['__InlineJS_Target__'] as Record<string, any>) : target);
+                    let keys = Object.keys(getTarget(target) as Record<string, any>);
 
                     options.rangeValue = null;
                     initOptions(target, keys.length, mapChangeHandler, () => ({}));
@@ -3112,6 +3115,10 @@ namespace InlineJS{
                 }
 
                 return (!!options.path || options.rangeValue !== null);
+            };
+
+            let getTarget = (target: any) => {
+                return (((Array.isArray(target) || Region.IsObject(target)) && ('__InlineJS_Target__' in target)) ? target['__InlineJS_Target__'] : target);
             };
             
             region.GetState().TrapGetAccess(() => {
@@ -3141,7 +3148,9 @@ namespace InlineJS{
                             return false;
                         }
                         
-                        hasBeenInit = init(myRegion, target);
+                        if (getTarget(target) !== options.itemsTarget){
+                            hasBeenInit = init(myRegion, target);
+                        }
                     }
                     else if (change.type === 'delete' && change.path === options.path){//Item deleted
                         changeHandler(myRegion, change, false);
@@ -3196,7 +3205,8 @@ namespace InlineJS{
             Processor.All(region, element);
         }
 
-        public static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean), setter?: (target: object, prop: string | number | symbol, value: any) => boolean){
+        public static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean),
+            setter?: (target: object, prop: string | number | symbol, value: any) => boolean, target?: any){
             let handler = {
                 get(target: object, prop: string | number | symbol): any{
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')){
@@ -3224,7 +3234,7 @@ namespace InlineJS{
                 }
             };
 
-            return new window.Proxy({}, handler);
+            return new window.Proxy((target || {}), handler);
         }
         
         public static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{

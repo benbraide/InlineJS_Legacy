@@ -2355,60 +2355,61 @@ export var InlineJS;
                 return result;
             };
             var arrayChangeHandler = function (myRegion, change, isOriginal) {
-                if (isOriginal) {
-                    if (change.path === options.path + ".unshift." + change.prop) {
-                        var count = (Number.parseInt(change.prop) || 0);
-                        options.count += count;
-                        addSizeChange(myRegion);
-                        for (var index_2 = 0; index_2 < count; ++index_2) {
-                            append(myRegion, index_2);
-                        }
+                if (change.path === options.path + ".unshift." + change.prop) {
+                    var count = (Number.parseInt(change.prop) || 0);
+                    options.count += count;
+                    addSizeChange(myRegion);
+                    for (var index_2 = 0; index_2 < count; ++index_2) {
+                        append(myRegion, index_2);
                     }
-                    else if (change.path === options.path + ".shift." + change.prop) {
-                        var count_1 = (Number.parseInt(change.prop) || 0);
-                        options.count -= count_1;
-                        addSizeChange(myRegion);
-                        options.clones.splice(0, count_1).forEach(function (myInfo) {
-                            myInfo.animator(false, null, function () {
-                                info.parent.removeChild(myInfo.element);
-                                myRegion.MarkElementAsRemoved(myInfo.element);
-                            });
+                    return;
+                }
+                if (change.path === options.path + ".shift." + change.prop) {
+                    var count_1 = (Number.parseInt(change.prop) || 0);
+                    options.count -= count_1;
+                    addSizeChange(myRegion);
+                    options.clones.splice(0, count_1).forEach(function (myInfo) {
+                        myInfo.animator(false, null, function () {
+                            info.parent.removeChild(myInfo.element);
+                            myRegion.MarkElementAsRemoved(myInfo.element);
                         });
-                        options.clones.forEach(function (cloneInfo) {
-                            var myScope = myRegion.GetElementScope(cloneInfo.element);
-                            if (myScope) {
-                                AddChanges(myRegion.GetChanges(), 'set', myScope.key + ".$each.index", 'index');
-                            }
-                            cloneInfo.key -= count_1;
-                        });
-                    }
-                    else if (change.path === options.path + ".splice." + change.prop) {
-                        var parts = change.prop.split('.'); //start.deleteCount.itemsCount
-                        var index_3 = (Number.parseInt(parts[0]) || 0);
-                        var itemsCount = (Number.parseInt(parts[2]) || 0);
-                        var removedClones = options.clones.splice(index_3, (Number.parseInt(parts[1]) || 0));
-                        removedClones.forEach(function (myInfo) {
-                            myInfo.animator(false, null, function () {
-                                info.parent.removeChild(myInfo.element);
-                                myRegion.MarkElementAsRemoved(myInfo.element);
-                            });
-                        });
-                        for (var i = index_3; i < (itemsCount + index_3); ++i) {
-                            append(myRegion, i);
+                    });
+                    options.clones.forEach(function (cloneInfo) {
+                        var myScope = myRegion.GetElementScope(cloneInfo.element);
+                        if (myScope) {
+                            AddChanges(myRegion.GetChanges(), 'set', myScope.key + ".$each.index", 'index');
                         }
-                        options.count += (itemsCount - removedClones.length);
-                        addSizeChange(myRegion);
-                        for (var i = (index_3 + itemsCount); i < options.clones.length; ++i) {
-                            var cloneInfo = options.clones[i], myScope = myRegion.GetElementScope(cloneInfo.element);
-                            if (myScope) {
-                                AddChanges(myRegion.GetChanges(), 'set', myScope.key + ".$each.index", 'index');
-                            }
-                            cloneInfo.key -= removedClones.length;
+                        cloneInfo.key -= count_1;
+                    });
+                    return;
+                }
+                if (change.path === options.path + ".splice." + change.prop) {
+                    var parts = change.prop.split('.'); //start.deleteCount.itemsCount
+                    var index_3 = (Number.parseInt(parts[0]) || 0);
+                    var itemsCount = (Number.parseInt(parts[2]) || 0);
+                    var removedClones = options.clones.splice(index_3, (Number.parseInt(parts[1]) || 0));
+                    removedClones.forEach(function (myInfo) {
+                        myInfo.animator(false, null, function () {
+                            info.parent.removeChild(myInfo.element);
+                            myRegion.MarkElementAsRemoved(myInfo.element);
+                        });
+                    });
+                    for (var i = index_3; i < (itemsCount + index_3); ++i) {
+                        append(myRegion, i);
+                    }
+                    options.count += (itemsCount - removedClones.length);
+                    addSizeChange(myRegion);
+                    for (var i = (index_3 + itemsCount); i < options.clones.length; ++i) {
+                        var cloneInfo = options.clones[i], myScope = myRegion.GetElementScope(cloneInfo.element);
+                        if (myScope) {
+                            AddChanges(myRegion.GetChanges(), 'set', myScope.key + ".$each.index", 'index');
                         }
+                        cloneInfo.key -= removedClones.length;
                     }
-                    if (change.path !== options.path + "." + change.prop) {
-                        return;
-                    }
+                    return;
+                }
+                if (isOriginal && change.path !== options.path + "." + change.prop) {
+                    return;
                 }
                 var index = ((change.prop === 'length') ? null : Number.parseInt(change.prop));
                 if (!index && index !== 0) { //Not an index
@@ -2540,7 +2541,9 @@ export var InlineJS;
                         if (!target && target !== 0) {
                             return false;
                         }
-                        hasBeenInit = init(myRegion, target);
+                        if (target !== options.items) {
+                            hasBeenInit = init(myRegion, target);
+                        }
                     }
                     else if (change.type === 'delete' && change.path === options.path) { //Item deleted
                         changeHandler(myRegion, change, false);

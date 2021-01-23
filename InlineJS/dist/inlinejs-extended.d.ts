@@ -134,7 +134,7 @@ declare namespace InlineJS {
         static FetchLoad(element: HTMLElement, url: string, append: boolean, onLoad: (unloaded?: boolean) => void, onError: (err: any) => void, onProgress?: (e: ProgressEvent<XMLHttpRequestEventTarget>) => void): void;
         static HandleJsonResponse(response: Response): Promise<any>;
         static HandleTextResponse(response: Response): Promise<string>;
-        static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string): void;
+        static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string, target?: string): void;
         static Report(regionId: string, info: any): boolean;
         static ReportServerError(regionId: string, err: any): boolean;
         static AddScope(prefix: string, elementScope: ElementScope, callbacks: Array<string>): ExtendedDirectiveHandlerScope;

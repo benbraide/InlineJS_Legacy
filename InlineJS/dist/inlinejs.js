@@ -2231,6 +2231,7 @@ var InlineJS;
             var options = {
                 clones: null,
                 items: null,
+                itemsTarget: null,
                 count: 0,
                 path: null,
                 rangeValue: null
@@ -2458,6 +2459,7 @@ var InlineJS;
                     options.path = target['__InlineJS_Path__'];
                 }
                 options.items = target;
+                options.itemsTarget = getTarget(target);
                 options.count = count;
                 options.clones = createClones();
                 changeHandler = handler;
@@ -2505,18 +2507,21 @@ var InlineJS;
                     }
                 }
                 else if (Array.isArray(target)) {
-                    var items = (('__InlineJS_Target__' in target) ? target['__InlineJS_Target__'] : target);
+                    var items = getTarget(target);
                     options.rangeValue = null;
                     initOptions(target, items.length, arrayChangeHandler, function () { return new Array(); });
                     items.forEach(function (item) { return append(myRegion); });
                 }
                 else if (Region.IsObject(target)) {
-                    var keys = Object.keys(('__InlineJS_Target__' in target) ? target['__InlineJS_Target__'] : target);
+                    var keys = Object.keys(getTarget(target));
                     options.rangeValue = null;
                     initOptions(target, keys.length, mapChangeHandler, function () { return ({}); });
                     keys.forEach(function (key) { return append(myRegion, key); });
                 }
                 return (!!options.path || options.rangeValue !== null);
+            };
+            var getTarget = function (target) {
+                return (((Array.isArray(target) || Region.IsObject(target)) && ('__InlineJS_Target__' in target)) ? target['__InlineJS_Target__'] : target);
             };
             region.GetState().TrapGetAccess(function () {
                 if (element.parentElement) {
@@ -2541,7 +2546,9 @@ var InlineJS;
                         if (!target && target !== 0) {
                             return false;
                         }
-                        hasBeenInit = init(myRegion, target);
+                        if (getTarget(target) !== options.itemsTarget) {
+                            hasBeenInit = init(myRegion, target);
+                        }
                     }
                     else if (change.type === 'delete' && change.path === options.path) { //Item deleted
                         changeHandler(myRegion, change, false);
@@ -2587,7 +2594,7 @@ var InlineJS;
             }
             Processor.All(region, element);
         };
-        CoreDirectiveHandlers.CreateProxy = function (getter, contains, setter) {
+        CoreDirectiveHandlers.CreateProxy = function (getter, contains, setter, target) {
             var handler = {
                 get: function (target, prop) {
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
@@ -2611,7 +2618,7 @@ var InlineJS;
                     return ((typeof contains === 'function') ? contains(prop.toString()) : (contains.indexOf(prop.toString()) != -1));
                 }
             };
-            return new window.Proxy({}, handler);
+            return new window.Proxy((target || {}), handler);
         };
         CoreDirectiveHandlers.Evaluate = function (region, element, expression, useWindow) {
             if (useWindow === void 0) { useWindow = false; }

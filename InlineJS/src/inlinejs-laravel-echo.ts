@@ -83,6 +83,286 @@ namespace InlineJS{
             
             return DirectiveHandlerReturn.Handled;
         }
+
+        public static Notifications(region: Region, element: HTMLElement, directive: Directive){
+            let regionId = region.GetId();
+            if (Region.GetGlobal(regionId, '$notifications')){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let echo = Region.GetGlobalValue(regionId, '$echo');
+            if (!echo){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let channelCreator = Region.GetGlobalValue(regionId, '$echoNotificationChannel');
+            if (!channelCreator){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value), idOrName: number | string = null, initItems: Array<any> = null;
+            if (Array.isArray(data)){
+                initItems = data;
+            }
+            else if (Region.IsObject(data)){
+                if ('name' in data){
+                    idOrName = (data.name as string);
+                }
+                else if ('id' in data){
+                    idOrName = (data.id as number);
+                }
+
+                if ('items' in data){
+                    initItems = (data.items as Array<any>);
+                }
+            }
+            else if (typeof data === 'string' || typeof data === 'number'){
+                idOrName = data;
+            }
+
+            if (!idOrName){
+                let auth = Region.GetGlobalValue(null, '$auth');
+                if (!auth){
+                    return DirectiveHandlerReturn.Nil;
+                }
+
+                idOrName = auth.getField('id');
+                if (!idOrName){
+                    return DirectiveHandlerReturn.Handled;
+                }
+            }
+
+            let status: boolean = null, unreadCount = 0, hasNew = false, targets: Record<string, (e: any) => boolean> = {}, actionHandlers: Record<string, (e: any) => boolean> = {};
+            let scope = ExtendedDirectiveHandlers.AddScope('notifications', region.AddElement(element, true), []), items = new Array<any>(), connected: boolean = null;
+            
+            (initItems || []).forEach((item) => {
+                if (typeof item.data === 'string'){
+                    item.data = JSON.parse(item.data);
+                }
+                
+                if (item.id || item.id === 0){
+                    item.data.id = item.id;
+                }
+
+                items.push(item.data);
+                if (!item.data.read){
+                    ++unreadCount;
+                }
+            });
+
+            let listen = () => {
+                let channel = channelCreator(idOrName);
+                if (!channel){
+                    return;
+                }
+
+                channel.status((myStatus: boolean) => {
+                    if (myStatus !== status){
+                        status = myStatus;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'status', scope);
+                    }
+                });
+
+                channel.listen((e: any) => {
+                    if (!Region.IsObject(e)){
+                        return;
+                    }
+
+                    if ('target' in e && e.target in targets && targets[e.target](e)){
+                        return;
+                    }
+
+                    if (!('action' in e)){
+                        return;
+                    }
+
+                    if (e.action in actionHandlers && actionHandlers[e.action](e)){
+                        return;
+                    }
+
+                    if (e.action === 'add'){
+                        if (e.id || e.id === 0){
+                            e.data.id = e.id;
+                        }
+
+                        if (!e.data.read){
+                            ++unreadCount;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                        }
+
+                        items.unshift(e.data);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), '1', `${scope.path}.items.unshift`, `${scope.path}.items`);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+                        
+                        hasNew = true;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'hasNew', scope);
+
+                        InlineJS.Region.GetGlobalValue(regionId, '$nextTick')(() => {
+                            hasNew = false;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'hasNew', scope);
+                        });
+                    }
+                    else if (e.action === 'remove'){
+                        let index = items.findIndex(item => (item.id === e.data.id));
+                        if (items.length <= index){
+                            return;
+                        }
+
+                        if (!items[index].read){
+                            --unreadCount;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                        }
+
+                        items.splice(index, 1);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `${index}.1.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+                    }
+                    else if (e.action === 'clear'){
+                        items = [];
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+
+                        if (unreadCount != 0){
+                            unreadCount = 0;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                        }
+                    }
+                    else if (e.action === 'pin'){
+                        let item = items.find(item => (item.id === e.data.id));
+                        if (item && (!! item.pinned) != (!! e.data.pinned)){
+                            item.pinned = !! e.data.pinned;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'pinned', `${scope.path}.items.${e.data.id}`);
+                        }
+                    }
+                    else if (e.action === 'markAsRead'){
+                        let item = items.find(item => (item.id === e.data.id));
+                        if (item && item.read != (e.data.read !== false)){
+                            item.read = (e.data.read !== false);
+                            unreadCount += ((e.data.read !== false) ? -1 : 1);
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                        }
+                    }
+                });
+            };
+            
+            (echo.status as (handler: (status: boolean) => void) => void)((outerStatus) => {
+                if (outerStatus !== connected){
+                    connected = outerStatus;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'connected', scope);
+                }
+
+                if (outerStatus){
+                    listen();
+                }
+            });
+
+            let itemsProxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'length'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.items.${prop}`);
+                    return items.length;
+                }
+
+                if (prop === '__InlineJS_Target__'){
+                    return items;
+                }
+
+                if (prop === '__InlineJS_Path__'){
+                    return `${scope.path}.items`;
+                }
+
+                return items[prop];
+            }, ['__InlineJS_Target__', '__InlineJS_Path__'], null, []);
+
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'items'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return itemsProxy;
+                }
+
+                if (prop === 'unreadCount'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return unreadCount;
+                }
+
+                if (prop === 'hasNew'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return hasNew;
+                }
+
+                if (prop === 'status'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return status;
+                }
+
+                if (prop === 'connected'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return connected;
+                }
+
+                if (prop === 'isPinned'){
+                    return (id: string) => {
+                        let item = items.find(item => (item.id === id));
+                        if (item){
+                            Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.items.${id}.pinned`);
+                            return !! item.pinned;
+                        }
+
+                        return false;
+                    };
+                }
+
+                if (prop === 'addTargetHandler'){
+                    return (target: string, handler: (e: any) => boolean) => {
+                        targets[target] = handler;
+                    }
+                }
+
+                if (prop === 'removeTargetHandler'){
+                    return (target: string, handler?: (e: any) => boolean) => {
+                        if (!handler || targets[target] === handler){
+                            delete targets[target];
+                        }
+                    }
+                }
+
+                if (prop === 'addActiontHandler'){
+                    return (action: string, handler: (e: any) => boolean) => {
+                        actionHandlers[action] = handler;
+                    }
+                }
+
+                if (prop === 'removeActionHandler'){
+                    return (action: string, handler?: (e: any) => boolean) => {
+                        if (!handler || actionHandlers[action] === handler){
+                            delete actionHandlers[action];
+                        }
+                    }
+                }
+
+                if (prop === 'connect'){
+                    return () => {
+                        if (connected === false){
+                            connected = null;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'connected', scope);
+                            echo.connect();
+                        }
+                    }
+                }
+
+                if (prop === 'listen'){
+                    return () => {
+                        if (connected && status === false){
+                            status = null;
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'status', scope);
+                            listen();
+                        }
+                    }
+                }
+            }, ['items', 'unreadCount', 'hasNew', 'status', 'connected']);
+
+            Region.AddGlobal('$notifications', () => proxy);
+            
+            return DirectiveHandlerReturn.Handled;
+        }
         
         public static AddAll(){
             try{
@@ -122,7 +402,7 @@ namespace InlineJS{
                     if (prop === 'connect'){
                         return () => {
                             try{
-                                LaravelEchoDirectiveHandlers.echo.connector.pusher.connection.connect()
+                                LaravelEchoDirectiveHandlers.echo.connector.pusher.connection.connect();
                             }
                             catch (err){}
                         };
@@ -231,6 +511,7 @@ namespace InlineJS{
             
             DirectiveHandlerManager.AddHandler('echoTypingBind', LaravelEchoDirectiveHandlers.TypingBind);
             DirectiveHandlerManager.AddHandler('echoOn', LaravelEchoDirectiveHandlers.On);
+            DirectiveHandlerManager.AddHandler('notifications', LaravelEchoDirectiveHandlers.Notifications);
         }
     }
 
