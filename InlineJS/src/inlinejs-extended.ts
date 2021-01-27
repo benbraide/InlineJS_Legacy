@@ -709,6 +709,119 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static JSONLoad(region: Region, element: HTMLElement, directive: Directive){
+            let regionId = region.GetId(), info = {
+                url: '',
+                active: false,
+                data: null,
+                reload: () => load('::reload::'),
+                unload: () => load('::unload::'),
+            };
+
+            let queuedUrl: string = null;
+            let load = (url: string) => {
+                if (!url || !(url = url.trim())){
+                    return;
+                }
+                
+                if (info.active){
+                    queuedUrl = url;
+                    return;
+                }
+                
+                if (url === '::unload::'){
+                    if (info.data !== null){
+                        info.data = null;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'data', scope);
+                    }
+                    return;
+                }
+                
+                info.active = true;
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+
+                fetch(url, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                }).then((response) => {
+                    try{
+                        return response.json();
+                    }
+                    catch (err){}
+                    return null;
+                }).then((data) => {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                    
+                    if (!Region.IsEqual(data, info.data)){
+                        info.data = data;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'data', scope);
+                    }
+
+                    Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, true)));
+                    element.dispatchEvent(new CustomEvent(`json.load`, {
+                        detail: { data: data },
+                    }));
+
+                    if (queuedUrl){
+                        load(queuedUrl);
+                        queuedUrl = null;
+                    }
+                }).catch((err) => {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                    
+                    if (info.data !== null){
+                        info.data = null;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'data', scope);
+                    }
+
+                    if (queuedUrl){
+                        load(queuedUrl);
+                        queuedUrl = null;
+                    }
+                });
+            };
+            
+            let elementScope = region.AddElement(element, true);
+            let scope = ExtendedDirectiveHandlers.AddScope('json', elementScope, ['onLoad']);
+
+            region.GetState().TrapGetAccess(() => {
+                let url = CoreDirectiveHandlers.Evaluate(region, element, directive.value), reload = false;
+                if (typeof url !== 'string'){
+                    return;
+                }
+                
+                if (url.startsWith('::reload::')){
+                    reload = true;
+                    url = (url.substr(10) || info.url);
+                }
+
+                if (reload || url !== info.url){
+                    load(url);
+                    info.url = url;
+                }
+                else if (url !== '::unload::'){
+                    element.dispatchEvent(new CustomEvent(`json.reload`));
+                }
+            }, true, element);
+
+            elementScope.locals['$json'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop in info){
+                    if (prop === 'active' || prop === 'data'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    }
+                    return info[prop];
+                }
+
+                if (prop in scope.callbacks){
+                    return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
+                }
+            }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static XHRLoad(region: Region, element: HTMLElement, directive: Directive){
             let append = (state: boolean, isOnce = false) => {
                 info.isAppend = state;
@@ -717,21 +830,37 @@ namespace InlineJS{
             
             let regionId = region.GetId(), info = {
                 url: '',
-                isAppend: (directive.arg.options.indexOf('append') != -1),
-                isOnce: (directive.arg.options.indexOf('once') != -1),
+                isAppend: directive.arg.options.includes('append'),
+                isOnce: directive.arg.options.includes('once'),
                 isLoaded: false,
                 active: false,
                 progress: 0,
                 append: append,
                 reload: () => load('::reload::'),
-                unload: () => load('::unload::')
+                unload: () => load('::unload::'),
             };
 
+            let queuedUrl: string = null;
             let load = (url: string) => {
+                if (!url || !(url = url.trim())){
+                    return;
+                }
+
+                if (info.active){
+                    queuedUrl = url;
+                    return;
+                }
+                
+                let isAppend = info.isAppend;
+                if (info.isOnce){
+                    info.isAppend = !info.isAppend;
+                    info.isOnce = false;
+                }
+                
                 info.active = true;
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
                 
-                ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), info.isAppend, () => {
+                ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), isAppend, () => {
                     info.active = false;
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
                     
@@ -744,10 +873,10 @@ namespace InlineJS{
                     
                     Object.keys(scope.callbacks).forEach(key => (scope.callbacks[key] as Array<(value?: any) => boolean>).forEach(callback => CoreDirectiveHandlers.Call(regionId, callback, true)));
                     element.dispatchEvent(new CustomEvent(`xhr.load`));
-                    
-                    if (info.isOnce){
-                        info.isAppend = !info.isAppend;
-                        info.isOnce = false;
+
+                    if (queuedUrl){
+                        load(queuedUrl);
+                        queuedUrl = null;
                     }
                 }, (err) => {
                     info.active = false;
@@ -756,6 +885,11 @@ namespace InlineJS{
                     element.dispatchEvent(new CustomEvent(`xhr.error`, {
                         detail: { error: err },
                     }));
+
+                    if (queuedUrl){
+                        load(queuedUrl);
+                        queuedUrl = null;
+                    }
                 }, (e) => {
                     if (e.lengthComputable){
                         let progress = ((e.loaded / e.total) * 100);
@@ -3507,6 +3641,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
             
+            DirectiveHandlerManager.AddHandler('jsonLoad', ExtendedDirectiveHandlers.JSONLoad);
             DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
             DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
 

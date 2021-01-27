@@ -510,6 +510,101 @@ var InlineJS;
             assign();
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.JSONLoad = function (region, element, directive) {
+            var regionId = region.GetId(), info = {
+                url: '',
+                active: false,
+                data: null,
+                reload: function () { return load('::reload::'); },
+                unload: function () { return load('::unload::'); }
+            };
+            var queuedUrl = null;
+            var load = function (url) {
+                if (!url || !(url = url.trim())) {
+                    return;
+                }
+                if (info.active) {
+                    queuedUrl = url;
+                    return;
+                }
+                if (url === '::unload::') {
+                    if (info.data !== null) {
+                        info.data = null;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'data', scope);
+                    }
+                    return;
+                }
+                info.active = true;
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                fetch(url, {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                }).then(function (response) {
+                    try {
+                        return response.json();
+                    }
+                    catch (err) { }
+                    return null;
+                }).then(function (data) {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                    if (!InlineJS.Region.IsEqual(data, info.data)) {
+                        info.data = data;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'data', scope);
+                    }
+                    Object.keys(scope.callbacks).forEach(function (key) { return scope.callbacks[key].forEach(function (callback) { return InlineJS.CoreDirectiveHandlers.Call(regionId, callback, true); }); });
+                    element.dispatchEvent(new CustomEvent("json.load", {
+                        detail: { data: data }
+                    }));
+                    if (queuedUrl) {
+                        load(queuedUrl);
+                        queuedUrl = null;
+                    }
+                })["catch"](function (err) {
+                    info.active = false;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                    if (info.data !== null) {
+                        info.data = null;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'data', scope);
+                    }
+                    if (queuedUrl) {
+                        load(queuedUrl);
+                        queuedUrl = null;
+                    }
+                });
+            };
+            var elementScope = region.AddElement(element, true);
+            var scope = ExtendedDirectiveHandlers.AddScope('json', elementScope, ['onLoad']);
+            region.GetState().TrapGetAccess(function () {
+                var url = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), reload = false;
+                if (typeof url !== 'string') {
+                    return;
+                }
+                if (url.startsWith('::reload::')) {
+                    reload = true;
+                    url = (url.substr(10) || info.url);
+                }
+                if (reload || url !== info.url) {
+                    load(url);
+                    info.url = url;
+                }
+                else if (url !== '::unload::') {
+                    element.dispatchEvent(new CustomEvent("json.reload"));
+                }
+            }, true, element);
+            elementScope.locals['$json'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop in info) {
+                    if (prop === 'active' || prop === 'data') {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    }
+                    return info[prop];
+                }
+                if (prop in scope.callbacks) {
+                    return function (callback) { return scope.callbacks[prop].push(callback); };
+                }
+            }, __spreadArrays(Object.keys(info), Object.keys(scope.callbacks)));
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.XHRLoad = function (region, element, directive) {
             var append = function (state, isOnce) {
                 if (isOnce === void 0) { isOnce = false; }
@@ -518,8 +613,8 @@ var InlineJS;
             };
             var regionId = region.GetId(), info = {
                 url: '',
-                isAppend: (directive.arg.options.indexOf('append') != -1),
-                isOnce: (directive.arg.options.indexOf('once') != -1),
+                isAppend: directive.arg.options.includes('append'),
+                isOnce: directive.arg.options.includes('once'),
                 isLoaded: false,
                 active: false,
                 progress: 0,
@@ -527,10 +622,23 @@ var InlineJS;
                 reload: function () { return load('::reload::'); },
                 unload: function () { return load('::unload::'); }
             };
+            var queuedUrl = null;
             var load = function (url) {
+                if (!url || !(url = url.trim())) {
+                    return;
+                }
+                if (info.active) {
+                    queuedUrl = url;
+                    return;
+                }
+                var isAppend = info.isAppend;
+                if (info.isOnce) {
+                    info.isAppend = !info.isAppend;
+                    info.isOnce = false;
+                }
                 info.active = true;
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
-                ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), info.isAppend, function () {
+                ExtendedDirectiveHandlers.FetchLoad(element, ((url === '::reload::') ? info.url : url), isAppend, function () {
                     info.active = false;
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                     if (url === '::unload::') {
@@ -540,9 +648,9 @@ var InlineJS;
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'isLoaded', scope);
                     Object.keys(scope.callbacks).forEach(function (key) { return scope.callbacks[key].forEach(function (callback) { return InlineJS.CoreDirectiveHandlers.Call(regionId, callback, true); }); });
                     element.dispatchEvent(new CustomEvent("xhr.load"));
-                    if (info.isOnce) {
-                        info.isAppend = !info.isAppend;
-                        info.isOnce = false;
+                    if (queuedUrl) {
+                        load(queuedUrl);
+                        queuedUrl = null;
                     }
                 }, function (err) {
                     info.active = false;
@@ -550,6 +658,10 @@ var InlineJS;
                     element.dispatchEvent(new CustomEvent("xhr.error", {
                         detail: { error: err }
                     }));
+                    if (queuedUrl) {
+                        load(queuedUrl);
+                        queuedUrl = null;
+                    }
                 }, function (e) {
                     if (e.lengthComputable) {
                         var progress = ((e.loaded / e.total) * 100);
@@ -2871,6 +2983,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('input', ExtendedDirectiveHandlers.Input);
             InlineJS.DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             InlineJS.DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
+            InlineJS.DirectiveHandlerManager.AddHandler('jsonLoad', ExtendedDirectiveHandlers.JSONLoad);
             InlineJS.DirectiveHandlerManager.AddHandler('xhrLoad', ExtendedDirectiveHandlers.XHRLoad);
             InlineJS.DirectiveHandlerManager.AddHandler('lazyLoad', ExtendedDirectiveHandlers.LazyLoad);
             InlineJS.DirectiveHandlerManager.AddHandler('intersection', ExtendedDirectiveHandlers.Intersection);

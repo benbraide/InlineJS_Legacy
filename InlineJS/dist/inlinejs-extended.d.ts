@@ -111,6 +111,7 @@ declare namespace InlineJS {
         static State(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, submit: boolean, info: StateDirectiveInfo): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static AttrChange(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static JSONLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static XHRLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static LazyLoad(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Intersection(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
