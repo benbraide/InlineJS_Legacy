@@ -1686,7 +1686,10 @@ var InlineJS;
                 options = data;
             }
             var opened = false, openRequest = null, handle = null, queuedRequests = new Array(), regionId = region.GetId();
-            var open = function (myRegion) {
+            var open = function () {
+                if (handle) {
+                    return;
+                }
                 if (options.drop) {
                     window.indexedDB.deleteDatabase(options.name);
                 }
@@ -1722,6 +1725,7 @@ var InlineJS;
             var close = function () {
                 if (handle) {
                     handle.close();
+                    handle = null;
                 }
                 else if (!opened) { //Queue
                     queuedRequests.push(close);
@@ -1779,6 +1783,9 @@ var InlineJS;
                 if (prop in options) {
                     return options[prop];
                 }
+                if (prop === 'open') {
+                    return open;
+                }
                 if (prop === 'close') {
                     return close;
                 }
@@ -1791,8 +1798,8 @@ var InlineJS;
                 if (prop in scope.callbacks) {
                     return function (callback) { return scope.callbacks[prop].push(callback); };
                 }
-            }, __spreadArrays(Object.keys(options), Object.keys(scope.callbacks)));
-            open(region);
+            }, __spreadArrays(Object.keys(options), ['open', 'close', 'read', 'write'], Object.keys(scope.callbacks)));
+            open();
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Auth = function (region, element, directive) {

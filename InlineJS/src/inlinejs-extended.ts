@@ -2117,7 +2117,11 @@ namespace InlineJS{
             }
             
             let opened = false, openRequest: IDBOpenDBRequest = null, handle: IDBDatabase = null, queuedRequests = new Array<() => void>(), regionId = region.GetId();
-            let open = (myRegion: Region) => {
+            let open = () => {
+                if (handle){
+                    return;
+                }
+                
                 if (options.drop){
                     window.indexedDB.deleteDatabase(options.name);
                 }
@@ -2160,6 +2164,7 @@ namespace InlineJS{
             let close = () => {
                 if (handle){
                     handle.close();
+                    handle = null;
                 }
                 else if (!opened){//Queue
                     queuedRequests.push(close);
@@ -2230,6 +2235,10 @@ namespace InlineJS{
                     return options[prop];
                 }
 
+                if (prop === 'open'){
+                    return open;
+                }
+
                 if (prop === 'close'){
                     return close;
                 }
@@ -2245,9 +2254,9 @@ namespace InlineJS{
                 if (prop in scope.callbacks){
                     return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
-            }, [...Object.keys(options), ...Object.keys(scope.callbacks)]);
+            }, [...Object.keys(options), 'open', 'close', 'read', 'write', ...Object.keys(scope.callbacks)]);
 
-            open(region);
+            open();
             
             return DirectiveHandlerReturn.Handled;
         }
