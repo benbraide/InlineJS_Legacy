@@ -1445,26 +1445,88 @@ var InlineJS;
                 return ['xxl', 5]; //Extra extra large
             };
             var size = {
-                width: screen.width,
-                height: screen.height
-            }, breakpoint = computeBreakpoint(screen.width), regionId = region.GetId();
+                width: window.innerWidth,
+                height: window.innerHeight
+            }, breakpoint = computeBreakpoint(window.innerWidth), regionId = region.GetId();
+            var resizeCheckpoint = 0;
             window.addEventListener('resize', function () {
-                size.width = screen.width;
-                size.height = screen.height;
-                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'size', scope);
-                var thisBreakpoint = computeBreakpoint(screen.width);
-                if (thisBreakpoint[0] !== breakpoint[0]) {
-                    breakpoint = thisBreakpoint;
-                    window.dispatchEvent(new CustomEvent('screen.breakpoint', {
-                        detail: breakpoint[0]
-                    }));
-                    window.dispatchEvent(new CustomEvent('screen.checkpoint', {
-                        detail: breakpoint[1]
-                    }));
-                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'breakpoint', scope);
-                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'checkpoint', scope);
+                var myCheckpoint = ++resizeCheckpoint;
+                setTimeout(function () {
+                    if (myCheckpoint != resizeCheckpoint) { //Debounced
+                        return;
+                    }
+                    size.width = window.innerWidth;
+                    size.height = window.innerHeight;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'size', scope);
+                    var thisBreakpoint = computeBreakpoint(window.innerWidth);
+                    if (thisBreakpoint[0] !== breakpoint[0]) {
+                        breakpoint = thisBreakpoint;
+                        window.dispatchEvent(new CustomEvent('screen.breakpoint', {
+                            detail: breakpoint[0]
+                        }));
+                        window.dispatchEvent(new CustomEvent('screen.checkpoint', {
+                            detail: breakpoint[1]
+                        }));
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'breakpoint', scope);
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'checkpoint', scope);
+                    }
+                }, 250);
+            }, { passive: true });
+            var getScrollPosition = function () {
+                return {
+                    x: (window.scrollX || window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft || 0),
+                    y: (window.scrollY || window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0)
+                };
+            };
+            var scrollCheckpoint = 0, position = getScrollPosition(), percentage = {
+                x: ((document.body.scrollWidth <= 0) ? 0 : ((position.x / document.body.scrollWidth) * 100)),
+                y: ((document.body.scrollHeight <= 0) ? 0 : ((position.y / document.body.scrollHeight) * 100))
+            };
+            if (directive.arg.key === 'realtime') {
+                window.addEventListener('scroll', function (e) {
+                    var myCheckpoint = ++scrollCheckpoint;
+                    setTimeout(function () {
+                        if (myCheckpoint != scrollCheckpoint) { //Debounced
+                            return;
+                        }
+                        var myPosition = getScrollPosition();
+                        if (myPosition.x != position.x || myPosition.y != position.y) {
+                            position = myPosition;
+                            percentage = {
+                                x: ((document.body.scrollWidth <= 0) ? 0 : ((position.x / document.body.scrollWidth) * 100)),
+                                y: ((document.body.scrollHeight <= 0) ? 0 : ((position.y / document.body.scrollHeight) * 100))
+                            };
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'percentage', scope);
+                        }
+                    }, 250);
+                }, { passive: true });
+            }
+            var scroll = function (from, to, animate, animateOptions) {
+                if (animate === void 0) { animate = false; }
+                var myPosition = getScrollPosition();
+                if (from.x < 0) {
+                    from.x = myPosition.x;
                 }
-            });
+                if (to.x < 0) {
+                    to.x = myPosition.x;
+                }
+                if (from.y < 0) {
+                    from.y = myPosition.y;
+                }
+                if (to.y < 0) {
+                    to.y = myPosition.y;
+                }
+                var animator = InlineJS.CoreDirectiveHandlers.GetAnimator(region, animate, function (step) {
+                    window.scrollTo((((to.x - from.x) * step) + from.x), (((to.y - from.y) * step) + from.y));
+                }, animateOptions, false);
+                if (animator) {
+                    animator(true);
+                }
+                else {
+                    window.scrollTo(from.x, from.y);
+                }
+            };
             var scope = ExtendedDirectiveHandlers.AddScope('screen', region.AddElement(element, true), []);
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'size') {
@@ -1479,7 +1541,60 @@ var InlineJS;
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
                     return breakpoint[1];
                 }
-            }, ['size', 'breakpoint', 'checkpoint']);
+                if (prop === 'scrollOffset' || prop === 'position') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".position");
+                    return position;
+                }
+                if (prop === 'scrollPercentage') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".percentage");
+                    return percentage;
+                }
+                if (prop === 'getScrollOffset' || prop === 'getPosition') {
+                    return getScrollPosition;
+                }
+                if (prop === 'getScrollPercentage') {
+                    return function () {
+                        var myPosition = getScrollPosition();
+                        return {
+                            x: ((document.body.scrollWidth <= 0) ? 0 : ((myPosition.x / document.body.scrollWidth) * 100)),
+                            y: ((document.body.scrollHeight <= 0) ? 0 : ((myPosition.y / document.body.scrollHeight) * 100))
+                        };
+                    };
+                }
+                if (prop === 'scroll') {
+                    return scroll;
+                }
+                if (prop === 'scrollTo') {
+                    return function (to, animate, animateOptions) {
+                        if (animate === void 0) { animate = false; }
+                        scroll({ x: -1, y: -1 }, to, animate, animateOptions);
+                    };
+                }
+                if (prop === 'scrollTop') {
+                    return function (animate, animateOptions) {
+                        if (animate === void 0) { animate = false; }
+                        scroll({ x: -1, y: -1 }, { x: -1, y: 0 }, animate, animateOptions);
+                    };
+                }
+                if (prop === 'scrollBottom') {
+                    return function (animate, animateOptions) {
+                        if (animate === void 0) { animate = false; }
+                        scroll({ x: -1, y: -1 }, { x: -1, y: document.body.scrollHeight }, animate, animateOptions);
+                    };
+                }
+                if (prop === 'scrollLeft') {
+                    return function (animate, animateOptions) {
+                        if (animate === void 0) { animate = false; }
+                        scroll({ x: -1, y: -1 }, { x: 0, y: -1 }, animate, animateOptions);
+                    };
+                }
+                if (prop === 'scrollRight') {
+                    return function (animate, animateOptions) {
+                        if (animate === void 0) { animate = false; }
+                        scroll({ x: -1, y: -1 }, { x: document.body.scrollWidth, y: -1 }, animate, animateOptions);
+                    };
+                }
+            }, ['size', 'breakpoint', 'checkpoint', 'scrollOffset', 'position', 'scrollPercentage', 'getScrollOffset', 'getPosition', 'getScrollPercentage', 'scroll']);
             InlineJS.Region.AddGlobal('$screen', function () { return proxy; });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
@@ -1491,19 +1606,124 @@ var InlineJS;
             if (!handlers) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
+            if (!handlers.load) {
+                handlers.load = function () {
+                    var checked = InlineJS.Region.GetGlobalValue(regionId, '$auth').check(), setItems = function (items) {
+                        items = (items || []);
+                        info.items = items;
+                        info.proxies = [];
+                        items.forEach(function (item) { return info.proxies.push(createItemProxy(item)); });
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                        computeValues();
+                        (updatesQueue || []).forEach(function (callback) {
+                            try {
+                                callback();
+                            }
+                            catch (err) { }
+                        });
+                        updatesQueue = null;
+                    };
+                    if (checked && handlers.loadLink) {
+                        fetch(handlers.loadLink, {
+                            method: 'GET',
+                            credentials: 'same-origin'
+                        }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) { return setItems(data.items); })["catch"](function (err) {
+                            ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                        });
+                    }
+                    else if (!checked && handlers.db) {
+                        handlers.db.read('cart', setItems);
+                    }
+                };
+            }
+            if (!handlers.update) {
+                handlers.update = function (sku, quantity, incremental, callback) {
+                    if (!InlineJS.Region.GetGlobalValue(regionId, '$auth').check()) {
+                        var computeQuantity = function (itemQuantity) {
+                            var computed = (incremental ? (itemQuantity + quantity) : quantity);
+                            if (computed < 0) {
+                                computed = 0;
+                            }
+                            return ((computed < 0) ? 0 : computed);
+                        };
+                        var doUpdate_1 = function (item, myQuantity) {
+                            if (myQuantity == item.quantity) { //No changes
+                                return;
+                            }
+                            item.quantity = myQuantity;
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + item.product.sku + ".quantity", scope);
+                            if (item.quantity == 0) { //Remove from list
+                                var index = info.items.findIndex(function (infoItem) { return (infoItem.product.sku === item.product.sku); });
+                                if (index == -1) {
+                                    return;
+                                }
+                                info.items.splice(index, 1);
+                                info.proxies.splice(index, 1);
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".items.splice", scope.path + ".items");
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                            }
+                            if (handlers.db) { //Save to DB
+                                handlers.db.write(info.items, 'cart', function (state) {
+                                    if (state && callback) {
+                                        callback(item);
+                                    }
+                                });
+                            }
+                        };
+                        var item = info.items.find(function (infoItem) { return (infoItem.product.sku === sku); });
+                        if (!item) {
+                            if (!handlers.productLink) {
+                                return;
+                            }
+                            var computedQuantity_1 = computeQuantity(0);
+                            if (computedQuantity_1 == 0) { //No changes
+                                return;
+                            }
+                            fetch(handlers.productLink + "/" + sku, {
+                                method: 'GET',
+                                credentials: 'same-origin'
+                            }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
+                                var newItem = {
+                                    price: (data.price || data.product.price),
+                                    quantity: 0,
+                                    product: data.product
+                                };
+                                info.items.push(newItem);
+                                info.proxies.push(createItemProxy(newItem));
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".items.push", scope.path + ".items");
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                                doUpdate_1(newItem, computedQuantity_1);
+                            })["catch"](function (err) {
+                                ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                            });
+                        }
+                        else {
+                            doUpdate_1(item, computeQuantity(item.quantity));
+                        }
+                    }
+                    else if (handlers.updateLink) {
+                        fetch(handlers.updateLink + "/" + sku + "?quantity=" + quantity + "&incremental=" + incremental, {
+                            method: 'GET',
+                            credentials: 'same-origin'
+                        }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(callback)["catch"](function (err) {
+                            ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                        });
+                    }
+                };
+            }
             var scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue = null;
             var info = {
-                items: {},
-                itemProxies: {},
+                items: new Array(),
+                proxies: new Array(),
                 count: 0,
                 total: 0
             };
             var computeValues = function () {
                 var count = 0, total = 0;
-                for (var sku in info.items) {
-                    count += info.items[sku].quantity;
-                    total += (info.items[sku].price * info.items[sku].quantity);
-                }
+                info.items.forEach(function (item) {
+                    count += item.quantity;
+                    total += (item.price * item.quantity);
+                });
                 if (count != info.count) {
                     info.count = count;
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'count', scope);
@@ -1517,20 +1737,21 @@ var InlineJS;
                 if (ExtendedDirectiveHandlers.Report(regionId, item) || !item) {
                     return;
                 }
-                var sku = item.product.sku;
-                if (sku in info.items) { //Update exisiting
-                    if (info.items[sku].quantity != item.quantity) {
-                        info.items[sku].quantity = item.quantity;
-                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + sku + ".quantity", scope);
+                var existing = info.items.find(function (infoItem) { return (infoItem.product.sku == item.product.sku); });
+                if (existing) { //Update exisiting
+                    if (existing.quantity != item.quantity) {
+                        existing.quantity = item.quantity;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + existing.product.sku + ".quantity", scope);
                     }
-                    if (info.items[sku].price != item.price) {
-                        info.items[sku].price = item.price;
-                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + sku + ".price", scope);
+                    if ((item.price || item.price === 0) && existing.price != item.price) {
+                        existing.price = item.price;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + existing.product.sku + ".price", scope);
                     }
                 }
                 else { //Add new
-                    info.items[sku] = item;
-                    info.itemProxies[sku] = createItemProxy(sku);
+                    info.items.push(item);
+                    info.proxies.push(createItemProxy(item));
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".items.push", scope.path + ".items");
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
                 }
                 computeValues();
@@ -1540,51 +1761,54 @@ var InlineJS;
                     updatesQueue.push(function () {
                         update(sku, quantity, incremental);
                     });
-                    return;
                 }
-                if (handlers.update) {
+                else {
                     handlers.update(sku, quantity, incremental, postUpdate);
-                    return;
                 }
-                if (!handlers.updateLink) {
-                    return;
-                }
-                fetch(handlers.updateLink + "?sku=" + sku + "&quantity=" + quantity + "&incremental=" + incremental, {
-                    method: 'GET',
-                    credentials: 'same-origin'
-                }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(postUpdate)["catch"](function (err) {
-                    ExtendedDirectiveHandlers.ReportServerError(regionId, err);
-                });
             };
             var clear = function () { return update(null, 0, false); };
-            var createItemProxy = function (sku) {
+            var createItemProxy = function (item) {
                 return InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                     if (prop === 'quantity') {
-                        if (sku in info.items) {
-                            InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + sku + "." + prop);
-                            return info.items[sku].quantity;
-                        }
-                        return 0;
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + item.product.sku + "." + prop);
+                        return item.quantity;
                     }
                     if (prop === 'price') {
-                        if (sku in info.items) {
-                            InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + sku + "." + prop);
-                            return info.items[sku].price;
-                        }
-                        return 0;
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + item.product.sku + "." + prop);
+                        return item.price;
                     }
                     if (prop === 'product') {
-                        if (sku in info.items) {
-                            return info.items[sku].product;
-                        }
-                        return null;
+                        return item.product;
                     }
-                }, ['quantity', 'price', 'product']);
+                }, ['quantity', 'price', 'product'], function (target, prop, value) {
+                    if (prop.toString() === 'quantity') {
+                        update(item.product.sku, value, false);
+                        return true;
+                    }
+                    return false;
+                });
             };
+            var itemsProxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'length') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + prop);
+                    return info.items.length;
+                }
+                if (prop === '__InlineJS_Target__') {
+                    return info.items;
+                }
+                if (prop === '__InlineJS_Path__') {
+                    return scope.path + ".items";
+                }
+                var index = parseInt(prop);
+                if (index || index === 0) {
+                    return info.proxies[index];
+                }
+                return info.items[prop];
+            }, ['length', '__InlineJS_Target__', '__InlineJS_Path__'], null, []);
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
-                if (prop in info && prop !== 'itemProxies') {
+                if (prop in info) {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
-                    return ((prop === 'items') ? info.itemProxies : info[prop]);
+                    return ((prop === 'items') ? itemsProxy : info[prop]);
                 }
                 if (prop === 'update') {
                     return update;
@@ -1592,23 +1816,7 @@ var InlineJS;
                 if (prop === 'clear') {
                     return clear;
                 }
-            }, ['items', 'count', 'total', 'update', 'clear']);
-            handlers.load = function (items) {
-                info.items = (items || {});
-                info.itemProxies = {};
-                for (var sku in info.items) { //Create proxies
-                    info.itemProxies[sku] = createItemProxy(sku);
-                }
-                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
-                computeValues();
-                (updatesQueue || []).forEach(function (callback) {
-                    try {
-                        callback();
-                    }
-                    catch (err) { }
-                });
-                updatesQueue = null;
-            };
+            }, __spreadArrays(Object.keys(info), ['update', 'clear']));
             InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
             InlineJS.DirectiveHandlerManager.AddHandler('cartClear', function (innerRegion, innerElement, innerDirective) {
                 innerElement.addEventListener('click', function (e) {
@@ -1666,6 +1874,8 @@ var InlineJS;
             if (handlers.init) {
                 handlers.init();
             }
+            updatesQueue = new Array();
+            handlers.load();
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.DB = function (region, element, directive) {

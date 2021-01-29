@@ -377,7 +377,7 @@ declare namespace InlineJS {
         $init?: (region?: Region) => void;
     }
     class CoreDirectiveHandlers {
-        static PrepareAnimation: (region: Region, element: HTMLElement, options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void);
+        static PrepareAnimation: (region: Region, element: HTMLElement | ((step: number) => void), options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void);
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Locals(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -412,7 +412,7 @@ declare namespace InlineJS {
         static GetChildElementIndex(element: HTMLElement): number;
         static GetChildElementAt(parent: HTMLElement, index: number): HTMLElement;
         static InsertOrAppendChildElement(parent: HTMLElement, element: HTMLElement, index: number): void;
-        static GetAnimator(region: Region, animate: boolean, element: HTMLElement, options: Array<string>, always?: boolean): (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void;
+        static GetAnimator(region: Region, animate: boolean, element: HTMLElement | ((step: number) => void), options: Array<string>, always?: boolean): (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void;
         static AddAll(): void;
     }
     interface ProcessorOptions {

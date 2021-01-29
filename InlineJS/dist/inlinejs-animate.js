@@ -1123,7 +1123,7 @@ var InlineJS;
                     return;
                 }
                 key = InlineJS.Processor.GetCamelCaseDirectiveName(key);
-                if (key in InlineJS.Animators) {
+                if (typeof element !== 'function' && key in InlineJS.Animators) {
                     var animator = ((typeof InlineJS.Animators[key] === 'function') ? InlineJS.Animators[key](element) : InlineJS.Animators[key]);
                     if (animator.isExclusive && animator.isExclusive()) {
                         animators = {};
@@ -1133,7 +1133,7 @@ var InlineJS;
                         skipCount = animator.init(options, index, element);
                     }
                 }
-                else if (callback) {
+                else if (callback && !(key in InlineJS.Animators)) {
                     skipCount = callback(key, index);
                 }
             });
@@ -1201,18 +1201,24 @@ var InlineJS;
                 return skipCount;
             });
             var keys = Object.keys(animators);
-            if (keys.length == 0) { //Default
+            if (typeof element !== 'function' && keys.length == 0) { //Default
                 animators['opacity'] = ((typeof InlineJS.Animators.opacity === 'function') ? InlineJS.Animators.opacity(element) : InlineJS.Animators.opacity);
                 keys.push('opacity');
             }
             duration = (duration || 300);
             var getEase = function (animator, show) {
                 if (show) {
-                    return (showEase || (animator.getPreferredEase ? animator.getPreferredEase(true) : null) || defaultEase);
+                    if (animator) {
+                        return (showEase || (animator.getPreferredEase ? animator.getPreferredEase(true) : null) || defaultEase);
+                    }
+                    return (showEase || defaultEase);
                 }
-                return (hideEase || (animator.getPreferredEase ? animator.getPreferredEase(false) : null) || showEase || defaultEase);
+                if (animator) {
+                    return (hideEase || (animator.getPreferredEase ? animator.getPreferredEase(false) : null) || showEase || defaultEase);
+                }
+                return (hideEase || showEase || defaultEase);
             };
-            var checkpoint = 0, animating = false, elementScope = (element ? region.AddElement(element, true) : null);
+            var checkpoint = 0, animating = false, elementScope = ((typeof element !== 'function' && element) ? region.AddElement(element, true) : null);
             var scope = (elementScope ? InlineJS.ExtendedDirectiveHandlers.AddScope('animate', elementScope, []) : null), regionId = region.GetId();
             if (scope) {
                 elementScope.locals['$animate'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
@@ -1227,7 +1233,7 @@ var InlineJS;
                     animating = true;
                     InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'animating', scope);
                 }
-                if (element) {
+                if (typeof element !== 'function' && element) {
                     element.dispatchEvent(new CustomEvent('animation.entering', {
                         detail: { show: show }
                     }));
@@ -1236,16 +1242,18 @@ var InlineJS;
                     beforeCallback(show);
                 }
                 var unhandledKeys = new Array();
-                keys.forEach(function (key) {
-                    var animator = animators[key];
-                    if (!animator.handle || !animator.handle(element, show, duration, function (time, duration) {
-                        var ease = getEase(animator, show);
-                        return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
-                    }, args)) {
-                        unhandledKeys.push(key);
-                    }
-                });
-                if (unhandledKeys.length == 0) { //All animations handled
+                if (typeof element !== 'function') {
+                    keys.forEach(function (key) {
+                        var animator = animators[key];
+                        if (!animator.handle || !animator.handle(element, show, duration, function (time, duration) {
+                            var ease = getEase(animator, show);
+                            return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
+                        }, args)) {
+                            unhandledKeys.push(key);
+                        }
+                    });
+                }
+                if (typeof element !== 'function' && unhandledKeys.length == 0) { //All animations handled
                     if (scope && animating) {
                         animating = false;
                         InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'animating', scope);
@@ -1256,15 +1264,21 @@ var InlineJS;
                 var end = function () {
                     var isFirst = true;
                     done = true;
-                    unhandledKeys.forEach(function (key) {
-                        var animator = animators[key];
-                        animator.step(isFirst, element, show, duration, duration, function (time, duration) {
-                            var ease = getEase(animator, show);
-                            return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
-                        }, args);
-                        isFirst = false;
-                    });
-                    if (element) {
+                    if (typeof element !== 'function') {
+                        unhandledKeys.forEach(function (key) {
+                            var animator = animators[key];
+                            animator.step(isFirst, element, show, duration, duration, function (time, duration) {
+                                var ease = getEase(animator, show);
+                                return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
+                            }, args);
+                            isFirst = false;
+                        });
+                    }
+                    else {
+                        var ease = getEase(null, show);
+                        element(ease.target.apply(ease, __spreadArrays([duration, duration], ease.args)));
+                    }
+                    if (typeof element !== 'function' && element) {
                         element.dispatchEvent(new CustomEvent('animation.leaving', {
                             detail: { show: show }
                         }));
@@ -1272,7 +1286,7 @@ var InlineJS;
                     if (afterCallback) {
                         afterCallback(show);
                     }
-                    if (element) {
+                    if (typeof element !== 'function' && element) {
                         element.dispatchEvent(new CustomEvent('animation.leave', {
                             detail: { show: show }
                         }));
@@ -1281,13 +1295,15 @@ var InlineJS;
                         animating = false;
                         InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'animating', scope);
                     }
-                    isFirst = true;
-                    unhandledKeys.forEach(function (key) {
-                        if (animators[key].after) {
-                            animators[key].after(isFirst, element, show);
-                        }
-                        isFirst = false;
-                    });
+                    if (typeof element !== 'function') {
+                        isFirst = true;
+                        unhandledKeys.forEach(function (key) {
+                            if (animators[key].after) {
+                                animators[key].after(isFirst, element, show);
+                            }
+                            isFirst = false;
+                        });
+                    }
                 };
                 var pass = function (timestamp) {
                     if (startTimestamp === null) {
@@ -1298,34 +1314,42 @@ var InlineJS;
                     }
                     var ellapsed = (timestamp - startTimestamp), isFirst = true;
                     if (ellapsed < duration) {
-                        unhandledKeys.forEach(function (key) {
-                            var animator = animators[key];
-                            animator.step(isFirst, element, show, ellapsed, duration, function (time, duration) {
-                                var ease = getEase(animator, show);
-                                return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
-                            }, args);
-                            isFirst = false;
-                        });
+                        if (typeof element !== 'function') {
+                            unhandledKeys.forEach(function (key) {
+                                var animator = animators[key];
+                                animator.step(isFirst, element, show, ellapsed, duration, function (time, duration) {
+                                    var ease = getEase(animator, show);
+                                    return ease.target.apply(ease, __spreadArrays([time, duration], ease.args));
+                                }, args);
+                                isFirst = false;
+                            });
+                        }
+                        else {
+                            var ease = getEase(null, show);
+                            element(ease.target.apply(ease, __spreadArrays([ellapsed, duration], ease.args)));
+                        }
                         requestAnimationFrame(pass);
                     }
                     else { //End
                         end();
                     }
                 };
-                var isFirst = true;
-                unhandledKeys.forEach(function (key) {
-                    if (animators[key].before) {
-                        animators[key].before(isFirst, element, show);
-                    }
-                    isFirst = false;
-                });
+                if (typeof element !== 'function') {
+                    var isFirst_1 = true;
+                    unhandledKeys.forEach(function (key) {
+                        if (animators[key].before) {
+                            animators[key].before(isFirst_1, element, show);
+                        }
+                        isFirst_1 = false;
+                    });
+                }
                 setTimeout(function () {
                     if (!done && lastCheckpoint == checkpoint) {
                         end();
                     }
                 }, (duration + 100));
                 requestAnimationFrame(pass);
-                if (element) {
+                if (typeof element !== 'function' && element) {
                     element.dispatchEvent(new CustomEvent('animation.enter', {
                         detail: { show: show }
                     }));

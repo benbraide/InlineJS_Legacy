@@ -218,13 +218,22 @@ declare namespace InlineJS {
         rubberBand: () => SceneAnimator;
         swing: () => SceneAnimator;
     };
+    interface TypewriterInfo {
+        list: Array<string>;
+        delay: number;
+        interval: number;
+        iterations: number;
+        showDelete: boolean;
+        useRandom: boolean;
+        showCursor: boolean;
+    }
     class AnimateDirectiveHandlers {
         static Animate(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static AnimateInner(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static BusyView(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Typewriter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
-        static InitAnimation(element: HTMLElement, options: Array<string>, callback?: (key: string, index: number) => number): Record<string, Animator>;
-        static PrepareAnimation(region: Region, element: HTMLElement, options: Array<string>): (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void;
+        static InitAnimation(element: HTMLElement | ((step: number) => void), options: Array<string>, callback?: (key: string, index: number) => number): Record<string, Animator>;
+        static PrepareAnimation(region: Region, element: HTMLElement | ((step: number) => void), options: Array<string>): (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void;
         static AddAll(): void;
     }
 }

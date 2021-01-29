@@ -972,6 +972,16 @@ namespace InlineJS{
         swing: () => new SceneAnimator(new SwingSceneAnimatorHandler()),
     };
 
+    export interface TypewriterInfo{
+        list: Array<string>;
+        delay: number;
+        interval: number;
+        iterations: number;
+        showDelete: boolean;
+        useRandom: boolean;
+        showCursor: boolean;
+    }
+
     export class AnimateDirectiveHandlers{
         public static Animate(region: Region, element: HTMLElement, directive: Directive){
             let animator = AnimateDirectiveHandlers.PrepareAnimation(region, element, directive.arg.options);
@@ -1220,7 +1230,7 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
-        public static InitAnimation(element: HTMLElement, options: Array<string>, callback?: (key: string, index: number) => number){
+        public static InitAnimation(element: HTMLElement | ((step: number) => void), options: Array<string>, callback?: (key: string, index: number) => number){
             let animators: Record<string, Animator> = {}, index = 0, skipCount = 0;
             options.forEach((key) => {
                 ++index;
@@ -1230,7 +1240,7 @@ namespace InlineJS{
                 }
                 
                 key = Processor.GetCamelCaseDirectiveName(key);
-                if (key in Animators){
+                if (typeof element !== 'function' && key in Animators){
                     let animator: Animator = ((typeof Animators[key] === 'function') ? (Animators[key] as (element: HTMLElement) => Animator)(element) : Animators[key]);
                     if (animator.isExclusive && animator.isExclusive()){
                         animators = {};
@@ -1241,7 +1251,7 @@ namespace InlineJS{
                         skipCount = animator.init(options, index, element);
                     }
                 }
-                else if (callback){
+                else if (callback && !(key in Animators)){
                     skipCount = callback(key, index);
                 }
             });
@@ -1249,7 +1259,7 @@ namespace InlineJS{
             return animators;
         }
 
-        public static PrepareAnimation(region: Region, element: HTMLElement, options: Array<string>){
+        public static PrepareAnimation(region: Region, element: HTMLElement | ((step: number) => void), options: Array<string>){
             let duration: number = null, showEase: StepEaseInfo = null, hideEase: StepEaseInfo = null, defaultEase: StepEaseInfo = {
                 target: (time: number, duration: number) => {
                     return ((time < duration) ? (-1 * Math.cos((time / duration) * (Math.PI / 2)) + 1) : 1);
@@ -1320,7 +1330,7 @@ namespace InlineJS{
             });
 
             let keys = Object.keys(animators);
-            if (keys.length == 0){//Default
+            if (typeof element !== 'function' && keys.length == 0){//Default
                 animators['opacity'] = ((typeof Animators.opacity === 'function') ? (Animators.opacity as (element: HTMLElement) => Animator)(element) : Animators.opacity);
                 keys.push('opacity');
             }
@@ -1328,13 +1338,21 @@ namespace InlineJS{
             duration = (duration || 300);
             let getEase = (animator: Animator, show: boolean): StepEaseInfo => {
                 if (show){
-                    return (showEase || (animator.getPreferredEase ? animator.getPreferredEase(true) : null) || defaultEase);
+                    if (animator){
+                        return (showEase || (animator.getPreferredEase ? animator.getPreferredEase(true) : null) || defaultEase);
+                    }
+
+                    return (showEase || defaultEase);
                 }
 
-                return (hideEase || (animator.getPreferredEase ? animator.getPreferredEase(false) : null) || showEase || defaultEase);
+                if (animator){
+                    return (hideEase || (animator.getPreferredEase ? animator.getPreferredEase(false) : null) || showEase || defaultEase);
+                }
+
+                return (hideEase || showEase || defaultEase);
             };
 
-            let checkpoint = 0, animating = false, elementScope = (element ? region.AddElement(element, true) : null);
+            let checkpoint = 0, animating = false, elementScope = ((typeof element !== 'function' && element) ? region.AddElement(element, true) : null);
             let scope = (elementScope ? ExtendedDirectiveHandlers.AddScope('animate', elementScope, []) : null), regionId = region.GetId();
 
             if (scope){
@@ -1352,7 +1370,7 @@ namespace InlineJS{
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'animating', scope);
                 }
                 
-                if (element){
+                if (typeof element !== 'function' && element){
                     element.dispatchEvent(new CustomEvent('animation.entering', {
                         detail: { show: show },
                     }));
@@ -1363,17 +1381,19 @@ namespace InlineJS{
                 }
                 
                 let unhandledKeys = new Array<string>();
-                keys.forEach((key) => {
-                    let animator = animators[key];
-                    if (!animator.handle || !animator.handle(element, show, duration, (time: number, duration: number) => {
-                        let ease = getEase(animator, show);
-                        return (ease.target as AnimatorEaseTypeWithArgs)(time, duration, ...ease.args);
-                    }, args)){
-                        unhandledKeys.push(key);
-                    }
-                });
+                if (typeof element !== 'function'){
+                    keys.forEach((key) => {
+                        let animator = animators[key];
+                        if (!animator.handle || !animator.handle(element, show, duration, (time: number, duration: number) => {
+                            let ease = getEase(animator, show);
+                            return (ease.target as AnimatorEaseTypeWithArgs)(time, duration, ...ease.args);
+                        }, args)){
+                            unhandledKeys.push(key);
+                        }
+                    });
+                }
                 
-                if (unhandledKeys.length == 0){//All animations handled
+                if (typeof element !== 'function' && unhandledKeys.length == 0){//All animations handled
                     if (scope && animating){
                         animating = false;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'animating', scope);
@@ -1387,16 +1407,22 @@ namespace InlineJS{
                     let isFirst = true;
                     
                     done = true;
-                    unhandledKeys.forEach((key) => {
-                        let animator = animators[key];
-                        animator.step(isFirst, element, show, duration, duration, (time: number, duration: number) => {
-                            let ease = getEase(animator, show);
-                            return (ease.target as AnimatorEaseTypeWithArgs)(time, duration, ...ease.args);
-                        }, args);
-                        isFirst = false;
-                    });
+                    if (typeof element !== 'function'){
+                        unhandledKeys.forEach((key) => {
+                            let animator = animators[key];
+                            animator.step(isFirst, element, show, duration, duration, (time: number, duration: number) => {
+                                let ease = getEase(animator, show);
+                                return (ease.target as AnimatorEaseTypeWithArgs)(time, duration, ...ease.args);
+                            }, args);
+                            isFirst = false;
+                        });
+                    }
+                    else{
+                        let ease = getEase(null, show);
+                        element((ease.target as AnimatorEaseTypeWithArgs)(duration, duration, ...ease.args));
+                    }
 
-                    if (element){
+                    if (typeof element !== 'function' && element){
                         element.dispatchEvent(new CustomEvent('animation.leaving', {
                             detail: { show: show },
                         }));
@@ -1406,7 +1432,7 @@ namespace InlineJS{
                         afterCallback(show);
                     }
 
-                    if (element){
+                    if (typeof element !== 'function' && element){
                         element.dispatchEvent(new CustomEvent('animation.leave', {
                             detail: { show: show },
                         }));
@@ -1417,13 +1443,15 @@ namespace InlineJS{
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'animating', scope);
                     }
 
-                    isFirst = true;
-                    unhandledKeys.forEach((key) => {
-                        if (animators[key].after){
-                            animators[key].after(isFirst, element, show);
-                        }
-                        isFirst = false;
-                    });
+                    if (typeof element !== 'function'){
+                        isFirst = true;
+                        unhandledKeys.forEach((key) => {
+                            if (animators[key].after){
+                                animators[key].after(isFirst, element, show);
+                            }
+                            isFirst = false;
+                        });
+                    }
                 };
                 
                 let pass = (timestamp: DOMHighResTimeStamp) => {
@@ -1437,14 +1465,21 @@ namespace InlineJS{
 
                     let ellapsed = (timestamp - startTimestamp), isFirst = true;
                     if (ellapsed < duration){
-                        unhandledKeys.forEach(key => {
-                            let animator = animators[key];
-                            animator.step(isFirst, element, show, ellapsed, duration, (time: number, duration: number) => {
-                                let ease = getEase(animator, show);
-                                return (ease.target as AnimatorEaseTypeWithArgs)(time, duration, ...ease.args);
-                            }, args);
-                            isFirst = false;
-                        });
+                        if (typeof element !== 'function'){
+                            unhandledKeys.forEach(key => {
+                                let animator = animators[key];
+                                animator.step(isFirst, element, show, ellapsed, duration, (time: number, duration: number) => {
+                                    let ease = getEase(animator, show);
+                                    return (ease.target as AnimatorEaseTypeWithArgs)(time, duration, ...ease.args);
+                                }, args);
+                                isFirst = false;
+                            });
+                        }
+                        else{
+                            let ease = getEase(null, show);
+                            element((ease.target as AnimatorEaseTypeWithArgs)(ellapsed, duration, ...ease.args));
+                        }
+                        
                         requestAnimationFrame(pass);
                     }
                     else{//End
@@ -1452,13 +1487,15 @@ namespace InlineJS{
                     }
                 };
 
-                let isFirst = true;
-                unhandledKeys.forEach((key) => {
-                    if (animators[key].before){
-                        animators[key].before(isFirst, element, show);
-                    }
-                    isFirst = false;
-                });
+                if (typeof element !== 'function'){
+                    let isFirst = true;
+                    unhandledKeys.forEach((key) => {
+                        if (animators[key].before){
+                            animators[key].before(isFirst, element, show);
+                        }
+                        isFirst = false;
+                    });
+                }
 
                 setTimeout(() => {//Watcher
                     if (!done && lastCheckpoint == checkpoint){
@@ -1467,7 +1504,7 @@ namespace InlineJS{
                 }, (duration + 100));
 
                 requestAnimationFrame(pass);
-                if (element){
+                if (typeof element !== 'function' && element){
                     element.dispatchEvent(new CustomEvent('animation.enter', {
                         detail: { show: show },
                     }));

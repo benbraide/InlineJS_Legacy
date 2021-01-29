@@ -2025,7 +2025,7 @@ namespace InlineJS{
     }
 
     export class CoreDirectiveHandlers{
-        public static PrepareAnimation: (region: Region, element: HTMLElement, options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void) = null;
+        public static PrepareAnimation: (region: Region, element: HTMLElement | ((step: number) => void), options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void) = null;
         
         public static Noop(region: Region, element: HTMLElement, directive: Directive){
             return DirectiveHandlerReturn.Handled;
@@ -3351,7 +3351,7 @@ namespace InlineJS{
             }
         }
 
-        public static GetAnimator(region: Region, animate: boolean, element: HTMLElement, options: Array<string>, always = true){
+        public static GetAnimator(region: Region, animate: boolean, element: HTMLElement | ((step: number) => void), options: Array<string>, always = true){
             let animator = ((animate && CoreDirectiveHandlers.PrepareAnimation) ? CoreDirectiveHandlers.PrepareAnimation(region, element, options) : null);
             if (!animator && always){//Use a dummy animator
                 animator = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => {

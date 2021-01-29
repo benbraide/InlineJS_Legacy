@@ -56,15 +56,6 @@ declare namespace InlineJS {
         from: number;
         to: number;
     }
-    interface TypewriterInfo {
-        list: Array<string>;
-        delay: number;
-        interval: number;
-        iterations: number;
-        showDelete: boolean;
-        useRandom: boolean;
-        showCursor: boolean;
-    }
     interface CartItem {
         quantity: number;
         price: number;
@@ -72,13 +63,16 @@ declare namespace InlineJS {
     }
     interface CartHandlers {
         init?: () => void;
-        load?: (items: Record<string, CartItem>) => void;
+        load?: () => void;
         update?: (sku: string, quantity: number, incremental: boolean, callback: (item: CartItem) => void) => void;
+        loadLink?: string;
         updateLink?: string;
+        productLink?: string;
+        db?: any;
     }
     interface CartInfo {
-        items: Record<string, CartItem>;
-        itemProxies: Record<string, {}>;
+        items: Array<CartItem>;
+        proxies: Array<any>;
         count: number;
         total: number;
     }
@@ -99,6 +93,10 @@ declare namespace InlineJS {
         errorBag?: Record<string, Array<string>>;
         callback?: (data: any, err?: any) => boolean;
         confirmInfo?: string | Record<string, any>;
+    }
+    interface Point {
+        x: number;
+        y: number;
     }
     class ExtendedDirectiveHandlers {
         private static scopeId_;
