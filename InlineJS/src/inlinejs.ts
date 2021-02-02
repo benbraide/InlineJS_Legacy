@@ -1342,20 +1342,36 @@ namespace InlineJS{
                 },
                 set(target: object, prop: string | number | symbol, value: any){
                     if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)){
-                        return (window[prop] = value);//Use window
+                        window[prop] = value;//Use window
+                        return true;
                     }
 
-                    return (proxy[prop] = value);
+                    try{
+                        proxy[prop] = value;
+                    }
+                    catch (err){
+                        return false;
+                    }
+
+                    return true;
                 },
                 deleteProperty(target: object, prop: string | number | symbol){
                     if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)){
-                        return delete window[prop];//Use window
+                        delete window[prop];//Use window
+                        return true;
                     }
 
-                    return delete proxy[prop];
+                    try{
+                        delete proxy[prop];
+                    }
+                    catch (err){
+                        return false;
+                    }
+
+                    return true;
                 },
                 has(target: object, prop: string | number | symbol){
-                    return (Reflect.has(target, prop) || (prop in proxy) || (prop in window));
+                    return (Reflect.has(target, prop) || (prop in proxy));
                 }
             });
         }

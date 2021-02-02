@@ -5,6 +5,7 @@
   "main": "app.js",
   "dependencies": {
     "@babel/polyfill": "^7.11.5",
+    "@types/google.geolocation": "^0.4.31",
     "core-js": "^3.6.5",
     "jest": "^26.5.3",
     "mutation-observer": "^1.0.3",

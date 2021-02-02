@@ -1068,18 +1068,32 @@ var InlineJS;
                 },
                 set: function (target, prop, value) {
                     if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)) {
-                        return (window[prop] = value); //Use window
+                        window[prop] = value; //Use window
+                        return true;
                     }
-                    return (proxy[prop] = value);
+                    try {
+                        proxy[prop] = value;
+                    }
+                    catch (err) {
+                        return false;
+                    }
+                    return true;
                 },
                 deleteProperty: function (target, prop) {
                     if ((!(prop in proxy) || ('__InlineJS_Target__' in proxy) && !(prop in proxy['__InlineJS_Target__'])) && (prop in window)) {
-                        return delete window[prop]; //Use window
+                        delete window[prop]; //Use window
+                        return true;
                     }
-                    return delete proxy[prop];
+                    try {
+                        delete proxy[prop];
+                    }
+                    catch (err) {
+                        return false;
+                    }
+                    return true;
                 },
                 has: function (target, prop) {
-                    return (Reflect.has(target, prop) || (prop in proxy) || (prop in window));
+                    return (Reflect.has(target, prop) || (prop in proxy));
                 }
             });
         };

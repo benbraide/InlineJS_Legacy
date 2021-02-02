@@ -2918,7 +2918,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
             
-            let position: Position = null, error: PositionError = null, regionId = region.GetId(), requested = false, tracking = false;
+            let position: GeolocationPosition = null, error: GeolocationPositionError = null, regionId = region.GetId(), requested = false, tracking = false;
             let check = () => {
                 if (navigator.geolocation){
                     error = null;
@@ -2936,7 +2936,7 @@ namespace InlineJS{
                 return false;
             };
 
-            let setPosition = (value: Position) => {
+            let setPosition = (value: GeolocationPosition) => {
                 position = value;
                 window.dispatchEvent(new CustomEvent('geolocation.position', {
                     detail: value
@@ -2944,7 +2944,7 @@ namespace InlineJS{
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'position', scope);
             };
 
-            let setError = (value: PositionError) => {
+            let setError = (value: GeolocationPositionError) => {
                 error = value;
                 window.dispatchEvent(new CustomEvent('geolocation.error', {
                     detail: value
