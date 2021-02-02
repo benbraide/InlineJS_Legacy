@@ -1357,17 +1357,42 @@ namespace InlineJS{
 
             if (scope){
                 elementScope.locals['$animate'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
-                    if (prop === 'animating'){
-                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    if (prop === 'animating' || prop === 'active'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.active`);
                         return animating;
+                    }
+
+                    if (prop === 'showing'){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.showing`);
+                        return showing;
+                    }
+
+                    if (prop === 'stop'){
+                        return (gracefully = false) => {
+                            ++checkpoint;
+                            if (gracefully && onGracefulStop){
+                                onGracefulStop();
+                            }
+
+                            if (scope && animating){
+                                animating = false;
+                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                            }
+                        };
                     }
                 }, ['animating']);
             }
             
-            return (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => {
+            let isInfinite = options.includes('infinite'), onGracefulStop: () => void = null, showing: boolean = null;
+            let animator = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => {
                 if (scope && !animating){
                     animating = true;
-                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'animating', scope);
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                }
+
+                if (scope && show !== showing){
+                    showing = show;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'showing', scope);
                 }
                 
                 if (typeof element !== 'function' && element){
@@ -1396,12 +1421,18 @@ namespace InlineJS{
                 if (typeof element !== 'function' && unhandledKeys.length == 0){//All animations handled
                     if (scope && animating){
                         animating = false;
-                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'animating', scope);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                    }
+
+                    if (isInfinite){
+                        setTimeout(() => {
+                            animator(show, beforeCallback, afterCallback, args);
+                        }, 0);
                     }
 
                     return;
                 }
-                
+
                 let lastCheckpoint = ++checkpoint, startTimestamp: DOMHighResTimeStamp = null, done = false;
                 let end = () => {
                     let isFirst = true;
@@ -1438,9 +1469,9 @@ namespace InlineJS{
                         }));
                     }
                     
-                    if (animating){
+                    if (scope && animating){
                         animating = false;
-                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'animating', scope);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
                     }
 
                     if (typeof element !== 'function'){
@@ -1487,6 +1518,7 @@ namespace InlineJS{
                     }
                 };
 
+                onGracefulStop = end;
                 if (typeof element !== 'function'){
                     let isFirst = true;
                     unhandledKeys.forEach((key) => {
@@ -1510,6 +1542,8 @@ namespace InlineJS{
                     }));
                 }
             };
+
+            return animator;
         }
 
         public static AddAll(){

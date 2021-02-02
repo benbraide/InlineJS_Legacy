@@ -1222,16 +1222,38 @@ var InlineJS;
             var scope = (elementScope ? InlineJS.ExtendedDirectiveHandlers.AddScope('animate', elementScope, []) : null), regionId = region.GetId();
             if (scope) {
                 elementScope.locals['$animate'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
-                    if (prop === 'animating') {
-                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    if (prop === 'animating' || prop === 'active') {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".active");
                         return animating;
+                    }
+                    if (prop === 'showing') {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".showing");
+                        return showing;
+                    }
+                    if (prop === 'stop') {
+                        return function (gracefully) {
+                            if (gracefully === void 0) { gracefully = false; }
+                            ++checkpoint;
+                            if (gracefully && onGracefulStop) {
+                                onGracefulStop();
+                            }
+                            if (scope && animating) {
+                                animating = false;
+                                InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                            }
+                        };
                     }
                 }, ['animating']);
             }
-            return function (show, beforeCallback, afterCallback, args) {
+            var isInfinite = options.includes('infinite'), onGracefulStop = null, showing = null;
+            var animator = function (show, beforeCallback, afterCallback, args) {
                 if (scope && !animating) {
                     animating = true;
-                    InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'animating', scope);
+                    InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                }
+                if (scope && show !== showing) {
+                    showing = show;
+                    InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'showing', scope);
                 }
                 if (typeof element !== 'function' && element) {
                     element.dispatchEvent(new CustomEvent('animation.entering', {
@@ -1256,7 +1278,12 @@ var InlineJS;
                 if (typeof element !== 'function' && unhandledKeys.length == 0) { //All animations handled
                     if (scope && animating) {
                         animating = false;
-                        InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'animating', scope);
+                        InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                    }
+                    if (isInfinite) {
+                        setTimeout(function () {
+                            animator(show, beforeCallback, afterCallback, args);
+                        }, 0);
                     }
                     return;
                 }
@@ -1291,9 +1318,9 @@ var InlineJS;
                             detail: { show: show }
                         }));
                     }
-                    if (animating) {
+                    if (scope && animating) {
                         animating = false;
-                        InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'animating', scope);
+                        InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                     }
                     if (typeof element !== 'function') {
                         isFirst = true;
@@ -1334,6 +1361,7 @@ var InlineJS;
                         end();
                     }
                 };
+                onGracefulStop = end;
                 if (typeof element !== 'function') {
                     var isFirst_1 = true;
                     unhandledKeys.forEach(function (key) {
@@ -1355,6 +1383,7 @@ var InlineJS;
                     }));
                 }
             };
+            return animator;
         };
         AnimateDirectiveHandlers.AddAll = function () {
             InlineJS.CoreDirectiveHandlers.PrepareAnimation = AnimateDirectiveHandlers.PrepareAnimation;
