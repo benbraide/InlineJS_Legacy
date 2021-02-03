@@ -1355,6 +1355,18 @@ namespace InlineJS{
             let checkpoint = 0, animating = false, elementScope = ((typeof element !== 'function' && element) ? region.AddElement(element, true) : null);
             let scope = (elementScope ? ExtendedDirectiveHandlers.AddScope('animate', elementScope, []) : null), regionId = region.GetId();
 
+            let stop = (gracefully = false) => {
+                ++checkpoint;
+                if (gracefully && onGracefulStop){
+                    onGracefulStop(true);
+                }
+
+                if (scope && animating){
+                    animating = false;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                }
+            };
+            
             if (scope){
                 elementScope.locals['$animate'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                     if (prop === 'animating' || prop === 'active'){
@@ -1368,31 +1380,26 @@ namespace InlineJS{
                     }
 
                     if (prop === 'stop'){
-                        return (gracefully = false) => {
-                            ++checkpoint;
-                            if (gracefully && onGracefulStop){
-                                onGracefulStop();
-                            }
-
-                            if (scope && animating){
-                                animating = false;
-                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
-                            }
-                        };
+                        return stop;
                     }
-                }, ['animating']);
+                }, ['animating', 'active', 'showing', 'stop']);
             }
             
-            let isInfinite = options.includes('infinite'), onGracefulStop: () => void = null, showing: boolean = null;
+            let isInfinite = options.includes('infinite'), onGracefulStop: (stopped?: boolean) => void = null, showing: boolean = null;
             let animator = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => {
-                if (scope && !animating){
-                    animating = true;
-                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
-                }
-
                 if (scope && show !== showing){
                     showing = show;
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'showing', scope);
+                }
+
+                if (isInfinite && !show){
+                    stop(true);
+                    return;
+                }
+                
+                if (scope && !animating){
+                    animating = true;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
                 }
                 
                 if (typeof element !== 'function' && element){
@@ -1434,7 +1441,7 @@ namespace InlineJS{
                 }
 
                 let lastCheckpoint = ++checkpoint, startTimestamp: DOMHighResTimeStamp = null, done = false;
-                let end = () => {
+                let end = (stopped = false) => {
                     let isFirst = true;
                     
                     done = true;
@@ -1482,6 +1489,12 @@ namespace InlineJS{
                             }
                             isFirst = false;
                         });
+                    }
+
+                    if (!stopped && isInfinite){
+                        setTimeout(() => {
+                            animator(show, beforeCallback, afterCallback, args);
+                        }, 0);
                     }
                 };
                 

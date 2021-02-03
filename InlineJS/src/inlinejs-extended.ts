@@ -2941,7 +2941,12 @@ namespace InlineJS{
                 window.dispatchEvent(new CustomEvent('geolocation.position', {
                     detail: value
                 }));
+
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'position', scope);
+                if (active){
+                    active = false;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                }
             };
 
             let setError = (value: GeolocationPositionError) => {
@@ -2949,18 +2954,28 @@ namespace InlineJS{
                 window.dispatchEvent(new CustomEvent('geolocation.error', {
                     detail: value
                 }));
+                
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'error', scope);
+                if (active){
+                    active = false;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                }
             };
 
-            let request = () => {
-                if (!requested && check()){
+            let request = (force = false) => {
+                if ((!requested || force) && check()){
+                    if (!active){
+                        active = true;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'active', scope);
+                    }
+                    
                     requested = true;
                     navigator.geolocation.getCurrentPosition(setPosition, setError);
                 }
             };
 
-            let track = () => {
-                if (!tracking && check()){
+            let track = (force = false) => {
+                if ((!tracking || force) && check()){
                     requested = tracking = true;
                     navigator.geolocation.watchPosition(setPosition, setError);
                 }
@@ -2983,7 +2998,7 @@ namespace InlineJS{
                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'error', scope);
             };
 
-            let scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []);
+            let scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []), active = false;
             let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop === 'position'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
@@ -2993,6 +3008,11 @@ namespace InlineJS{
                 if (prop === 'error'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                     return error;
+                }
+
+                if (prop === 'active'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return active;
                 }
 
                 if (prop === 'request'){
@@ -3010,17 +3030,19 @@ namespace InlineJS{
             
             Region.AddGlobal('$geolocation', () => proxy);
             DirectiveHandlerManager.AddHandler('geolocationRequest', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let shouldForce = innerDirective.arg.options.includes('force');
                 innerElement.addEventListener('click', (e) => {
                     e.preventDefault();
-                    request();
+                    request(shouldForce);
                 });
                 return DirectiveHandlerReturn.Handled;
             });
 
             DirectiveHandlerManager.AddHandler('geolocationTrack', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                let shouldForce = innerDirective.arg.options.includes('force');
                 innerElement.addEventListener('click', (e) => {
                     e.preventDefault();
-                    track();
+                    track(shouldForce);
                 });
                 return DirectiveHandlerReturn.Handled;
             });

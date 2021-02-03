@@ -2400,6 +2400,10 @@ var InlineJS;
                     detail: value
                 }));
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
+                if (active) {
+                    active = false;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                }
             };
             var setError = function (value) {
                 error = value;
@@ -2407,15 +2411,25 @@ var InlineJS;
                     detail: value
                 }));
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'error', scope);
+                if (active) {
+                    active = false;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                }
             };
-            var request = function () {
-                if (!requested && check()) {
+            var request = function (force) {
+                if (force === void 0) { force = false; }
+                if ((!requested || force) && check()) {
+                    if (!active) {
+                        active = true;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                    }
                     requested = true;
                     navigator.geolocation.getCurrentPosition(setPosition, setError);
                 }
             };
-            var track = function () {
-                if (!tracking && check()) {
+            var track = function (force) {
+                if (force === void 0) { force = false; }
+                if ((!tracking || force) && check()) {
                     requested = tracking = true;
                     navigator.geolocation.watchPosition(setPosition, setError);
                 }
@@ -2433,7 +2447,7 @@ var InlineJS;
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'error', scope);
             };
-            var scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []);
+            var scope = ExtendedDirectiveHandlers.AddScope('geolocation', region.AddElement(element, true), []), active = false;
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'position') {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
@@ -2442,6 +2456,10 @@ var InlineJS;
                 if (prop === 'error') {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
                     return error;
+                }
+                if (prop === 'active') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return active;
                 }
                 if (prop === 'request') {
                     return request;
@@ -2455,16 +2473,18 @@ var InlineJS;
             }, ['position', 'error', 'request', 'track', 'reset']);
             InlineJS.Region.AddGlobal('$geolocation', function () { return proxy; });
             InlineJS.DirectiveHandlerManager.AddHandler('geolocationRequest', function (innerRegion, innerElement, innerDirective) {
+                var shouldForce = innerDirective.arg.options.includes('force');
                 innerElement.addEventListener('click', function (e) {
                     e.preventDefault();
-                    request();
+                    request(shouldForce);
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
             InlineJS.DirectiveHandlerManager.AddHandler('geolocationTrack', function (innerRegion, innerElement, innerDirective) {
+                var shouldForce = innerDirective.arg.options.includes('force');
                 innerElement.addEventListener('click', function (e) {
                     e.preventDefault();
-                    track();
+                    track(shouldForce);
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });

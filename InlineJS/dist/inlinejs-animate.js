@@ -1220,6 +1220,17 @@ var InlineJS;
             };
             var checkpoint = 0, animating = false, elementScope = ((typeof element !== 'function' && element) ? region.AddElement(element, true) : null);
             var scope = (elementScope ? InlineJS.ExtendedDirectiveHandlers.AddScope('animate', elementScope, []) : null), regionId = region.GetId();
+            var stop = function (gracefully) {
+                if (gracefully === void 0) { gracefully = false; }
+                ++checkpoint;
+                if (gracefully && onGracefulStop) {
+                    onGracefulStop(true);
+                }
+                if (scope && animating) {
+                    animating = false;
+                    InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
+                }
+            };
             if (scope) {
                 elementScope.locals['$animate'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                     if (prop === 'animating' || prop === 'active') {
@@ -1231,29 +1242,23 @@ var InlineJS;
                         return showing;
                     }
                     if (prop === 'stop') {
-                        return function (gracefully) {
-                            if (gracefully === void 0) { gracefully = false; }
-                            ++checkpoint;
-                            if (gracefully && onGracefulStop) {
-                                onGracefulStop();
-                            }
-                            if (scope && animating) {
-                                animating = false;
-                                InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
-                            }
-                        };
+                        return stop;
                     }
-                }, ['animating']);
+                }, ['animating', 'active', 'showing', 'stop']);
             }
             var isInfinite = options.includes('infinite'), onGracefulStop = null, showing = null;
             var animator = function (show, beforeCallback, afterCallback, args) {
-                if (scope && !animating) {
-                    animating = true;
-                    InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
-                }
                 if (scope && show !== showing) {
                     showing = show;
                     InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'showing', scope);
+                }
+                if (isInfinite && !show) {
+                    stop(true);
+                    return;
+                }
+                if (scope && !animating) {
+                    animating = true;
+                    InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'active', scope);
                 }
                 if (typeof element !== 'function' && element) {
                     element.dispatchEvent(new CustomEvent('animation.entering', {
@@ -1288,7 +1293,8 @@ var InlineJS;
                     return;
                 }
                 var lastCheckpoint = ++checkpoint, startTimestamp = null, done = false;
-                var end = function () {
+                var end = function (stopped) {
+                    if (stopped === void 0) { stopped = false; }
                     var isFirst = true;
                     done = true;
                     if (typeof element !== 'function') {
@@ -1330,6 +1336,11 @@ var InlineJS;
                             }
                             isFirst = false;
                         });
+                    }
+                    if (!stopped && isInfinite) {
+                        setTimeout(function () {
+                            animator(show, beforeCallback, afterCallback, args);
+                        }, 0);
                     }
                 };
                 var pass = function (timestamp) {
