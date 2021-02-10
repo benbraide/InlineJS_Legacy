@@ -1416,6 +1416,7 @@ namespace InlineJS{
                         callback('Page Not Found', page);
                     }
 
+                    window.dispatchEvent(new CustomEvent('router.load'));
                     hooks.afterLoad.forEach((handler) => {
                         handler(pageInfo, page, query);
                     });
@@ -1787,6 +1788,77 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Page(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal(region.GetId(), '$page')){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let reset = () => {
+                Object.keys(entries).forEach(key => ExtendedDirectiveHandlers.Alert(Region.Get(regionId), key, `${scope.path}.entries`));
+                entries = {};
+            };
+
+            let scope = ExtendedDirectiveHandlers.AddScope('page', region.AddElement(element, true), []), regionId = region.GetId(), entries = {};
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'title'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return title;
+                }
+
+                if (prop === 'location'){
+                    return window.location;
+                }
+
+                if (prop === 'reset'){
+                    return reset;
+                }
+
+                Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.entries.${prop}`);
+                return entries[prop];
+            }, ['$title', '$location', 'reset'], (target: object, prop: string | number | symbol, value: any) => {
+                if (prop.toString() === 'title'){
+                    if (router){
+                        router.setTitle(value);
+                    }
+                    else if (value !== title){
+                        document.title = title = value;
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'title', scope);
+                    }
+                }
+                else{
+                    entries[prop] = value;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), prop.toString(), `${scope.path}.entries`);
+                }
+
+                return true;
+            });
+            
+            Region.AddGlobal('$page', () => proxy);
+            window.addEventListener('router.load', reset);
+
+            let router = Region.GetGlobalValue(regionId, '$router');
+            let title = document.title, observer = new MutationObserver(function(mutations) {
+                if (!router && title !== mutations[0].target.nodeValue){
+                    title = mutations[0].target.nodeValue;
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'title', scope);
+                }
+            });
+
+            let titleDOM = document.querySelector('title');
+            if (!titleDOM){
+                titleDOM = document.createElement('title');
+                document.head.append(titleDOM);
+            }
+
+            observer.observe(titleDOM, {
+                subtree: true,
+                characterData: true,
+                childList: true,
+            });
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static Screen(region: Region, element: HTMLElement, directive: Directive){
             if (Region.GetGlobal(region.GetId(), '$screen')){
                 return DirectiveHandlerReturn.Nil;
@@ -1863,26 +1935,39 @@ namespace InlineJS{
             };
 
             if (directive.arg.key === 'realtime'){
-                window.addEventListener('scroll', (e) => {
-                    let myCheckpoint = ++scrollCheckpoint;
-                    setTimeout(() => {//Debounce
-                        if (myCheckpoint != scrollCheckpoint){//Debounced
-                            return;
-                        }
+                let handleScroll = () => {
+                    let myPosition = getScrollPosition();
+                    if (myPosition.x != position.x || myPosition.y != position.y){
+                        let offset = {
+                            x: ((document.documentElement.scrollWidth || document.body.scrollWidth) - (document.documentElement.clientWidth || document.body.clientWidth)),
+                            y: ((document.documentElement.scrollHeight || document.body.scrollHeight) - (document.documentElement.clientHeight || document.body.clientHeight)),
+                        };
                         
-                        let myPosition = getScrollPosition();
-                        if (myPosition.x != position.x || myPosition.y != position.y){
-                            position = myPosition;
-                            percentage = {
-                                x: ((document.body.scrollWidth <= 0) ? 0 : ((position.x / document.body.scrollWidth) * 100)),
-                                y: ((document.body.scrollHeight <= 0) ? 0 : ((position.y / document.body.scrollHeight) * 100)),
-                            };
-                            
-                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'position', scope);
-                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'percentage', scope);
-                        }
-                    }, 250);
-                }, { passive: true });
+                        position = myPosition;
+                        percentage = {
+                            x: ((offset.x <= 0) ? 0 : ((position.x / offset.x) * 100)),
+                            y: ((offset.y <= 0) ? 0 : ((position.y / offset.y) * 100)),
+                        };
+                        
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'position', scope);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'percentage', scope);
+                    }
+                };
+
+                let debounceIndex = directive.arg.options.indexOf('debounce');
+                if (debounceIndex != -1){
+                    window.addEventListener('scroll', () => {
+                        let myCheckpoint = ++scrollCheckpoint;
+                        setTimeout(() => {//Debounce
+                            if (myCheckpoint == scrollCheckpoint){//Debounced
+                                handleScroll();
+                            }
+                        }, (parseInt(directive.arg.options[debounceIndex + 1]) || 250));
+                    }, { passive: true });
+                }
+                else{
+                    window.addEventListener('scroll', handleScroll, { passive: true });
+                }
             }
 
             let scroll = (from: Point, to: Point, animate = false, animateOptions?: Array<string>) => {
@@ -3921,6 +4006,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('activeGroup', ExtendedDirectiveHandlers.ActiveGroup);
 
             DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
+            DirectiveHandlerManager.AddHandler('page', ExtendedDirectiveHandlers.Page);
             DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
 
             DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);

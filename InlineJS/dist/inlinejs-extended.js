@@ -1113,6 +1113,7 @@ var InlineJS;
                     if (callback) {
                         callback('Page Not Found', page);
                     }
+                    window.dispatchEvent(new CustomEvent('router.load'));
                     hooks.afterLoad.forEach(function (handler) {
                         handler(pageInfo, page, query);
                     });
@@ -1422,6 +1423,65 @@ var InlineJS;
             });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Page = function (region, element, directive) {
+            if (InlineJS.Region.GetGlobal(region.GetId(), '$page')) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var reset = function () {
+                Object.keys(entries).forEach(function (key) { return ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), key, scope.path + ".entries"); });
+                entries = {};
+            };
+            var scope = ExtendedDirectiveHandlers.AddScope('page', region.AddElement(element, true), []), regionId = region.GetId(), entries = {};
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop === 'title') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return title;
+                }
+                if (prop === 'location') {
+                    return window.location;
+                }
+                if (prop === 'reset') {
+                    return reset;
+                }
+                InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".entries." + prop);
+                return entries[prop];
+            }, ['$title', '$location', 'reset'], function (target, prop, value) {
+                if (prop.toString() === 'title') {
+                    if (router) {
+                        router.setTitle(value);
+                    }
+                    else if (value !== title) {
+                        document.title = title = value;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'title', scope);
+                    }
+                }
+                else {
+                    entries[prop] = value;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), prop.toString(), scope.path + ".entries");
+                }
+                return true;
+            });
+            InlineJS.Region.AddGlobal('$page', function () { return proxy; });
+            window.addEventListener('router.load', reset);
+            var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
+            var title = document.title, observer = new MutationObserver(function (mutations) {
+                if (!router && title !== mutations[0].target.nodeValue) {
+                    title = mutations[0].target.nodeValue;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'title', scope);
+                }
+            });
+            var titleDOM = document.querySelector('title');
+            if (!titleDOM) {
+                titleDOM = document.createElement('title');
+                document.head.append(titleDOM);
+            }
+            observer.observe(titleDOM, {
+                subtree: true,
+                characterData: true,
+                childList: true
+            });
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.Screen = function (region, element, directive) {
             if (InlineJS.Region.GetGlobal(region.GetId(), '$screen')) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
@@ -1483,24 +1543,36 @@ var InlineJS;
                 y: ((document.body.scrollHeight <= 0) ? 0 : ((position.y / document.body.scrollHeight) * 100))
             };
             if (directive.arg.key === 'realtime') {
-                window.addEventListener('scroll', function (e) {
-                    var myCheckpoint = ++scrollCheckpoint;
-                    setTimeout(function () {
-                        if (myCheckpoint != scrollCheckpoint) { //Debounced
-                            return;
-                        }
-                        var myPosition = getScrollPosition();
-                        if (myPosition.x != position.x || myPosition.y != position.y) {
-                            position = myPosition;
-                            percentage = {
-                                x: ((document.body.scrollWidth <= 0) ? 0 : ((position.x / document.body.scrollWidth) * 100)),
-                                y: ((document.body.scrollHeight <= 0) ? 0 : ((position.y / document.body.scrollHeight) * 100))
-                            };
-                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
-                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'percentage', scope);
-                        }
-                    }, 250);
-                }, { passive: true });
+                var handleScroll_1 = function () {
+                    var myPosition = getScrollPosition();
+                    if (myPosition.x != position.x || myPosition.y != position.y) {
+                        var offset = {
+                            x: ((document.documentElement.scrollWidth || document.body.scrollWidth) - (document.documentElement.clientWidth || document.body.clientWidth)),
+                            y: ((document.documentElement.scrollHeight || document.body.scrollHeight) - (document.documentElement.clientHeight || document.body.clientHeight))
+                        };
+                        position = myPosition;
+                        percentage = {
+                            x: ((offset.x <= 0) ? 0 : ((position.x / offset.x) * 100)),
+                            y: ((offset.y <= 0) ? 0 : ((position.y / offset.y) * 100))
+                        };
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'percentage', scope);
+                    }
+                };
+                var debounceIndex_1 = directive.arg.options.indexOf('debounce');
+                if (debounceIndex_1 != -1) {
+                    window.addEventListener('scroll', function () {
+                        var myCheckpoint = ++scrollCheckpoint;
+                        setTimeout(function () {
+                            if (myCheckpoint == scrollCheckpoint) { //Debounced
+                                handleScroll_1();
+                            }
+                        }, (parseInt(directive.arg.options[debounceIndex_1 + 1]) || 250));
+                    }, { passive: true });
+                }
+                else {
+                    window.addEventListener('scroll', handleScroll_1, { passive: true });
+                }
             }
             var scroll = function (from, to, animate, animateOptions) {
                 if (animate === void 0) { animate = false; }
@@ -3227,6 +3299,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('busy', ExtendedDirectiveHandlers.Busy);
             InlineJS.DirectiveHandlerManager.AddHandler('activeGroup', ExtendedDirectiveHandlers.ActiveGroup);
             InlineJS.DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
+            InlineJS.DirectiveHandlerManager.AddHandler('page', ExtendedDirectiveHandlers.Page);
             InlineJS.DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
             InlineJS.DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
             InlineJS.DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
