@@ -994,9 +994,7 @@ namespace InlineJS{
                 let value = !! CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
                 if (lastValue !== value){
                     lastValue = value;
-                    if ((lastValue ? !hideOnly : !showOnly)){
-                        animator(lastValue);
-                    }
+                    animator(lastValue, null, null, undefined, (lastValue ? hideOnly : showOnly));
                 }
             }, true, element);
 
@@ -1386,7 +1384,7 @@ namespace InlineJS{
             }
             
             let isInfinite = options.includes('infinite'), onGracefulStop: (stopped?: boolean) => void = null, showing: boolean = null;
-            let animator = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => {
+            let animator = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any, skip = false) => {
                 if (scope && show !== showing){
                     showing = show;
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'showing', scope);
@@ -1542,17 +1540,23 @@ namespace InlineJS{
                     });
                 }
 
-                setTimeout(() => {//Watcher
-                    if (!done && lastCheckpoint == checkpoint){
-                        end();
-                    }
-                }, (duration + 100));
-
-                requestAnimationFrame(pass);
                 if (typeof element !== 'function' && element){
                     element.dispatchEvent(new CustomEvent('animation.enter', {
                         detail: { show: show },
                     }));
+                }
+                
+                if (!skip){
+                    setTimeout(() => {//Watcher
+                        if (!done && lastCheckpoint == checkpoint){
+                            end();
+                        }
+                    }, (duration + 100));
+    
+                    requestAnimationFrame(pass);
+                }
+                else{
+                    end();
                 }
             };
 

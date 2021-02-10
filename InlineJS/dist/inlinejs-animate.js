@@ -915,9 +915,7 @@ var InlineJS;
                 var value = !!InlineJS.CoreDirectiveHandlers.Evaluate(InlineJS.Region.Get(regionId), element, directive.value);
                 if (lastValue !== value) {
                     lastValue = value;
-                    if ((lastValue ? !hideOnly : !showOnly)) {
-                        animator(lastValue);
-                    }
+                    animator(lastValue, null, null, undefined, (lastValue ? hideOnly : showOnly));
                 }
             }, true, element);
             return InlineJS.DirectiveHandlerReturn.Handled;
@@ -1247,7 +1245,8 @@ var InlineJS;
                 }, ['animating', 'active', 'showing', 'stop']);
             }
             var isInfinite = options.includes('infinite'), onGracefulStop = null, showing = null;
-            var animator = function (show, beforeCallback, afterCallback, args) {
+            var animator = function (show, beforeCallback, afterCallback, args, skip) {
+                if (skip === void 0) { skip = false; }
                 if (scope && show !== showing) {
                     showing = show;
                     InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'showing', scope);
@@ -1382,16 +1381,21 @@ var InlineJS;
                         isFirst_1 = false;
                     });
                 }
-                setTimeout(function () {
-                    if (!done && lastCheckpoint == checkpoint) {
-                        end();
-                    }
-                }, (duration + 100));
-                requestAnimationFrame(pass);
                 if (typeof element !== 'function' && element) {
                     element.dispatchEvent(new CustomEvent('animation.enter', {
                         detail: { show: show }
                     }));
+                }
+                if (!skip) {
+                    setTimeout(function () {
+                        if (!done && lastCheckpoint == checkpoint) {
+                            end();
+                        }
+                    }, (duration + 100));
+                    requestAnimationFrame(pass);
+                }
+                else {
+                    end();
                 }
             };
             return animator;
