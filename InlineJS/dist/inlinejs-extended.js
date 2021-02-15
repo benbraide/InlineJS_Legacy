@@ -1683,9 +1683,10 @@ var InlineJS;
                     var checked = InlineJS.Region.GetGlobalValue(regionId, '$auth').check(), setItems = function (items) {
                         items = (items || []);
                         info.items = items;
-                        info.proxies = [];
-                        items.forEach(function (item) { return info.proxies.push(createItemProxy(item)); });
+                        info.products = [];
+                        items.forEach(function (item) { return info.products.push(item.product); });
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
                         computeValues();
                         (updatesQueue || []).forEach(function (callback) {
                             try {
@@ -1708,31 +1709,55 @@ var InlineJS;
                     }
                 };
             }
+            var hasNew = false, alertHasNew = function () {
+                hasNew = true;
+                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'hasNew', scope);
+                InlineJS.Region.GetGlobalValue(regionId, '$nextTick')(function () {
+                    hasNew = false;
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'hasNew', scope);
+                });
+            };
             if (!handlers.update) {
                 handlers.update = function (sku, quantity, incremental, callback) {
                     if (!InlineJS.Region.GetGlobalValue(regionId, '$auth').check()) {
+                        if (sku === null && !incremental) { //Clear
+                            if (info.items.length == 0) {
+                                return;
+                            }
+                            info.items = [];
+                            info.products = [];
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                            computeValues();
+                            if (handlers.db) { //Save to DB
+                                handlers.db.write(info.items, 'cart', function (state) { });
+                            }
+                            return;
+                        }
                         var computeQuantity = function (itemQuantity) {
                             var computed = (incremental ? (itemQuantity + quantity) : quantity);
-                            if (computed < 0) {
-                                computed = 0;
-                            }
                             return ((computed < 0) ? 0 : computed);
                         };
                         var doUpdate_1 = function (item, myQuantity) {
                             if (myQuantity == item.quantity) { //No changes
                                 return;
                             }
+                            if (item.quantity < myQuantity) {
+                                alertHasNew();
+                            }
                             item.quantity = myQuantity;
                             ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + item.product.sku + ".quantity", scope);
-                            if (item.quantity == 0) { //Remove from list
+                            if (item.quantity <= 0) { //Remove from list
                                 var index = info.items.findIndex(function (infoItem) { return (infoItem.product.sku === item.product.sku); });
                                 if (index == -1) {
                                     return;
                                 }
                                 info.items.splice(index, 1);
-                                info.proxies.splice(index, 1);
+                                info.products.splice(index, 1);
                                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".items.splice", scope.path + ".items");
                                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".products.splice", scope.path + ".products");
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
                             }
                             if (handlers.db) { //Save to DB
                                 handlers.db.write(info.items, 'cart', function (state) {
@@ -1740,6 +1765,9 @@ var InlineJS;
                                         callback(item);
                                     }
                                 });
+                            }
+                            else if (callback) {
+                                callback(item);
                             }
                         };
                         var item = info.items.find(function (infoItem) { return (infoItem.product.sku === sku); });
@@ -1760,10 +1788,12 @@ var InlineJS;
                                     quantity: 0,
                                     product: data.product
                                 };
-                                info.items.push(newItem);
-                                info.proxies.push(createItemProxy(newItem));
-                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".items.push", scope.path + ".items");
+                                info.items.unshift(newItem);
+                                info.products.unshift(newItem.product);
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".items.unshift", scope.path + ".items");
                                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".products.unshift", scope.path + ".products");
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
                                 doUpdate_1(newItem, computedQuantity_1);
                             })["catch"](function (err) {
                                 ExtendedDirectiveHandlers.ReportServerError(regionId, err);
@@ -1777,7 +1807,25 @@ var InlineJS;
                         fetch(handlers.updateLink + "/" + sku + "?quantity=" + quantity + "&incremental=" + incremental, {
                             method: 'GET',
                             credentials: 'same-origin'
-                        }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(callback)["catch"](function (err) {
+                        }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
+                            if (data.quantity <= 0) {
+                                var index = info.items.findIndex(function (infoItem) { return (infoItem.product.sku === sku); });
+                                if (index != -1) { //Remove from list
+                                    info.items.splice(index, 1);
+                                    info.products.splice(index, 1);
+                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".items.splice", scope.path + ".items");
+                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".products.splice", scope.path + ".products");
+                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                                }
+                                return;
+                            }
+                            callback({
+                                price: (data.price || data.product.price),
+                                quantity: data.quantity,
+                                product: data.product
+                            });
+                        })["catch"](function (err) {
                             ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         });
                     }
@@ -1786,7 +1834,7 @@ var InlineJS;
             var scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue = null;
             var info = {
                 items: new Array(),
-                proxies: new Array(),
+                products: new Array(),
                 count: 0,
                 total: 0
             };
@@ -1820,11 +1868,14 @@ var InlineJS;
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "items." + existing.product.sku + ".price", scope);
                     }
                 }
-                else { //Add new
-                    info.items.push(item);
-                    info.proxies.push(createItemProxy(item));
-                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".items.push", scope.path + ".items");
+                else if (0 < item.quantity) { //Add new
+                    info.items.unshift(item);
+                    info.products.unshift(item.product);
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".items.unshift", scope.path + ".items");
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".products.unshift", scope.path + ".products");
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                    alertHasNew();
                 }
                 computeValues();
             };
@@ -1839,48 +1890,32 @@ var InlineJS;
                 }
             };
             var clear = function () { return update(null, 0, false); };
-            var createItemProxy = function (item) {
+            var createListProxy = function (key) {
                 return InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
-                    if (prop === 'quantity') {
-                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + item.product.sku + "." + prop);
-                        return item.quantity;
+                    if (prop === '__InlineJS_Target__') {
+                        return info[key];
                     }
-                    if (prop === 'price') {
-                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + item.product.sku + "." + prop);
-                        return item.price;
+                    if (prop === '__InlineJS_Path__') {
+                        return scope.path + "." + key;
                     }
-                    if (prop === 'product') {
-                        return item.product;
-                    }
-                }, ['quantity', 'price', 'product'], function (target, prop, value) {
-                    if (prop.toString() === 'quantity') {
-                        update(item.product.sku, value, false);
-                        return true;
-                    }
-                    return false;
-                });
+                    return info[key][prop];
+                }, ['__InlineJS_Target__', '__InlineJS_Path__'], null, []);
             };
-            var itemsProxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
-                if (prop === 'length') {
-                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + prop);
-                    return info.items.length;
-                }
-                if (prop === '__InlineJS_Target__') {
-                    return info.items;
-                }
-                if (prop === '__InlineJS_Path__') {
-                    return scope.path + ".items";
-                }
-                var index = parseInt(prop);
-                if (index || index === 0) {
-                    return info.proxies[index];
-                }
-                return info.items[prop];
-            }, ['length', '__InlineJS_Target__', '__InlineJS_Path__'], null, []);
+            var itemsProxy = createListProxy('items'), productsProxy = createListProxy('products');
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop in info) {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
-                    return ((prop === 'items') ? itemsProxy : info[prop]);
+                    if (prop === 'items') {
+                        return itemsProxy;
+                    }
+                    if (prop === 'products') {
+                        return productsProxy;
+                    }
+                    return info[prop];
+                }
+                if (prop === 'hasNew') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    return hasNew;
                 }
                 if (prop === 'update') {
                     return update;
@@ -1888,7 +1923,35 @@ var InlineJS;
                 if (prop === 'clear') {
                     return clear;
                 }
-            }, __spreadArrays(Object.keys(info), ['update', 'clear']));
+                if (prop === 'contains') {
+                    return function (sku) {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items");
+                        return (info.items.findIndex(function (item) { return (item.product.sku === sku); }) != -1);
+                    };
+                }
+                if (prop === 'get') {
+                    return function (sku) {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items");
+                        return info.items.find(function (item) { return (item.product.sku === sku); });
+                    };
+                }
+                if (prop === 'getQuantity') {
+                    return function (sku) {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + sku + ".quantity");
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items");
+                        var item = info.items.find(function (item) { return (item.product.sku === sku); });
+                        return (item ? item.quantity : 0);
+                    };
+                }
+                if (prop === 'getPrice') {
+                    return function (sku) {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + sku + ".price");
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items");
+                        var item = info.items.find(function (item) { return (item.product.sku === sku); });
+                        return (item ? item.price : 0);
+                    };
+                }
+            }, __spreadArrays(Object.keys(info), ['hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice']));
             InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
             InlineJS.DirectiveHandlerManager.AddHandler('cartClear', function (innerRegion, innerElement, innerDirective) {
                 innerElement.addEventListener('click', function (e) {
@@ -1920,9 +1983,6 @@ var InlineJS;
                 innerRegion.GetState().TrapGetAccess(function () {
                     sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 }, true, innerElement);
-                if (!sku) {
-                    return InlineJS.DirectiveHandlerReturn.Nil;
-                }
                 innerElement.addEventListener('click', function (e) {
                     e.preventDefault();
                     update(sku, 1, true);
@@ -1934,12 +1994,20 @@ var InlineJS;
                 innerRegion.GetState().TrapGetAccess(function () {
                     sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
                 }, true, innerElement);
-                if (!sku) {
-                    return InlineJS.DirectiveHandlerReturn.Nil;
-                }
                 innerElement.addEventListener('click', function (e) {
                     e.preventDefault();
                     update(sku, -1, true);
+                });
+                return InlineJS.DirectiveHandlerReturn.Handled;
+            });
+            InlineJS.DirectiveHandlerManager.AddHandler('cartRemove', function (innerRegion, innerElement, innerDirective) {
+                var sku = '';
+                innerRegion.GetState().TrapGetAccess(function () {
+                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
+                }, true, innerElement);
+                innerElement.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    update(sku, 0, false);
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });

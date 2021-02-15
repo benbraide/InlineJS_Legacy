@@ -72,7 +72,7 @@ declare namespace InlineJS {
     }
     interface CartInfo {
         items: Array<CartItem>;
-        proxies: Array<any>;
+        products: Array<any>;
         count: number;
         total: number;
     }

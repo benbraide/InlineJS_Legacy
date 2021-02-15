@@ -2998,6 +2998,16 @@ namespace InlineJS{
                             (cloneInfo.key as number) -= removedClones.length;
                         }
                     }
+                    else if (change.path === `${options.path}.push.${change.prop}`){
+                        let count = (Number.parseInt(change.prop) || 0);
+                        
+                        options.count += count;
+                        addSizeChange(myRegion);
+
+                        for (let index = 0; index < count; ++index){
+                            append(myRegion);
+                        }
+                    }
                     
                     if (change.path !== `${options.path}.${change.prop}`){
                         return;

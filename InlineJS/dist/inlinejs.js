@@ -2422,6 +2422,14 @@ var InlineJS;
                             cloneInfo.key -= removedClones.length;
                         }
                     }
+                    else if (change.path === options.path + ".push." + change.prop) {
+                        var count = (Number.parseInt(change.prop) || 0);
+                        options.count += count;
+                        addSizeChange(myRegion);
+                        for (var index_4 = 0; index_4 < count; ++index_4) {
+                            append(myRegion);
+                        }
+                    }
                     if (change.path !== options.path + "." + change.prop) {
                         return;
                     }
