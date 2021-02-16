@@ -2095,12 +2095,14 @@ namespace InlineJS{
                     let checked = Region.GetGlobalValue(regionId, '$auth').check(), setItems = (items: Array<CartItem>) => {
                         items = (items || []);
                         
-                        info.items = items;
-                        info.products = [];
-                        items.forEach(item => info.products.push(item.product));
-
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.${items.length}`, `${scope.path}.items.splice`, `${scope.path}.items`);
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.products.length}.${items.length}`, `${scope.path}.products.splice`, `${scope.path}.products`);
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'products', scope);
+
+                        info.items.splice(0, info.items.length, ...items);
+                        info.products.splice(0, info.products.length, ...items.map(item => item.product));
 
                         computeValues();
                         (updatesQueue || []).forEach((callback) => {
@@ -2145,12 +2147,15 @@ namespace InlineJS{
                                 return;
                             }
 
-                            info.items = [];
-                            info.products = [];
-                            
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+
+                            ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.products.splice`, `${scope.path}.products`);
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'products', scope);
 
+                            info.items.splice(0, info.items.length);
+                            info.products.splice(0, info.products.length);
+                            
                             computeValues();
                             if (handlers.db){//Save to DB
                                 handlers.db.write(info.items, 'cart', (state: boolean) => {});
@@ -2248,6 +2253,20 @@ namespace InlineJS{
                             method: 'GET',
                             credentials: 'same-origin',
                         }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
+                            if (data.empty){
+                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
+                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+
+                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.products.splice`, `${scope.path}.products`);
+                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'products', scope);
+
+                                info.items.splice(0, info.items.length);
+                                info.products.splice(0, info.products.length);
+                                
+                                computeValues();
+                                return;
+                            }
+                            
                             if (data.quantity <= 0){
                                 let index = info.items.findIndex(infoItem => (infoItem.product.sku === sku));
                                 if (index != -1){//Remove from list
@@ -2348,7 +2367,7 @@ namespace InlineJS{
 
             let clear = () => update(null, 0, false);
 
-            let createListProxy = (key: string) => {
+            let createListProxy = (key: string, list: Array<any>) => {
                 return CoreDirectiveHandlers.CreateProxy((prop) => {
                     if (prop === '__InlineJS_Target__'){
                         return info[key];
@@ -2359,10 +2378,10 @@ namespace InlineJS{
                     }
     
                     return info[key][prop];
-                }, ['__InlineJS_Target__', '__InlineJS_Path__'], null, []);
+                }, ['__InlineJS_Target__', '__InlineJS_Path__'], null, list);
             }
 
-            let itemsProxy = createListProxy('items'), productsProxy = createListProxy('products');
+            let itemsProxy = createListProxy('items', info.items), productsProxy = createListProxy('products', info.products);
             let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop in info){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);

@@ -1681,12 +1681,14 @@ var InlineJS;
             if (!handlers.load) {
                 handlers.load = function () {
                     var checked = InlineJS.Region.GetGlobalValue(regionId, '$auth').check(), setItems = function (items) {
+                        var _a, _b;
                         items = (items || []);
-                        info.items = items;
-                        info.products = [];
-                        items.forEach(function (item) { return info.products.push(item.product); });
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + "." + items.length, scope.path + ".items.splice", scope.path + ".items");
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.products.length + "." + items.length, scope.path + ".products.splice", scope.path + ".products");
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                        (_a = info.items).splice.apply(_a, __spreadArrays([0, info.items.length], items));
+                        (_b = info.products).splice.apply(_b, __spreadArrays([0, info.products.length], items.map(function (item) { return item.product; })));
                         computeValues();
                         (updatesQueue || []).forEach(function (callback) {
                             try {
@@ -1724,10 +1726,12 @@ var InlineJS;
                             if (info.items.length == 0) {
                                 return;
                             }
-                            info.items = [];
-                            info.products = [];
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".items.splice", scope.path + ".items");
                             ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                            ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".products.splice", scope.path + ".products");
                             ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                            info.items.splice(0, info.items.length);
+                            info.products.splice(0, info.products.length);
                             computeValues();
                             if (handlers.db) { //Save to DB
                                 handlers.db.write(info.items, 'cart', function (state) { });
@@ -1808,6 +1812,16 @@ var InlineJS;
                             method: 'GET',
                             credentials: 'same-origin'
                         }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
+                            if (data.empty) {
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".items.splice", scope.path + ".items");
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".products.splice", scope.path + ".products");
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                                info.items.splice(0, info.items.length);
+                                info.products.splice(0, info.products.length);
+                                computeValues();
+                                return;
+                            }
                             if (data.quantity <= 0) {
                                 var index = info.items.findIndex(function (infoItem) { return (infoItem.product.sku === sku); });
                                 if (index != -1) { //Remove from list
@@ -1890,7 +1904,7 @@ var InlineJS;
                 }
             };
             var clear = function () { return update(null, 0, false); };
-            var createListProxy = function (key) {
+            var createListProxy = function (key, list) {
                 return InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                     if (prop === '__InlineJS_Target__') {
                         return info[key];
@@ -1899,9 +1913,9 @@ var InlineJS;
                         return scope.path + "." + key;
                     }
                     return info[key][prop];
-                }, ['__InlineJS_Target__', '__InlineJS_Path__'], null, []);
+                }, ['__InlineJS_Target__', '__InlineJS_Path__'], null, list);
             };
-            var itemsProxy = createListProxy('items'), productsProxy = createListProxy('products');
+            var itemsProxy = createListProxy('items', info.items), productsProxy = createListProxy('products', info.products);
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop in info) {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
