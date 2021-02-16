@@ -679,6 +679,7 @@ var InlineJS;
             this.list_ = new Array();
             this.subscriberId_ = null;
             this.subscribers_ = {};
+            this.subscriptionCallbacks_ = {};
             this.getAccessStorages_ = new Stack();
             this.getAccessHooks_ = new Stack();
             this.origins_ = new Stack();
@@ -698,10 +699,11 @@ var InlineJS;
                     var list = _this.list_, batches_1 = new Array();
                     _this.list_ = new Array();
                     list.forEach(function (item) {
-                        if (item.path in _this.subscribers_) {
-                            _this.subscribers_[item.path].forEach(function (info) {
-                                if (info.callback !== Changes.GetOrigin(item)) { //Ignore originating callback
-                                    Changes.AddBatch(batches_1, item, info.callback);
+                        if (item.path in _this.subscriptionCallbacks_) {
+                            var subscriptionCallbacks_1 = _this.subscriptionCallbacks_[item.path];
+                            Object.keys(subscriptionCallbacks_1).forEach(function (key) {
+                                if (subscriptionCallbacks_1[key] !== Changes.GetOrigin(item)) { //Ignore originating callback
+                                    Changes.AddBatch(batches_1, item, subscriptionCallbacks_1[key]);
                                 }
                             });
                         }
@@ -721,10 +723,10 @@ var InlineJS;
         Changes.prototype.Subscribe = function (path, callback) {
             var id;
             if (this.subscriberId_ === null) {
-                id = (this.subscriberId_ = 0);
+                id = "sub_" + (this.subscriberId_ = 0);
             }
             else {
-                id = ++this.subscriberId_;
+                id = "sub_" + ++this.subscriberId_;
             }
             var region = Region.GetCurrent(this.regionId_);
             if (region) { //Check for a context element
@@ -739,22 +741,17 @@ var InlineJS;
                     }
                 }
             }
-            var list = (this.subscribers_[path] = (this.subscribers_[path] || new Array()));
-            list.push({
-                id: id,
+            (this.subscriptionCallbacks_[path] = (this.subscriptionCallbacks_[path] || {}))[id] = callback;
+            this.subscribers_[id] = {
+                path: path,
                 callback: callback
-            });
+            };
             return id;
         };
         Changes.prototype.Unsubscribe = function (id) {
-            for (var path in this.subscribers_) {
-                var list = this.subscribers_[path];
-                for (var i = list.length; i > 0; --i) {
-                    var index = (i - 1);
-                    if (list[index].id == id) {
-                        list.splice(index, 1);
-                    }
-                }
+            if (id in this.subscribers_) {
+                delete this.subscriptionCallbacks_[this.subscribers_[id].path][id];
+                delete this.subscribers_[id];
             }
         };
         Changes.prototype.AddGetAccess = function (path) {
@@ -2475,7 +2472,7 @@ var InlineJS;
                     });
                 }
             };
-            var changeHandler, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
+            var changeHandler;
             var initOptions = function (target, count, handler, createClones) {
                 if (Region.IsObject(target) && '__InlineJS_Path__' in target) {
                     options.path = target['__InlineJS_Path__'];
@@ -2545,7 +2542,7 @@ var InlineJS;
             var getTarget = function (target) {
                 return (((Array.isArray(target) || Region.IsObject(target)) && ('__InlineJS_Target__' in target)) ? target['__InlineJS_Target__'] : target);
             };
-            region.GetState().TrapGetAccess(function () {
+            var subscriptions = region.GetState().TrapGetAccess(function () {
                 if (element.parentElement) {
                     element.parentElement.removeChild(element);
                 }
@@ -2578,10 +2575,28 @@ var InlineJS;
                 });
                 return (!!options.path || options.rangeValue !== null);
             }, null);
-            info.parent.appendChild(tmpl);
-            region.AddElement(tmpl).uninitCallbacks.push(function () {
-                Region.UnsubscribeAll(subscriptions);
-            });
+            var parentScope = region.AddElement(info.parent, true), uninit = function () {
+                Object.keys(subscriptions).forEach(function (key) {
+                    var targetRegion = Region.Get(key);
+                    if (targetRegion) {
+                        var changes_2 = targetRegion.GetChanges();
+                        subscriptions[key].forEach(function (id) { return changes_2.Unsubscribe(id); });
+                    }
+                });
+                window.removeEventListener('inlinejs.refresh', onRefresh);
+                subscriptions = {};
+            };
+            var onRefresh = function (e) {
+                if (e.detail.target === info.parent || e.detail.target.contains(info.parent)) {
+                    uninit();
+                }
+            };
+            window.addEventListener('inlinejs.refresh', onRefresh);
+            if (parentScope) {
+                parentScope.uninitCallbacks.push(function () {
+                    uninit();
+                });
+            }
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {

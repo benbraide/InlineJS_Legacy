@@ -31,7 +31,7 @@ namespace InlineJS{
 
     export interface ChangeRefInfo{
         regionId: string;
-        subscriptionId: number;
+        subscriptionId: string;
     }
     
     export interface TrapInfo{
@@ -843,7 +843,7 @@ namespace InlineJS{
     }
     
     export interface SubscriberInfo{
-        id: number;
+        path: string;
         callback: ChangeCallbackType;
     }
 
@@ -874,7 +874,8 @@ namespace InlineJS{
         private list_ = new Array<Change | BubbledChange>();
         
         private subscriberId_: number = null;
-        private subscribers_: Record<string, Array<SubscriberInfo>> = {};
+        private subscribers_: Record<string, SubscriberInfo> = {};
+        private subscriptionCallbacks_: Record<string, Record<string, ChangeCallbackType>> = {};
 
         private getAccessStorages_ = new Stack<GetAccessStorageInfo>();
         private getAccessHooks_ = new Stack<GetAccessHookType>();
@@ -899,10 +900,11 @@ namespace InlineJS{
                     this.list_ = new Array<Change | BubbledChange>();
             
                     list.forEach((item) => {
-                        if (item.path in this.subscribers_){
-                            (this.subscribers_[item.path] as Array<SubscriberInfo>).forEach((info) => {
-                                if (info.callback !== Changes.GetOrigin(item)){//Ignore originating callback
-                                    Changes.AddBatch(batches, item, info.callback);
+                        if (item.path in this.subscriptionCallbacks_){
+                            let subscriptionCallbacks = this.subscriptionCallbacks_[item.path];
+                            Object.keys(subscriptionCallbacks).forEach((key) => {
+                                if (subscriptionCallbacks[key] !== Changes.GetOrigin(item)){//Ignore originating callback
+                                    Changes.AddBatch(batches, item, subscriptionCallbacks[key]);
                                 }
                             });
                         }
@@ -923,13 +925,13 @@ namespace InlineJS{
             this.Schedule();
         }
 
-        public Subscribe(path: string, callback: ChangeCallbackType): number{
-            let id: number;
+        public Subscribe(path: string, callback: ChangeCallbackType): string{
+            let id: string;
             if (this.subscriberId_ === null){
-                id = (this.subscriberId_ = 0);
+                id = `sub_${(this.subscriberId_ = 0)}`;
             }
             else{
-                id = ++this.subscriberId_;
+                id = `sub_${++this.subscriberId_}`;
             }
 
             let region = Region.GetCurrent(this.regionId_);
@@ -946,24 +948,19 @@ namespace InlineJS{
                 }
             }
 
-            let list: Array<SubscriberInfo> = (this.subscribers_[path] = (this.subscribers_[path] || new Array<SubscriberInfo>()));
-            list.push({
-                id: id,
-                callback: callback
-            });
-            
+            (this.subscriptionCallbacks_[path] = (this.subscriptionCallbacks_[path] || {}))[id] = callback;
+            this.subscribers_[id] = {
+                path: path,
+                callback: callback,
+            };
+
             return id;
         }
 
-        public Unsubscribe(id: number){
-            for (let path in this.subscribers_){
-                let list = (this.subscribers_[path] as Array<SubscriberInfo>);
-                for (let i = list.length; i > 0; --i){
-                    let index = (i - 1);
-                    if (list[index].id == id){
-                        list.splice(index, 1);
-                    }
-                }
+        public Unsubscribe(id: string){
+            if (id in this.subscribers_){
+                delete this.subscriptionCallbacks_[this.subscribers_[id].path][id];
+                delete this.subscribers_[id];
             }
         }
 
@@ -1173,7 +1170,7 @@ namespace InlineJS{
             return this.eventContext_.Peek();
         }
 
-        public TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, elementContext: HTMLElement | string, staticCallback?: () => void): Record<string, Array<number>>{
+        public TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, elementContext: HTMLElement | string, staticCallback?: () => void): Record<string, Array<string>>{
             let region = Region.Get(this.regionId_);
             if (!region){
                 return {};
@@ -1211,7 +1208,7 @@ namespace InlineJS{
                 }
             }
 
-            let ids: Record<string, Array<number>> = {};
+            let ids: Record<string, Array<string>> = {};
             let onChange = (changes: Array<Change | BubbledChange>) => {
                 let myRegion = Region.Get(this.regionId_);
                 if (myRegion){//Mark changes
@@ -1242,7 +1239,7 @@ namespace InlineJS{
                         }
 
                         let changes = myRegion.GetChanges();
-                        (ids[regionId] as Array<number>).forEach(id => changes.Unsubscribe(id));
+                        ids[regionId].forEach(id => changes.Unsubscribe(id));
                     }
                 }
             };
@@ -1254,7 +1251,7 @@ namespace InlineJS{
             for (let path in uniqueEntries){
                 let targetRegion = Region.Get(uniqueEntries[path]);
                 if (targetRegion){
-                    ((ids[targetRegion.GetId()] = (ids[targetRegion.GetId()] || new Array<number>())) as Array<number>).push(targetRegion.GetChanges().Subscribe(path, onChange));
+                    ((ids[targetRegion.GetId()] = (ids[targetRegion.GetId()] || new Array<string>())) as Array<string>).push(targetRegion.GetChanges().Subscribe(path, onChange));
                 }
             }
 
@@ -3061,7 +3058,7 @@ namespace InlineJS{
                 }
             };
 
-            let changeHandler: (myRegion: Region, change: Change, isOriginal: boolean) => void, tmpl = document.createElement('template'), subscriptions = scope.changeRefs;
+            let changeHandler: (myRegion: Region, change: Change, isOriginal: boolean) => void;
             let initOptions = (target: any, count: number, handler: (myRegion: Region, change: Change, isOriginal: boolean) => void, createClones: () => any) => {
                 if (Region.IsObject(target) && '__InlineJS_Path__' in target){
                     options.path = target['__InlineJS_Path__'];
@@ -3147,7 +3144,7 @@ namespace InlineJS{
                 return (((Array.isArray(target) || Region.IsObject(target)) && ('__InlineJS_Target__' in target)) ? target['__InlineJS_Target__'] : target);
             };
             
-            region.GetState().TrapGetAccess(() => {
+            let subscriptions = region.GetState().TrapGetAccess(() => {
                 if (element.parentElement){
                     element.parentElement.removeChild(element);
                 }
@@ -3186,10 +3183,31 @@ namespace InlineJS{
                 return (!!options.path || options.rangeValue !== null);
             }, null);
 
-            info.parent.appendChild(tmpl);
-            region.AddElement(tmpl).uninitCallbacks.push(() => {
-                Region.UnsubscribeAll(subscriptions);
-            });
+            let parentScope = region.AddElement(info.parent, true), uninit = () => {
+                Object.keys(subscriptions).forEach((key) => {
+                    let targetRegion = Region.Get(key);
+                    if (targetRegion){
+                        let changes = targetRegion.GetChanges();
+                        subscriptions[key].forEach(id => changes.Unsubscribe(id));
+                    }
+                });
+                
+                window.removeEventListener('inlinejs.refresh', onRefresh);
+                subscriptions = {};
+            };
+
+            let onRefresh = (e: Event) => {
+                if ((e as CustomEvent).detail.target === info.parent || (e as CustomEvent).detail.target.contains(info.parent)){
+                    uninit();
+                }
+            };
+
+            window.addEventListener('inlinejs.refresh', onRefresh);
+            if (parentScope){
+                parentScope.uninitCallbacks.push(() => {
+                    uninit();
+                });
+            }
             
             return DirectiveHandlerReturn.QuitAll;
         }

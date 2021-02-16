@@ -3194,6 +3194,9 @@ var InlineJS;
                 if (force === void 0) { force = false; }
                 if (force || !append) {
                     while (element.firstElementChild) {
+                        window.dispatchEvent(new CustomEvent('inlinejs.refresh', {
+                            detail: { target: element.firstElementChild }
+                        }));
                         InlineJS.Region.RemoveElementStatic(element.firstElementChild);
                         element.removeChild(element.firstElementChild);
                     }

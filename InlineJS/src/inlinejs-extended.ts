@@ -3896,6 +3896,10 @@ namespace InlineJS{
             let removeAll = (force: boolean = false) => {
                 if (force || !append){
                     while (element.firstElementChild){
+                        window.dispatchEvent(new CustomEvent('inlinejs.refresh', {
+                            detail: { target: element.firstElementChild },
+                        }));
+                        
                         Region.RemoveElementStatic(element.firstElementChild as HTMLElement);
                         element.removeChild(element.firstElementChild);
                     }

@@ -15,7 +15,7 @@ declare namespace InlineJS {
     }
     interface ChangeRefInfo {
         regionId: string;
-        subscriptionId: number;
+        subscriptionId: string;
     }
     interface TrapInfo {
         stopped: boolean;
@@ -187,7 +187,7 @@ declare namespace InlineJS {
         changes: Array<Change | BubbledChange>;
     }
     interface SubscriberInfo {
-        id: number;
+        path: string;
         callback: ChangeCallbackType;
     }
     interface GetAccessInfo {
@@ -214,6 +214,7 @@ declare namespace InlineJS {
         private list_;
         private subscriberId_;
         private subscribers_;
+        private subscriptionCallbacks_;
         private getAccessStorages_;
         private getAccessHooks_;
         private origins_;
@@ -221,8 +222,8 @@ declare namespace InlineJS {
         GetRegionId(): string;
         Schedule(): void;
         Add(item: Change | BubbledChange): void;
-        Subscribe(path: string, callback: ChangeCallbackType): number;
-        Unsubscribe(id: number): void;
+        Subscribe(path: string, callback: ChangeCallbackType): string;
+        Unsubscribe(id: string): void;
         AddGetAccess(path: string): void;
         ReplaceOptimizedGetAccesses(): void;
         FlushRawGetAccesses(): void;
@@ -254,7 +255,7 @@ declare namespace InlineJS {
         PushEventContext(Value: Event): void;
         PopEventContext(): Event;
         GetEventContext(): Event;
-        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, elementContext: HTMLElement | string, staticCallback?: () => void): Record<string, Array<number>>;
+        TrapGetAccess(callback: ChangeCallbackType, changeCallback: ChangeCallbackType | true, elementContext: HTMLElement | string, staticCallback?: () => void): Record<string, Array<string>>;
         ReportError(value: any, ref?: any): void;
         Warn(value: any, ref?: any): void;
         Log(value: any, ref?: any): void;
