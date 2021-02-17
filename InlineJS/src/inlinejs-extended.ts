@@ -106,6 +106,7 @@ namespace InlineJS{
         errorBag?: Record<string, Array<string>>;
         callback?: (data: any, err?: any) => boolean;
         confirmInfo?: string | Record<string, any>;
+        dbExcept?: Array<string>;
     }
 
     export interface Point{
@@ -2529,6 +2530,10 @@ namespace InlineJS{
         }
 
         public static DB(region: Region, element: HTMLElement, directive: Directive){
+            if (directive.arg.key === 'global' && Region.GetGlobal(region.GetId(), '$db')){
+                return DirectiveHandlerReturn.Nil;
+            }
+            
             let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
             if (typeof data === 'string'){
                 data = {
@@ -2659,10 +2664,7 @@ namespace InlineJS{
                 });
             };
 
-            let elementScope = region.AddElement(element, true);
-            let scope = ExtendedDirectiveHandlers.AddScope('db', elementScope, []);
-
-            elementScope.locals['$db'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) =>{
                 if (prop in options){
                     return options[prop];
                 }
@@ -2682,11 +2684,14 @@ namespace InlineJS{
                 if (prop === 'write'){
                     return write;
                 }
-
-                if (prop in scope.callbacks){
-                    return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
-                }
-            }, [...Object.keys(options), 'open', 'close', 'read', 'write', ...Object.keys(scope.callbacks)]);
+            }, [...Object.keys(options), 'open', 'close', 'read', 'write']);
+            
+            if (directive.arg.key === 'global'){
+                Region.AddGlobal('$db', () => proxy);
+            }
+            else{
+                region.AddElement(element, true).locals['$db'] = proxy;
+            }
 
             open();
             
@@ -3405,6 +3410,7 @@ namespace InlineJS{
                 errorBag: data.errorBag,
                 callback: data.callback,
                 confirmInfo: data.confirmInfo,
+                dbExcept: (data.dbExcept || ['_token']),
             }, directive.arg.options);
 
             return DirectiveHandlerReturn.Handled;
@@ -3418,6 +3424,7 @@ namespace InlineJS{
             let options = {
                 reload: false,
                 files: false,
+                db: false,
             };
 
             let regionId = region.GetId(), middlewares = new Array<(callback: (state: boolean) => void, form?: HTMLFormElement) => void>();
@@ -3470,6 +3477,20 @@ namespace InlineJS{
             };
 
             options.files = (options.files || !! element.querySelector('input[type="file"]'));
+            if (options.db){
+                let db = Region.GetGlobalValue(regionId, '$db'), name = element.getAttribute('name');
+                if (db && name){//Read from DB
+                    db.read(`__InlineJS_Form_${name}`, (fields: Record<string, string>) => {
+                        Object.keys(fields || {}).forEach((key) => {
+                            let member = element.elements.namedItem(key);
+                            if (!(member instanceof RadioNodeList) && 'value' in member){
+                                (member as any).value = fields[key];
+                            }
+                        });
+                    });
+                }
+            }
+            
             let submit = () => {
                 if (onSubmit){//Pass to handler
                     onSubmit(() => {
@@ -3534,6 +3555,8 @@ namespace InlineJS{
                 }
                 
                 fetch(action, initInfo).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
+                    setActiveState(false);
+                    
                     try{
                         if (info.errorBag && 'failed' in data){
                             for (let key in info.errorBag){
@@ -3546,13 +3569,31 @@ namespace InlineJS{
                             element.dispatchEvent(new CustomEvent('form.success', {
                                 detail: data
                             }));
-    
-                            if (options.reload){
-                                let router = Region.GetGlobalValue(regionId, '$router');
-                                if (router){
-                                    router.reload();
-                                    return;
+
+                            if (options.db){
+                                let db = Region.GetGlobalValue(regionId, '$db'), name = element.getAttribute('name');
+                                if (db && name){//Write to DB
+                                    let fields: Record<string, string> = {};
+                                    for (let i = 0; i < element.elements.length; ++i){
+                                        let key = element.elements[i].getAttribute('name');
+                                        if (key && 'value' in element.elements[i] && (!info || !info.dbExcept.includes(key))){
+                                            fields[key] = (element.elements[i] as any).value;
+                                        }
+                                    }
+                                    
+                                    db.write(fields, `__InlineJS_Form_${name}`);
                                 }
+                            }
+
+                            let router = Region.GetGlobalValue(regionId, '$router');
+                            if ('__redirect' in data && router){
+                                router.goto(data['__redirect'], data['__redirectQuery']);
+                                return;
+                            }
+    
+                            if (options.reload && router){
+                                router.reload();
+                                return;
                             }
     
                             element.reset();
@@ -3561,9 +3602,9 @@ namespace InlineJS{
                     catch (err){
                         Region.Get(regionId).GetState().ReportError(err, `InlineJs.Region<${regionId}>.ExtendedDirectiveHandlers.BindForm(Element@${element.nodeName}, x-form)`);
                     }
-                    
-                    setActiveState(false);
                 }).catch((err) => {
+                    setActiveState(false);
+                    
                     try{
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (info.callback){
@@ -3573,8 +3614,6 @@ namespace InlineJS{
                     catch (err){
                         Region.Get(regionId).GetState().ReportError(err, `InlineJs.Region<${regionId}>.ExtendedDirectiveHandlers.BindForm(Element@${element.nodeName}, x-form)`);
                     }
-
-                    setActiveState(false);
                 });
             };
 
@@ -3899,7 +3938,7 @@ namespace InlineJS{
                         window.dispatchEvent(new CustomEvent('inlinejs.refresh', {
                             detail: { target: element.firstElementChild },
                         }));
-                        
+
                         Region.RemoveElementStatic(element.firstElementChild as HTMLElement);
                         element.removeChild(element.firstElementChild);
                     }

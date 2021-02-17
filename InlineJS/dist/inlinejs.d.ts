@@ -402,6 +402,7 @@ declare namespace InlineJS {
         static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo;
+        static UninitIfOrEach(region: Region, info: IfOrEachInfo, subscriptions: Record<string, Array<string>>): void;
         static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean), setter?: (target: object, prop: string | number | symbol, value: any) => boolean, target?: any): any;
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;

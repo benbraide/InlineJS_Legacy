@@ -2033,6 +2033,9 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.DB = function (region, element, directive) {
+            if (directive.arg.key === 'global' && InlineJS.Region.GetGlobal(region.GetId(), '$db')) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
             var data = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
             if (typeof data === 'string') {
                 data = {
@@ -2141,9 +2144,7 @@ var InlineJS;
                     InlineJS.Region.Get(regionId).GetState().ReportError("Failed to write to database '" + options.name + "'", e);
                 });
             };
-            var elementScope = region.AddElement(element, true);
-            var scope = ExtendedDirectiveHandlers.AddScope('db', elementScope, []);
-            elementScope.locals['$db'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop in options) {
                     return options[prop];
                 }
@@ -2159,10 +2160,13 @@ var InlineJS;
                 if (prop === 'write') {
                     return write;
                 }
-                if (prop in scope.callbacks) {
-                    return function (callback) { return scope.callbacks[prop].push(callback); };
-                }
-            }, __spreadArrays(Object.keys(options), ['open', 'close', 'read', 'write'], Object.keys(scope.callbacks)));
+            }, __spreadArrays(Object.keys(options), ['open', 'close', 'read', 'write']));
+            if (directive.arg.key === 'global') {
+                InlineJS.Region.AddGlobal('$db', function () { return proxy; });
+            }
+            else {
+                region.AddElement(element, true).locals['$db'] = proxy;
+            }
             open();
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
@@ -2775,7 +2779,8 @@ var InlineJS;
                 method: (data.method || element.method),
                 errorBag: data.errorBag,
                 callback: data.callback,
-                confirmInfo: data.confirmInfo
+                confirmInfo: data.confirmInfo,
+                dbExcept: (data.dbExcept || ['_token'])
             }, directive.arg.options);
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
@@ -2785,7 +2790,8 @@ var InlineJS;
             }
             var options = {
                 reload: false,
-                files: false
+                files: false,
+                db: false
             };
             var regionId = region.GetId(), middlewares = new Array();
             directiveOptions.forEach(function (key) {
@@ -2831,6 +2837,19 @@ var InlineJS;
                 }
             };
             options.files = (options.files || !!element.querySelector('input[type="file"]'));
+            if (options.db) {
+                var db = InlineJS.Region.GetGlobalValue(regionId, '$db'), name_1 = element.getAttribute('name');
+                if (db && name_1) { //Read from DB
+                    db.read("__InlineJS_Form_" + name_1, function (fields) {
+                        Object.keys(fields || {}).forEach(function (key) {
+                            var member = element.elements.namedItem(key);
+                            if (!(member instanceof RadioNodeList) && 'value' in member) {
+                                member.value = fields[key];
+                            }
+                        });
+                    });
+                }
+            }
             var submit = function () {
                 if (onSubmit) { //Pass to handler
                     onSubmit(function () {
@@ -2888,6 +2907,7 @@ var InlineJS;
                     initInfo.body = body;
                 }
                 fetch(action, initInfo).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
+                    setActiveState(false);
                     try {
                         if (info.errorBag && 'failed' in data) {
                             for (var key in info.errorBag) {
@@ -2899,12 +2919,27 @@ var InlineJS;
                             element.dispatchEvent(new CustomEvent('form.success', {
                                 detail: data
                             }));
-                            if (options.reload) {
-                                var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
-                                if (router) {
-                                    router.reload();
-                                    return;
+                            if (options.db) {
+                                var db = InlineJS.Region.GetGlobalValue(regionId, '$db'), name_2 = element.getAttribute('name');
+                                if (db && name_2) { //Write to DB
+                                    var fields = {};
+                                    for (var i = 0; i < element.elements.length; ++i) {
+                                        var key = element.elements[i].getAttribute('name');
+                                        if (key && 'value' in element.elements[i] && (!info || !info.dbExcept.includes(key))) {
+                                            fields[key] = element.elements[i].value;
+                                        }
+                                    }
+                                    db.write(fields, "__InlineJS_Form_" + name_2);
                                 }
+                            }
+                            var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
+                            if ('__redirect' in data && router) {
+                                router.goto(data['__redirect'], data['__redirectQuery']);
+                                return;
+                            }
+                            if (options.reload && router) {
+                                router.reload();
+                                return;
                             }
                             element.reset();
                         }
@@ -2912,8 +2947,8 @@ var InlineJS;
                     catch (err) {
                         InlineJS.Region.Get(regionId).GetState().ReportError(err, "InlineJs.Region<" + regionId + ">.ExtendedDirectiveHandlers.BindForm(Element@" + element.nodeName + ", x-form)");
                     }
-                    setActiveState(false);
                 })["catch"](function (err) {
+                    setActiveState(false);
                     try {
                         ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         if (info.callback) {
@@ -2923,7 +2958,6 @@ var InlineJS;
                     catch (err) {
                         InlineJS.Region.Get(regionId).GetState().ReportError(err, "InlineJs.Region<" + regionId + ">.ExtendedDirectiveHandlers.BindForm(Element@" + element.nodeName + ", x-form)");
                     }
-                    setActiveState(false);
                 });
             };
             var runMiddleWares = function (index) {

@@ -93,6 +93,7 @@ declare namespace InlineJS {
         errorBag?: Record<string, Array<string>>;
         callback?: (data: any, err?: any) => boolean;
         confirmInfo?: string | Record<string, any>;
+        dbExcept?: Array<string>;
     }
     interface Point {
         x: number;

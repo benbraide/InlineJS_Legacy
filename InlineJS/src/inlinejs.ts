@@ -2676,6 +2676,7 @@ namespace InlineJS{
         public static If(region: Region, element: HTMLElement, directive: Directive){
             let info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isInserted = true, ifFirstEntry = true;
 
+            let animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options);
             let evaluate = (myRegion: Region) => {
                 let hasParent = !! element.parentElement;
                 if (hasParent){
@@ -2691,16 +2692,15 @@ namespace InlineJS{
 
                 return result;
             };
-            
-            let animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options);
-            region.GetState().TrapGetAccess(() => {
+
+            region.GetElementScope(info.scopeKey).preserve = true;//Don't remove scope
+            let subscriptions = region.GetState().TrapGetAccess(() => {
                 let myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition){
                     scope.falseIfCondition = new Array<() => void>();
                 }
                 
                 let predicate = !! evaluate(myRegion), onHide = () => {
-                    scope.preserve = true;//Don't remove scope
                     [...scope.falseIfCondition].forEach(callback => callback());
     
                     if (!ifFirstEntry){
@@ -2740,6 +2740,8 @@ namespace InlineJS{
             if (!isInserted){//Initial evaluation result is false
                 region.RemoveElement(element);
             }
+
+            CoreDirectiveHandlers.UninitIfOrEach(region, info, subscriptions);
             
             return DirectiveHandlerReturn.QuitAll;
         }
@@ -3183,31 +3185,7 @@ namespace InlineJS{
                 return (!!options.path || options.rangeValue !== null);
             }, null);
 
-            let parentScope = region.AddElement(info.parent, true), uninit = () => {
-                Object.keys(subscriptions).forEach((key) => {
-                    let targetRegion = Region.Get(key);
-                    if (targetRegion){
-                        let changes = targetRegion.GetChanges();
-                        subscriptions[key].forEach(id => changes.Unsubscribe(id));
-                    }
-                });
-                
-                window.removeEventListener('inlinejs.refresh', onRefresh);
-                subscriptions = {};
-            };
-
-            let onRefresh = (e: Event) => {
-                if ((e as CustomEvent).detail.target === info.parent || (e as CustomEvent).detail.target.contains(info.parent)){
-                    uninit();
-                }
-            };
-
-            window.addEventListener('inlinejs.refresh', onRefresh);
-            if (parentScope){
-                parentScope.uninitCallbacks.push(() => {
-                    uninit();
-                });
-            }
+            CoreDirectiveHandlers.UninitIfOrEach(region, info, subscriptions);
             
             return DirectiveHandlerReturn.QuitAll;
         }
@@ -3233,6 +3211,34 @@ namespace InlineJS{
                 marker: CoreDirectiveHandlers.GetChildElementIndex(element),
                 attributes: attributes
             };
+        }
+
+        public static UninitIfOrEach(region: Region, info: IfOrEachInfo, subscriptions: Record<string, Array<string>>){
+            let parentScope = region.AddElement(info.parent, true), uninit = () => {
+                Object.keys(subscriptions).forEach((key) => {
+                    let targetRegion = Region.Get(key);
+                    if (targetRegion){
+                        let changes = targetRegion.GetChanges();
+                        subscriptions[key].forEach(id => changes.Unsubscribe(id));
+                    }
+                });
+                
+                window.removeEventListener('inlinejs.refresh', onRefresh);
+                subscriptions = {};
+            };
+
+            let onRefresh = (e: Event) => {
+                if ((e as CustomEvent).detail.target === info.parent || (e as CustomEvent).detail.target.contains(info.parent)){
+                    uninit();
+                }
+            };
+
+            window.addEventListener('inlinejs.refresh', onRefresh);
+            if (parentScope){
+                parentScope.uninitCallbacks.push(() => {
+                    uninit();
+                });
+            }
         }
 
         public static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset = 0){

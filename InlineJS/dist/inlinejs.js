@@ -2154,6 +2154,7 @@ var InlineJS;
         };
         CoreDirectiveHandlers.If = function (region, element, directive) {
             var info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original), isInserted = true, ifFirstEntry = true;
+            var animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options);
             var evaluate = function (myRegion) {
                 var hasParent = !!element.parentElement;
                 if (hasParent) {
@@ -2167,14 +2168,13 @@ var InlineJS;
                 }
                 return result;
             };
-            var animator = CoreDirectiveHandlers.GetAnimator(region, (directive.arg.key === 'animate'), element, directive.arg.options);
-            region.GetState().TrapGetAccess(function () {
+            region.GetElementScope(info.scopeKey).preserve = true; //Don't remove scope
+            var subscriptions = region.GetState().TrapGetAccess(function () {
                 var myRegion = Region.Get(info.regionId), scope = myRegion.GetElementScope(info.scopeKey);
                 if (!scope.falseIfCondition) {
                     scope.falseIfCondition = new Array();
                 }
                 var predicate = !!evaluate(myRegion), onHide = function () {
-                    scope.preserve = true; //Don't remove scope
                     __spreadArrays(scope.falseIfCondition).forEach(function (callback) { return callback(); });
                     if (!ifFirstEntry) {
                         info.attributes.forEach(function (attr) { return element.removeAttribute(attr.name); });
@@ -2208,6 +2208,7 @@ var InlineJS;
             if (!isInserted) { //Initial evaluation result is false
                 region.RemoveElement(element);
             }
+            CoreDirectiveHandlers.UninitIfOrEach(region, info, subscriptions);
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.Each = function (region, element, directive) {
@@ -2575,6 +2576,30 @@ var InlineJS;
                 });
                 return (!!options.path || options.rangeValue !== null);
             }, null);
+            CoreDirectiveHandlers.UninitIfOrEach(region, info, subscriptions);
+            return DirectiveHandlerReturn.QuitAll;
+        };
+        CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {
+            var elScopeKey = Region.GetElementKeyName(), attributes = new Array();
+            Array.from(element.attributes).forEach(function (attr) {
+                if (attr.name === elScopeKey) {
+                    return;
+                }
+                element.removeAttribute(attr.name);
+                if (attr.name !== except) {
+                    var directive = Processor.GetDirectiveWith(attr.name, attr.value);
+                    attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
+                }
+            });
+            return {
+                regionId: region.GetId(),
+                scopeKey: element.getAttribute(elScopeKey),
+                parent: element.parentElement,
+                marker: CoreDirectiveHandlers.GetChildElementIndex(element),
+                attributes: attributes
+            };
+        };
+        CoreDirectiveHandlers.UninitIfOrEach = function (region, info, subscriptions) {
             var parentScope = region.AddElement(info.parent, true), uninit = function () {
                 Object.keys(subscriptions).forEach(function (key) {
                     var targetRegion = Region.Get(key);
@@ -2597,27 +2622,6 @@ var InlineJS;
                     uninit();
                 });
             }
-            return DirectiveHandlerReturn.QuitAll;
-        };
-        CoreDirectiveHandlers.InitIfOrEach = function (region, element, except) {
-            var elScopeKey = Region.GetElementKeyName(), attributes = new Array();
-            Array.from(element.attributes).forEach(function (attr) {
-                if (attr.name === elScopeKey) {
-                    return;
-                }
-                element.removeAttribute(attr.name);
-                if (attr.name !== except) {
-                    var directive = Processor.GetDirectiveWith(attr.name, attr.value);
-                    attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
-                }
-            });
-            return {
-                regionId: region.GetId(),
-                scopeKey: element.getAttribute(elScopeKey),
-                parent: element.parentElement,
-                marker: CoreDirectiveHandlers.GetChildElementIndex(element),
-                attributes: attributes
-            };
         };
         CoreDirectiveHandlers.InsertIfOrEach = function (region, element, info, callback, offset) {
             if (offset === void 0) { offset = 0; }
