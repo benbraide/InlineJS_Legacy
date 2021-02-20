@@ -970,7 +970,6 @@ var InlineJS;
         AnimateDirectiveHandlers.BusyView = function (region, element, directive) {
             var container = document.createElement('div'), dots = [document.createElement('span'), document.createElement('span'), document.createElement('span')];
             container.classList.add('inlinejs-loader');
-            container.setAttribute(InlineJS.Region.directivePrfix + "-data", '');
             container.setAttribute(InlineJS.Region.directivePrfix + "-cloak", 'hide');
             container.setAttribute(InlineJS.Region.directivePrfix + "-show:animate.zoom.default-ease.faster", "" + directive.value);
             container.setAttribute(InlineJS.Region.directivePrfix + "-animate-inner.zoom.1500", "" + directive.value);

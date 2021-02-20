@@ -1263,7 +1263,7 @@ namespace InlineJS{
                         }
                     }
                 },
-                goto: (page: string, args?: Array<any> | any) => { goto(page, args) },
+                goto: (page: string, args?: Array<any> | any, pageData?: any) => { goto(page, args, false, null, pageData) },
                 redirect: (page: string, args?: Array<any> | any) => { goto(page, args, true) },
                 reload: () => {
                     window.dispatchEvent(new CustomEvent('router.reload'));
@@ -1317,7 +1317,7 @@ namespace InlineJS{
                 });
             };
 
-            let goto = (page: string, query?: string, replace = false, onReload?: () => boolean) => {
+            let goto = (page: string, query?: string, replace = false, onReload?: () => boolean, pageData?: any) => {
                 page = page.trim();
                 query = (query || '').trim();
                 
@@ -1347,7 +1347,15 @@ namespace InlineJS{
                             query: query
                         }, title, buildHistoryPath(path, query));
                     }
-                }, onReload);
+                }, onReload, () => {
+                    let pageGlobal = Region.GetGlobalValue(null, '$page');
+                    if (pageGlobal && Region.IsObject(pageData)){
+                        Object.keys(pageData || {}).forEach(key => (pageGlobal[key] = pageData[key]));
+                    }
+                    else if (pageGlobal){
+                        pageGlobal['$loadData'] = pageData;
+                    }
+                });
             };
             
             let back = () => {
@@ -1359,7 +1367,7 @@ namespace InlineJS{
                 return false;
             };
 
-            let load = (page: string, query: string, callback?: (title: string, path: string) => void, onReload?: () => boolean) => {
+            let load = (page: string, query: string, callback?: (title: string, path: string) => void, onReload?: () => boolean, afterCallback?: () => void) => {
                 let myRegion = Region.Get(regionId);
                 if (info.currentPage && info.currentPage !== '/'){
                     let currentPageInfo = findPage(info.currentPage);
@@ -1476,6 +1484,10 @@ namespace InlineJS{
                 hooks.afterLoad.forEach((handler) => {
                     handler(pageInfo, page, query);
                 });
+
+                if (afterCallback){
+                    afterCallback();
+                }
             };
 
             let unload = (component: string, exit: string) => {
@@ -1801,12 +1813,12 @@ namespace InlineJS{
 
             let scope = ExtendedDirectiveHandlers.AddScope('page', region.AddElement(element, true), []), regionId = region.GetId(), entries = {};
             let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
-                if (prop === 'title'){
+                if (prop === '$title'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                     return title;
                 }
 
-                if (prop === 'location'){
+                if (prop === '$location'){
                     return window.location;
                 }
 
@@ -1817,13 +1829,13 @@ namespace InlineJS{
                 Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.entries.${prop}`);
                 return entries[prop];
             }, ['$title', '$location', 'reset'], (target: object, prop: string | number | symbol, value: any) => {
-                if (prop.toString() === 'title'){
+                if (prop.toString() === '$title'){
                     if (router){
                         router.setTitle(value);
                     }
                     else if (value !== title){
                         document.title = title = value;
-                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'title', scope);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), '$title', scope);
                     }
                 }
                 else{
@@ -1841,7 +1853,7 @@ namespace InlineJS{
             let title = document.title, observer = new MutationObserver(function(mutations) {
                 if (!router && title !== mutations[0].target.nodeValue){
                     title = mutations[0].target.nodeValue;
-                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'title', scope);
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), '$title', scope);
                 }
             });
 
@@ -2443,7 +2455,16 @@ namespace InlineJS{
                         return (item ? item.price : 0);
                     };
                 }
-            }, [...Object.keys(info), 'hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice']);
+
+                if (prop === 'json'){
+                    return () => {
+                        return JSON.stringify(info.items.map(item => ({
+                            quantity: item.quantity,
+                            productSku: item.product.sku,
+                        })));
+                    };
+                }
+            }, [...Object.keys(info), 'hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json']);
 
             Region.AddGlobal('$cart', () => proxy);
             DirectiveHandlerManager.AddHandler('cartClear', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
@@ -3587,7 +3608,41 @@ namespace InlineJS{
 
                             let router = Region.GetGlobalValue(regionId, '$router');
                             if ('__redirect' in data && router){
-                                router.goto(data['__redirect'], data['__redirectQuery']);
+                                let redirectData = data['__redirect'], fields: Record<string, string> = {};
+                                for (let i = 0; i < element.elements.length; ++i){
+                                    let key = element.elements[i].getAttribute('name');
+                                    if (key && 'value' in element.elements[i]){
+                                        fields[key] = (element.elements[i] as any).value;
+                                    }
+                                }
+
+                                if (Region.IsObject(redirectData)){
+                                    if ('data' in redirectData){
+                                        if (Region.IsObject(redirectData)){
+                                            redirectData['data']['formData'] = fields;
+                                        }
+                                        else{
+                                            redirectData['data'] = {
+                                                '$loadData': redirectData['data'],
+                                                'formData': fields,
+                                            };
+                                        }
+                                    }
+                                    else{
+                                        redirectData['data'] = {
+                                            'formData': fields,
+                                        };
+                                    }
+                                    
+                                    redirectData['formData'] = fields;
+                                    router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
+                                }
+                                else{
+                                    router.goto(redirectData, data['__redirectQuery'], {
+                                        'formData': fields,
+                                    });
+                                }
+                                
                                 return;
                             }
     

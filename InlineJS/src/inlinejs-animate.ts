@@ -1059,7 +1059,6 @@ namespace InlineJS{
             let container = document.createElement('div'), dots = [document.createElement('span'), document.createElement('span'), document.createElement('span')];
             
             container.classList.add('inlinejs-loader');
-            container.setAttribute(`${Region.directivePrfix}-data`, '');
             container.setAttribute(`${Region.directivePrfix}-cloak`, 'hide');
             container.setAttribute(`${Region.directivePrfix}-show:animate.zoom.default-ease.faster`, `${directive.value}`);
             container.setAttribute(`${Region.directivePrfix}-animate-inner.zoom.1500`, `${directive.value}`);

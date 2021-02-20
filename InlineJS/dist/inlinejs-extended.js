@@ -978,7 +978,7 @@ var InlineJS;
                         }
                     }
                 },
-                goto: function (page, args) { goto(page, args); },
+                goto: function (page, args, pageData) { goto(page, args, false, null, pageData); },
                 redirect: function (page, args) { goto(page, args, true); },
                 reload: function () {
                     window.dispatchEvent(new CustomEvent('router.reload'));
@@ -1027,7 +1027,7 @@ var InlineJS;
                     uid: uid
                 });
             };
-            var goto = function (page, query, replace, onReload) {
+            var goto = function (page, query, replace, onReload, pageData) {
                 if (replace === void 0) { replace = false; }
                 page = page.trim();
                 query = (query || '').trim();
@@ -1055,7 +1055,15 @@ var InlineJS;
                             query: query
                         }, title, buildHistoryPath(path, query));
                     }
-                }, onReload);
+                }, onReload, function () {
+                    var pageGlobal = InlineJS.Region.GetGlobalValue(null, '$page');
+                    if (pageGlobal && InlineJS.Region.IsObject(pageData)) {
+                        Object.keys(pageData || {}).forEach(function (key) { return (pageGlobal[key] = pageData[key]); });
+                    }
+                    else if (pageGlobal) {
+                        pageGlobal['$loadData'] = pageData;
+                    }
+                });
             };
             var back = function () {
                 if (info.currentPage && info.currentPage !== '/') {
@@ -1064,7 +1072,7 @@ var InlineJS;
                 }
                 return false;
             };
-            var load = function (page, query, callback, onReload) {
+            var load = function (page, query, callback, onReload, afterCallback) {
                 var myRegion = InlineJS.Region.Get(regionId);
                 if (info.currentPage && info.currentPage !== '/') {
                     var currentPageInfo = findPage(info.currentPage);
@@ -1165,6 +1173,9 @@ var InlineJS;
                 hooks.afterLoad.forEach(function (handler) {
                     handler(pageInfo, page, query);
                 });
+                if (afterCallback) {
+                    afterCallback();
+                }
             };
             var unload = function (component, exit) {
                 try {
@@ -1433,11 +1444,11 @@ var InlineJS;
             };
             var scope = ExtendedDirectiveHandlers.AddScope('page', region.AddElement(element, true), []), regionId = region.GetId(), entries = {};
             var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
-                if (prop === 'title') {
+                if (prop === '$title') {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
                     return title;
                 }
-                if (prop === 'location') {
+                if (prop === '$location') {
                     return window.location;
                 }
                 if (prop === 'reset') {
@@ -1446,13 +1457,13 @@ var InlineJS;
                 InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".entries." + prop);
                 return entries[prop];
             }, ['$title', '$location', 'reset'], function (target, prop, value) {
-                if (prop.toString() === 'title') {
+                if (prop.toString() === '$title') {
                     if (router) {
                         router.setTitle(value);
                     }
                     else if (value !== title) {
                         document.title = title = value;
-                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'title', scope);
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '$title', scope);
                     }
                 }
                 else {
@@ -1467,7 +1478,7 @@ var InlineJS;
             var title = document.title, observer = new MutationObserver(function (mutations) {
                 if (!router && title !== mutations[0].target.nodeValue) {
                     title = mutations[0].target.nodeValue;
-                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'title', scope);
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '$title', scope);
                 }
             });
             var titleDOM = document.querySelector('title');
@@ -1965,7 +1976,15 @@ var InlineJS;
                         return (item ? item.price : 0);
                     };
                 }
-            }, __spreadArrays(Object.keys(info), ['hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice']));
+                if (prop === 'json') {
+                    return function () {
+                        return JSON.stringify(info.items.map(function (item) { return ({
+                            quantity: item.quantity,
+                            productSku: item.product.sku
+                        }); }));
+                    };
+                }
+            }, __spreadArrays(Object.keys(info), ['hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json']));
             InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
             InlineJS.DirectiveHandlerManager.AddHandler('cartClear', function (innerRegion, innerElement, innerDirective) {
                 innerElement.addEventListener('click', function (e) {
@@ -2934,7 +2953,38 @@ var InlineJS;
                             }
                             var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
                             if ('__redirect' in data && router) {
-                                router.goto(data['__redirect'], data['__redirectQuery']);
+                                var redirectData = data['__redirect'], fields = {};
+                                for (var i = 0; i < element.elements.length; ++i) {
+                                    var key = element.elements[i].getAttribute('name');
+                                    if (key && 'value' in element.elements[i]) {
+                                        fields[key] = element.elements[i].value;
+                                    }
+                                }
+                                if (InlineJS.Region.IsObject(redirectData)) {
+                                    if ('data' in redirectData) {
+                                        if (InlineJS.Region.IsObject(redirectData)) {
+                                            redirectData['data']['formData'] = fields;
+                                        }
+                                        else {
+                                            redirectData['data'] = {
+                                                '$loadData': redirectData['data'],
+                                                'formData': fields
+                                            };
+                                        }
+                                    }
+                                    else {
+                                        redirectData['data'] = {
+                                            'formData': fields
+                                        };
+                                    }
+                                    redirectData['formData'] = fields;
+                                    router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
+                                }
+                                else {
+                                    router.goto(redirectData, data['__redirectQuery'], {
+                                        'formData': fields
+                                    });
+                                }
                                 return;
                             }
                             if (options.reload && router) {
