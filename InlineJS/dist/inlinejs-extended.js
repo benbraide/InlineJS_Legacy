@@ -2272,6 +2272,10 @@ var InlineJS;
                 getEmail: function () {
                     return methods.getField('email');
                 },
+                redirect_: function (loggedIn, refresh) {
+                    if (refresh === void 0) { refresh = false; }
+                    redirect(loggedIn, refresh);
+                },
                 refresh: function () {
                     fetch(userUrl, {
                         method: 'GET',
@@ -2810,7 +2814,8 @@ var InlineJS;
             var options = {
                 reload: false,
                 files: false,
-                db: false
+                db: false,
+                redirect: false
             };
             var regionId = region.GetId(), middlewares = new Array();
             directiveOptions.forEach(function (key) {
@@ -2933,6 +2938,7 @@ var InlineJS;
                                 var value = (data.failed[key] || []);
                                 info.errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
+                            return;
                         }
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))) {
                             element.dispatchEvent(new CustomEvent('form.success', {
@@ -2953,42 +2959,51 @@ var InlineJS;
                             }
                             var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
                             if ('__redirect' in data && router) {
-                                var redirectData = data['__redirect'], fields = {};
+                                var redirectData = data['__redirect'], fields_1 = {};
                                 for (var i = 0; i < element.elements.length; ++i) {
                                     var key = element.elements[i].getAttribute('name');
                                     if (key && 'value' in element.elements[i]) {
-                                        fields[key] = element.elements[i].value;
+                                        fields_1[key] = element.elements[i].value;
                                     }
                                 }
                                 if (InlineJS.Region.IsObject(redirectData)) {
                                     if ('data' in redirectData) {
-                                        if (InlineJS.Region.IsObject(redirectData)) {
-                                            redirectData['data']['formData'] = fields;
+                                        if (InlineJS.Region.IsObject(redirectData['data'])) {
+                                            if ('formData' in redirectData['data']) {
+                                                var formData_1 = redirectData['data']['formData'];
+                                                Object.keys(formData_1 || {}).forEach(function (key) { return (fields_1[key] = formData_1[key]); });
+                                            }
+                                            redirectData['data']['formData'] = fields_1;
                                         }
                                         else {
                                             redirectData['data'] = {
                                                 '$loadData': redirectData['data'],
-                                                'formData': fields
+                                                'formData': fields_1
                                             };
                                         }
                                     }
                                     else {
                                         redirectData['data'] = {
-                                            'formData': fields
+                                            'formData': fields_1
                                         };
                                     }
-                                    redirectData['formData'] = fields;
+                                    redirectData['formData'] = fields_1;
                                     router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
                                 }
                                 else {
                                     router.goto(redirectData, data['__redirectQuery'], {
-                                        'formData': fields
+                                        'formData': fields_1
                                     });
                                 }
                                 return;
                             }
                             if (options.reload && router) {
                                 router.reload();
+                                return;
+                            }
+                            var auth = InlineJS.Region.GetGlobalValue(regionId, '$auth');
+                            if (options.redirect && auth) {
+                                auth.redirect_(true, true);
                                 return;
                             }
                             element.reset();

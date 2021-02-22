@@ -2810,6 +2810,9 @@ namespace InlineJS{
                 getEmail: () => {
                     return methods.getField('email');
                 },
+                redirect_: (loggedIn: boolean, refresh = false) => {
+                    redirect(loggedIn, refresh);
+                },
                 refresh: () => {
                     fetch(userUrl, {
                         method: 'GET',
@@ -3446,6 +3449,7 @@ namespace InlineJS{
                 reload: false,
                 files: false,
                 db: false,
+                redirect: false,
             };
 
             let regionId = region.GetId(), middlewares = new Array<(callback: (state: boolean) => void, form?: HTMLFormElement) => void>();
@@ -3584,6 +3588,8 @@ namespace InlineJS{
                                 let value = (data.failed[key] || []);
                                 info.errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
+
+                            return;
                         }
                         
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))){
@@ -3618,7 +3624,12 @@ namespace InlineJS{
 
                                 if (Region.IsObject(redirectData)){
                                     if ('data' in redirectData){
-                                        if (Region.IsObject(redirectData)){
+                                        if (Region.IsObject(redirectData['data'])){
+                                            if ('formData' in redirectData['data']){
+                                                let formData = redirectData['data']['formData'];
+                                                Object.keys(formData || {}).forEach(key => (fields[key] = formData[key]));
+                                            }
+
                                             redirectData['data']['formData'] = fields;
                                         }
                                         else{
@@ -3648,6 +3659,12 @@ namespace InlineJS{
     
                             if (options.reload && router){
                                 router.reload();
+                                return;
+                            }
+
+                            let auth = Region.GetGlobalValue(regionId, '$auth');
+                            if (options.redirect && auth){
+                                auth.redirect_(true, true);
                                 return;
                             }
     
