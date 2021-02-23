@@ -992,7 +992,8 @@ namespace InlineJS{
             }
             
             let optimized = storageInfo.storage.optimized;
-            if (storageInfo.lastAccessPath && 0 < optimized.length && storageInfo.lastAccessPath.length < path.length && path.substr(0, storageInfo.lastAccessPath.length) === storageInfo.lastAccessPath){//Deeper access
+            if (storageInfo.lastAccessPath && 0 < optimized.length && storageInfo.lastAccessPath.length < path.length &&
+                1 < (path.match(/\./g) || []).length && path.substr(0, storageInfo.lastAccessPath.length) === storageInfo.lastAccessPath){//Deeper access
                 optimized[(optimized.length - 1)].path = path;
             }
             else{//New entry

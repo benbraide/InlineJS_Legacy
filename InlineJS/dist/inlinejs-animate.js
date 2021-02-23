@@ -228,38 +228,16 @@ var InlineJS;
         return OpacityAnimator;
     }());
     InlineJS.OpacityAnimator = OpacityAnimator;
-    var WidthHeightAnimator = /** @class */ (function () {
-        function WidthHeightAnimator(type_, reversed_) {
-            this.type_ = type_;
-            this.reversed_ = reversed_;
-        }
-        WidthHeightAnimator.prototype.step = function (isFirst, element, show, ellapsed, duration, ease) {
-            if (!element) {
-                return;
-            }
-            var value = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration)));
-            if (this.type_ === 'both') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scale(" + value + ", " + value + ")"));
-                element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
-            }
-            else if (this.type_ === 'width') {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleX(" + value + ")"));
-                element.style.transformOrigin = (this.reversed_ ? '100% 0%' : '0% 0%');
-            }
-            else {
-                element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleY(" + value + ")"));
-                element.style.transformOrigin = (this.reversed_ ? '0% 100%' : '0% 0%');
-            }
-        };
-        return WidthHeightAnimator;
-    }());
-    InlineJS.WidthHeightAnimator = WidthHeightAnimator;
     var ZoomAnimator = /** @class */ (function () {
-        function ZoomAnimator(type_, direction_, scale_) {
+        function ZoomAnimator(type_, direction_, scale_, setOrigin_, reversed_) {
             if (scale_ === void 0) { scale_ = 1; }
+            if (setOrigin_ === void 0) { setOrigin_ = false; }
+            if (reversed_ === void 0) { reversed_ = false; }
             this.type_ = type_;
             this.direction_ = direction_;
             this.scale_ = scale_;
+            this.setOrigin_ = setOrigin_;
+            this.reversed_ = reversed_;
         }
         ZoomAnimator.prototype.init = function (options, nextOptionIndex) {
             var regex = /^[0-9]+$/;
@@ -290,12 +268,21 @@ var InlineJS;
             }
             if (this.type_ === 'both') {
                 element.style.transform = ((isFirst ? '' : element.style.transform) + (" scale(" + value + ", " + value + ")"));
+                if (isFirst && this.setOrigin_) {
+                    element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                }
             }
             else if (this.type_ === 'width') {
                 element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleX(" + value + ")"));
+                if (isFirst && this.setOrigin_) {
+                    element.style.transformOrigin = (this.reversed_ ? '100% 0%' : '0% 0%');
+                }
             }
             else {
                 element.style.transform = ((isFirst ? '' : element.style.transform) + (" scaleY(" + value + ")"));
+                if (isFirst && this.setOrigin_) {
+                    element.style.transformOrigin = (this.reversed_ ? '0% 100%' : '0% 0%');
+                }
             }
         };
         ZoomAnimator.prototype.getPreferredEase = function (show) {
@@ -854,12 +841,24 @@ var InlineJS;
     InlineJS.Animators = {
         "null": function () { return new NullAnimator(); },
         opacity: function () { return new OpacityAnimator(); },
-        height: function () { return new WidthHeightAnimator('height', false); },
-        heightReverse: function () { return new WidthHeightAnimator('height', true); },
-        width: function () { return new WidthHeightAnimator('width', false); },
-        widthReverse: function () { return new WidthHeightAnimator('width', true); },
-        widthHeight: function () { return new WidthHeightAnimator('both', false); },
-        widthHeightReverse: function () { return new WidthHeightAnimator('both', true); },
+        height: function () { return new ZoomAnimator('height', 'in', 1, true, false); },
+        heightReverse: function () { return new ZoomAnimator('height', 'in', 1, true, true); },
+        heightIn: function () { return new ZoomAnimator('height', 'in', 1, true, false); },
+        heightInReverse: function () { return new ZoomAnimator('height', 'in', 1, true, true); },
+        heightOut: function () { return new ZoomAnimator('height', 'out', 1, true, false); },
+        heightOutReverse: function () { return new ZoomAnimator('height', 'out', 1, true, true); },
+        width: function () { return new ZoomAnimator('width', 'in', 1, true, false); },
+        widthReverse: function () { return new ZoomAnimator('width', 'in', 1, true, true); },
+        widthIn: function () { return new ZoomAnimator('width', 'in', 1, true, false); },
+        widthInReverse: function () { return new ZoomAnimator('width', 'in', 1, true, true); },
+        widthOut: function () { return new ZoomAnimator('width', 'out', 1, true, false); },
+        widthOutReverse: function () { return new ZoomAnimator('width', 'out', 1, true, true); },
+        widthHeight: function () { return new ZoomAnimator('both', 'in', 1, true, false); },
+        widthHeightReverse: function () { return new ZoomAnimator('both', 'in', 1, true, true); },
+        widthHeightIn: function () { return new ZoomAnimator('both', 'in', 1, true, false); },
+        widthHeightInReverse: function () { return new ZoomAnimator('both', 'in', 1, true, true); },
+        widthHeightOut: function () { return new ZoomAnimator('both', 'out', 1, true, false); },
+        widthHeightOutReverse: function () { return new ZoomAnimator('both', 'out', 1, true, true); },
         zoom: function () { return new ZoomAnimator('both', 'in'); },
         zoomHeight: function () { return new ZoomAnimator('height', 'in'); },
         zoomWidth: function () { return new ZoomAnimator('width', 'in'); },
@@ -1192,7 +1191,7 @@ var InlineJS;
                         duration = 200;
                         break;
                     default:
-                        duration = InlineJS.CoreDirectiveHandlers.ExtractDuration(key, null);
+                        duration = (InlineJS.CoreDirectiveHandlers.ExtractDuration(key, null) || duration);
                         break;
                 }
                 return skipCount;

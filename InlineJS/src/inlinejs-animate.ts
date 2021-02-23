@@ -269,37 +269,13 @@ namespace InlineJS{
         }
     }
 
-    export class WidthHeightAnimator implements Animator{
-        public constructor(private type_: 'both' | 'width' | 'height', private reversed_: boolean){}
-
-        public step(isFirst: boolean, element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: AnimatorEaseType){
-            if (!element){
-                return;
-            }
-            
-            let value = (show ? ease(ellapsed, duration) : (1 - ease(ellapsed, duration)));
-            if (this.type_ === 'both'){
-                element.style.transform = ((isFirst ? '' : element.style.transform) + ` scale(${value}, ${value})`);
-                element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
-            }
-            else if (this.type_ === 'width'){
-                element.style.transform = ((isFirst ? '' : element.style.transform) + ` scaleX(${value})`);
-                element.style.transformOrigin = (this.reversed_ ? '100% 0%' : '0% 0%');
-            }
-            else{
-                element.style.transform = ((isFirst ? '' : element.style.transform) + ` scaleY(${value})`);
-                element.style.transformOrigin = (this.reversed_ ? '0% 100%' : '0% 0%');
-            }
-        }
-    }
-
     export class ZoomAnimator implements Animator{
         private static preferredEase_: StepEaseInfo = {
             target: AnimationEasings.back,
             args: [],
         };
         
-        public constructor(private type_: 'both' | 'width' | 'height', private direction_: 'in' | 'out', private scale_ = 1){}
+        public constructor(private type_: 'both' | 'width' | 'height', private direction_: 'in' | 'out', private scale_ = 1, private setOrigin_ = false, private reversed_ = false){}
 
         public init(options: Array<string>, nextOptionIndex: number){
             const regex = /^[0-9]+$/;
@@ -336,12 +312,21 @@ namespace InlineJS{
 
             if (this.type_ === 'both'){
                 element.style.transform = ((isFirst ? '' : element.style.transform) + ` scale(${value}, ${value})`);
+                if (isFirst && this.setOrigin_){
+                    element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                }
             }
             else if (this.type_ === 'width'){
                 element.style.transform = ((isFirst ? '' : element.style.transform) + ` scaleX(${value})`);
+                if (isFirst && this.setOrigin_){
+                    element.style.transformOrigin = (this.reversed_ ? '100% 0%' : '0% 0%');
+                }
             }
             else{
                 element.style.transform = ((isFirst ? '' : element.style.transform) + ` scaleY(${value})`);
+                if (isFirst && this.setOrigin_){
+                    element.style.transformOrigin = (this.reversed_ ? '0% 100%' : '0% 0%');
+                }
             }
         }
 
@@ -923,12 +908,24 @@ namespace InlineJS{
     export let Animators = {
         null: () => new NullAnimator(),
         opacity: () => new OpacityAnimator(),
-        height: () => new WidthHeightAnimator('height', false),
-        heightReverse: () => new WidthHeightAnimator('height', true),
-        width: () => new WidthHeightAnimator('width', false),
-        widthReverse: () => new WidthHeightAnimator('width', true),
-        widthHeight: () => new WidthHeightAnimator('both', false),
-        widthHeightReverse: () => new WidthHeightAnimator('both', true),
+        height: () => new ZoomAnimator('height', 'in', 1, true, false),
+        heightReverse: () => new ZoomAnimator('height', 'in', 1, true, true),
+        heightIn: () => new ZoomAnimator('height', 'in', 1, true, false),
+        heightInReverse: () => new ZoomAnimator('height', 'in', 1, true, true),
+        heightOut: () => new ZoomAnimator('height', 'out', 1, true, false),
+        heightOutReverse: () => new ZoomAnimator('height', 'out', 1, true, true),
+        width: () => new ZoomAnimator('width', 'in', 1, true, false),
+        widthReverse: () => new ZoomAnimator('width', 'in', 1, true, true),
+        widthIn: () => new ZoomAnimator('width', 'in', 1, true, false),
+        widthInReverse: () => new ZoomAnimator('width', 'in', 1, true, true),
+        widthOut: () => new ZoomAnimator('width', 'out', 1, true, false),
+        widthOutReverse: () => new ZoomAnimator('width', 'out', 1, true, true),
+        widthHeight: () => new ZoomAnimator('both', 'in', 1, true, false),
+        widthHeightReverse: () => new ZoomAnimator('both', 'in', 1, true, true),
+        widthHeightIn: () => new ZoomAnimator('both', 'in', 1, true, false),
+        widthHeightInReverse: () => new ZoomAnimator('both', 'in', 1, true, true),
+        widthHeightOut: () => new ZoomAnimator('both', 'out', 1, true, false),
+        widthHeightOutReverse: () => new ZoomAnimator('both', 'out', 1, true, true),
         zoom: () => new ZoomAnimator('both', 'in'),
         zoomHeight: () => new ZoomAnimator('height', 'in'),
         zoomWidth: () => new ZoomAnimator('width', 'in'),
@@ -1319,7 +1316,7 @@ namespace InlineJS{
                     duration = 200;
                     break;
                 default:
-                    duration = CoreDirectiveHandlers.ExtractDuration(key, null);
+                    duration = (CoreDirectiveHandlers.ExtractDuration(key, null) || duration);
                     break;
                 }
 
