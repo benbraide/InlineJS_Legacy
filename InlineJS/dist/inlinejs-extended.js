@@ -511,10 +511,11 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.JSONLoad = function (region, element, directive) {
+            var shouldUseNull = directive.arg.options.includes('null');
             var regionId = region.GetId(), info = {
                 url: '',
                 active: false,
-                data: null,
+                data: (shouldUseNull ? null : {}),
                 reload: function () { return load('::reload::'); },
                 unload: function () { return load('::unload::'); }
             };
@@ -528,8 +529,12 @@ var InlineJS;
                     return;
                 }
                 if (url === '::unload::') {
-                    if (info.data !== null) {
+                    if (shouldUseNull && info.data !== null) {
                         info.data = null;
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'data', scope);
+                    }
+                    else if (!shouldUseNull && Object.keys(info.data).length != 0) {
+                        info.data = {};
                         ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'data', scope);
                     }
                     return;
@@ -943,7 +948,8 @@ var InlineJS;
                 beforeLoad: [],
                 afterLoad: []
             };
-            var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress'], info = {
+            var regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), parsedQuery = null;
+            var alertable = ['url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress'], info = {
                 currentPage: null,
                 currentQuery: '',
                 pages: [],
@@ -991,6 +997,10 @@ var InlineJS;
                     info.middlewares[name] = handler;
                 },
                 parseQuery: function (query) { return parseQuery(query); },
+                getQueryValue: function (key) {
+                    parsedQuery = (parsedQuery || methods.parseQuery(info.currentQuery));
+                    return (InlineJS.Region.IsObject(parsedQuery) ? parsedQuery[key] : null);
+                },
                 setTitle: function (title) {
                     document.title = "" + (options.titlePrefix || '') + (title || 'Untitled') + (options.titleSuffix || '');
                 },
@@ -1085,6 +1095,7 @@ var InlineJS;
                     ExtendedDirectiveHandlers.Alert(myRegion, 'currentPage', scope);
                 }
                 if (info.currentQuery !== query) {
+                    parsedQuery = null;
                     info.currentQuery = query;
                     ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
                 }

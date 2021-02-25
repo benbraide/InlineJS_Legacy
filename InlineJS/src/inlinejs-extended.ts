@@ -709,10 +709,11 @@ namespace InlineJS{
         }
 
         public static JSONLoad(region: Region, element: HTMLElement, directive: Directive){
+            let shouldUseNull = directive.arg.options.includes('null');
             let regionId = region.GetId(), info = {
                 url: '',
                 active: false,
-                data: null,
+                data: (shouldUseNull ? null : {}),
                 reload: () => load('::reload::'),
                 unload: () => load('::unload::'),
             };
@@ -729,10 +730,15 @@ namespace InlineJS{
                 }
                 
                 if (url === '::unload::'){
-                    if (info.data !== null){
+                    if (shouldUseNull && info.data !== null){
                         info.data = null;
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'data', scope);
                     }
+                    else if (!shouldUseNull && Object.keys(info.data).length != 0){
+                        info.data = {};
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'data', scope);
+                    }
+
                     return;
                 }
                 
@@ -1228,7 +1234,8 @@ namespace InlineJS{
                 afterLoad: [],
             };
             
-            let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress' ], info: RouterInfo = {
+            let regionId = region.GetId(), origin = location.origin, pathname = location.pathname, query = location.search.substr(1), parsedQuery: Record<string, any> = null;
+            let alertable = [ 'url', 'currentPage', 'currentQuery', 'targetUrl', 'active', 'progress' ], info: RouterInfo = {
                 currentPage: null,
                 currentQuery: '',
                 pages: [],
@@ -1276,6 +1283,10 @@ namespace InlineJS{
                     info.middlewares[name] = handler;
                 },
                 parseQuery: (query: string) => parseQuery(query),
+                getQueryValue: (key: string) => {
+                    parsedQuery = (parsedQuery || methods.parseQuery(info.currentQuery));
+                    return (Region.IsObject(parsedQuery) ? parsedQuery[key] : null);
+                },
                 setTitle: (title: string) => {
                     document.title = `${options.titlePrefix || ''}${title || 'Untitled'}${options.titleSuffix || ''}`;
                 },
@@ -1382,6 +1393,7 @@ namespace InlineJS{
                 }
 
                 if (info.currentQuery !== query){
+                    parsedQuery = null;
                     info.currentQuery = query;
                     ExtendedDirectiveHandlers.Alert(myRegion, 'currentQuery', scope);
                 }
