@@ -40,6 +40,7 @@ declare namespace InlineJS {
         preserve: boolean;
         preserveSubscriptions: boolean;
         paused: boolean;
+        isRoot: boolean;
     }
     interface LocalHandler {
         element: HTMLElement;
@@ -159,6 +160,7 @@ declare namespace InlineJS {
         static RemoveGlobal(key: string): void;
         static GetGlobal(regionId: string, key: string): GlobalCallbackType;
         static GetGlobalValue(regionId: string, key: string, contextElement?: HTMLElement): any;
+        static PushPostProcessCallback(): void;
         static AddPostProcessCallback(callback: () => void): void;
         static ExecutePostProcessCallbacks(): void;
         static AddGlobalOutsideEventCallback(element: HTMLElement, events: string | Array<string>, callback: (event: Event) => void): void;
@@ -377,8 +379,9 @@ declare namespace InlineJS {
         $component?: string;
         $init?: (region?: Region) => void;
     }
+    type AnimatorCallbackType = (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void;
     class CoreDirectiveHandlers {
-        static PrepareAnimation: (region: Region, element: HTMLElement | ((step: number) => void), options: Array<string>) => ((show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void);
+        static PrepareAnimation: (region: Region, element: HTMLElement | ((step: number) => void), options: Array<string>) => AnimatorCallbackType;
         static Noop(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Data(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Locals(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
@@ -403,7 +406,7 @@ declare namespace InlineJS {
         static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo;
         static UninitIfOrEach(region: Region, info: IfOrEachInfo, subscriptions: Record<string, Array<string>>): void;
-        static InsertIfOrEach(region: Region, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
+        static InsertIfOrEach(regionId: string, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number, insertAttributes?: boolean): void;
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean), setter?: (target: object, prop: string | number | symbol, value: any) => boolean, target?: any): any;
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
         static EvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
@@ -414,7 +417,7 @@ declare namespace InlineJS {
         static GetChildElementIndex(element: HTMLElement): number;
         static GetChildElementAt(parent: HTMLElement, index: number): HTMLElement;
         static InsertOrAppendChildElement(parent: HTMLElement, element: HTMLElement, index: number): void;
-        static GetAnimator(region: Region, animate: boolean, element: HTMLElement | ((step: number) => void), options: Array<string>, always?: boolean): (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void, args?: any) => void;
+        static GetAnimator(region: Region, animate: boolean, element: HTMLElement | ((step: number) => void), options: Array<string>, always?: boolean): AnimatorCallbackType;
         static AddAll(): void;
     }
     interface ProcessorOptions {
@@ -436,6 +439,8 @@ declare namespace InlineJS {
     }
     class Config {
         static SetDirectivePrefix(value: string): void;
+        static GetDirectivePrefix(value: string): string;
+        static GetDirectiveName(value: string): string;
         static SetExternalCallbacks(isEqual: (first: any, second: any) => boolean, deepCopy: (target: any) => any): void;
         static SetIsEqualExternalCallback(callback: (first: any, second: any) => boolean): void;
         static SetDeepCopyExternalCallback(callback: (target: any) => any): void;
@@ -456,8 +461,9 @@ declare namespace InlineJS {
         private static lastRegionSubId_;
         private static anchors_;
         static regionHooks: ((region: Region, added: boolean) => void)[];
+        private static Attach_;
         static Attach(anchors?: Array<string>, node?: HTMLElement): void;
         static Reattach(node?: HTMLElement): void;
-        static Attach_(node?: HTMLElement): void;
+        static CreateRegion(element: HTMLElement): Region;
     }
 }

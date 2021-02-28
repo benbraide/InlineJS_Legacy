@@ -1830,7 +1830,7 @@ var InlineJS;
                         }
                     }
                     else if (handlers.updateLink) {
-                        fetch(handlers.updateLink + "/" + sku + "?quantity=" + quantity + "&incremental=" + incremental, {
+                        fetch(handlers.updateLink + "?sku=" + sku + "&quantity=" + quantity + "&incremental=" + incremental, {
                             method: 'GET',
                             credentials: 'same-origin'
                         }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
@@ -2851,7 +2851,7 @@ var InlineJS;
                     }
                 }
             });
-            var active = false, elementScope = region.AddElement(element, true);
+            var active = false, elementScope = region.AddElement(element, true), formData = null;
             var scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
             elementScope.locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'active') {
@@ -2955,6 +2955,7 @@ var InlineJS;
                             element.dispatchEvent(new CustomEvent('form.success', {
                                 detail: data
                             }));
+                            formData = null;
                             if (options.db) {
                                 var db = InlineJS.Region.GetGlobalValue(regionId, '$db'), name_2 = element.getAttribute('name');
                                 if (db && name_2) { //Write to DB
@@ -2984,12 +2985,10 @@ var InlineJS;
                                                 var formData_1 = redirectData['data']['formData'];
                                                 Object.keys(formData_1 || {}).forEach(function (key) { return (fields_1[key] = formData_1[key]); });
                                             }
-                                            redirectData['data']['formData'] = fields_1;
                                         }
                                         else {
                                             redirectData['data'] = {
-                                                '$loadData': redirectData['data'],
-                                                'formData': fields_1
+                                                '$loadData': redirectData['data']
                                             };
                                         }
                                     }
@@ -2998,7 +2997,7 @@ var InlineJS;
                                             'formData': fields_1
                                         };
                                     }
-                                    redirectData['formData'] = fields_1;
+                                    formData = fields_1;
                                     router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
                                 }
                                 else {
@@ -3058,6 +3057,12 @@ var InlineJS;
                     runMiddleWares(0);
                 }
             });
+            if (!InlineJS.Region.GetGlobal(region.GetId(), '$formData')) {
+                var proxy_1 = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                    return ((InlineJS.Region.IsObject(formData) && prop in formData) ? formData[prop] : null);
+                }, function (prop) { return (InlineJS.Region.IsObject(formData) && prop in formData); });
+                InlineJS.Region.AddGlobal('$formData', function () { return proxy_1; });
+            }
         };
         ExtendedDirectiveHandlers.FormSubmit = function (region, element, directive) {
             InlineJS.CoreDirectiveHandlers.Attr(region, element, InlineJS.Processor.GetDirectiveWith('x-attr:disabled', '$form.active'));
@@ -3436,6 +3441,9 @@ var InlineJS;
             });
         };
         ExtendedDirectiveHandlers.Alert = function (region, prop, prefix, target) {
+            if (!region) {
+                return;
+            }
             var change = {
                 regionId: region.GetId(),
                 type: 'set',

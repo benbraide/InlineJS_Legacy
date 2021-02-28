@@ -2274,7 +2274,7 @@ namespace InlineJS{
                         }
                     }
                     else if (handlers.updateLink){
-                        fetch(`${handlers.updateLink}/${sku}?quantity=${quantity}&incremental=${incremental}`, {
+                        fetch(`${handlers.updateLink}?sku=${sku}&quantity=${quantity}&incremental=${incremental}`, {
                             method: 'GET',
                             credentials: 'same-origin',
                         }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
@@ -3488,7 +3488,7 @@ namespace InlineJS{
                 }
             });
             
-            let active = false, elementScope = region.AddElement(element, true);
+            let active = false, elementScope = region.AddElement(element, true), formData: Record<string, any> = null;
             let scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
 
             elementScope.locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
@@ -3609,6 +3609,7 @@ namespace InlineJS{
                                 detail: data
                             }));
 
+                            formData = null;
                             if (options.db){
                                 let db = Region.GetGlobalValue(regionId, '$db'), name = element.getAttribute('name');
                                 if (db && name){//Write to DB
@@ -3641,13 +3642,10 @@ namespace InlineJS{
                                                 let formData = redirectData['data']['formData'];
                                                 Object.keys(formData || {}).forEach(key => (fields[key] = formData[key]));
                                             }
-
-                                            redirectData['data']['formData'] = fields;
                                         }
                                         else{
                                             redirectData['data'] = {
                                                 '$loadData': redirectData['data'],
-                                                'formData': fields,
                                             };
                                         }
                                     }
@@ -3657,7 +3655,7 @@ namespace InlineJS{
                                         };
                                     }
                                     
-                                    redirectData['formData'] = fields;
+                                    formData = fields;
                                     router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
                                 }
                                 else{
@@ -3724,6 +3722,14 @@ namespace InlineJS{
                     runMiddleWares(0);   
                 }
             });
+
+            if (!Region.GetGlobal(region.GetId(), '$formData')){
+                let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                    return ((Region.IsObject(formData) && prop in formData) ? formData[prop] : null);
+                }, prop => (Region.IsObject(formData) && prop in formData));
+    
+                Region.AddGlobal('$formData', () => proxy);
+            }
         }
 
         public static FormSubmit(region: Region, element: HTMLElement, directive: Directive){
@@ -4170,6 +4176,10 @@ namespace InlineJS{
         }
 
         public static Alert(region: Region, prop: string, prefix: ExtendedDirectiveHandlerScope | string, target?: string){
+            if (!region){
+                return;
+            }
+            
             let change: Change = {
                 regionId: region.GetId(),
                 type: 'set',
