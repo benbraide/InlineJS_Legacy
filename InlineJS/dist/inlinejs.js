@@ -1439,6 +1439,15 @@ var InlineJS;
             Region.AddGlobal('$conditional', function () { return function (condition, trueValue, falseValue) {
                 return (condition ? trueValue : falseValue);
             }; });
+            Region.AddGlobal('$evaluate', function (regionId, contextElement) { return function (value, useWindow) {
+                if (useWindow === void 0) { useWindow = false; }
+                var args = [];
+                for (var _i = 2; _i < arguments.length; _i++) {
+                    args[_i - 2] = arguments[_i];
+                }
+                var region = Region.Get(regionId);
+                return (region ? CoreDirectiveHandlers.Evaluate.apply(CoreDirectiveHandlers, __spreadArrays([region, contextElement, value, useWindow], args)) : null);
+            }; });
             Region.AddGlobal('$__InlineJS_CallTemp__', function (regionId) { return function (key) {
                 var region = Region.Get(regionId);
                 return (region ? region.CallTemp(key) : null);

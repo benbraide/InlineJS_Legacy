@@ -84,6 +84,64 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Channel(region: Region, element: HTMLElement, directive: Directive){
+            let channel: any, channelName = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (!channelName && channelName !== 0){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            if (directive.arg.key === 'private'){
+                channel = LaravelEchoDirectiveHandlers.GetPrivateChannel(channelName);
+            }
+            else if (directive.arg.key === 'presence'){
+                channel = LaravelEchoDirectiveHandlers.GetPresenceChannel(channelName);
+            }
+            else if (directive.arg.key === 'notification'){
+                channel = LaravelEchoDirectiveHandlers.GetNotificationChannel(channelName);
+            }
+            else{
+                channel = LaravelEchoDirectiveHandlers.GetPublicChannel(channelName);
+            }
+
+            if (!channel){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let useWindow = directive.arg.options.includes('window'), event = directive.arg.options.includes('event');
+            channel.listen(`.${channelName}.event`, (e: any) => {
+                (useWindow ? window : element).dispatchEvent(new CustomEvent(e.type, {
+                    detail: e.data,
+                }));
+
+                (useWindow ? window : element).dispatchEvent(new CustomEvent(channelName, {
+                    detail: e,
+                }));
+
+                if (event && !useWindow){
+                    element.dispatchEvent(new CustomEvent('event', {
+                        detail: e,
+                    }));
+                }
+            });
+
+            let elementScope = region.AddElement(element, true);
+            elementScope.uninitCallbacks.push(() => {
+                channel.leave();
+            });
+
+            elementScope.locals['$channel'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop === 'object'){
+                    return channel;
+                }
+                
+                if (prop === 'name'){
+                    return channelName;
+                }
+            }, ['object', 'name']);
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+        
         public static Notifications(region: Region, element: HTMLElement, directive: Directive){
             let regionId = region.GetId();
             if (Region.GetGlobal(regionId, '$notifications')){
@@ -95,11 +153,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let channelCreator = Region.GetGlobalValue(regionId, '$echoNotificationChannel');
-            if (!channelCreator){
-                return DirectiveHandlerReturn.Nil;
-            }
-
+            let baseUrl = '/push/notification';
             let data = CoreDirectiveHandlers.Evaluate(region, element, directive.value), idOrName: number | string = null, initItems: Array<any> = null;
             if (Array.isArray(data)){
                 initItems = data;
@@ -114,6 +168,10 @@ namespace InlineJS{
 
                 if ('items' in data){
                     initItems = (data.items as Array<any>);
+                }
+
+                if ('baseUrl' in data){
+                    baseUrl = data.baseUrl;
                 }
             }
             else if (typeof data === 'string' || typeof data === 'number'){
@@ -132,26 +190,59 @@ namespace InlineJS{
                 }
             }
 
+            if (baseUrl){//Truncate '/'
+                if (baseUrl.endsWith('/')){
+                    baseUrl = baseUrl.substr(0, (baseUrl.length - 1));
+                }
+            }
+
+            let init = (myItems: Array<any>, alert: boolean) => {
+                unreadCount = 0;
+                items = (myItems || []).map((item) => {
+                    if (typeof item.data === 'string'){
+                        item.data = JSON.parse(item.data);
+                    }
+                    
+                    if (item.id || item.id === 0){
+                        item.data.id = item.id;
+                    }
+
+                    if ('type' in item && !('type' in item.data)){
+                        item.data.type = (item.type as string).toLowerCase().replace(/[\/\\]+/g, '.');
+                    }
+    
+                    if (!item.data.read){
+                        ++unreadCount;
+                    }
+
+                    return item.data;
+                });
+
+                if (alert){
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+                    if (unreadCount != 0){
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                    }
+                }
+            };
+
             let status: boolean = null, unreadCount = 0, hasNew = false, targets: Record<string, (e: any) => boolean> = {}, actionHandlers: Record<string, (e: any) => boolean> = {};
             let scope = ExtendedDirectiveHandlers.AddScope('notifications', region.AddElement(element, true), []), items = new Array<any>(), connected: boolean = null;
             
-            (initItems || []).forEach((item) => {
-                if (typeof item.data === 'string'){
-                    item.data = JSON.parse(item.data);
-                }
-                
-                if (item.id || item.id === 0){
-                    item.data.id = item.id;
-                }
-
-                items.push(item.data);
-                if (!item.data.read){
-                    ++unreadCount;
-                }
-            });
-
+            if (!initItems && baseUrl){//Load items
+                fetch(`${baseUrl}/get`, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(data => init(data.items, true)).catch((err) => {
+                    ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                });
+            }
+            else if (initItems){//Initialize
+                init(initItems, false);
+            }
+            
             let listen = () => {
-                let channel = channelCreator(idOrName);
+                let channel = LaravelEchoDirectiveHandlers.GetNotificationChannel(idOrName);
                 if (!channel){
                     return;
                 }
@@ -185,6 +276,10 @@ namespace InlineJS{
                             e.data.id = e.id;
                         }
 
+                        if ('type' in e && !('type' in e.data)){
+                            e.data.type = (e.type as string).toLowerCase().replace(/[\/\\]+/g, '.');
+                        }
+
                         if (!e.data.read){
                             ++unreadCount;
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
@@ -201,6 +296,16 @@ namespace InlineJS{
                             hasNew = false;
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'hasNew', scope);
                         });
+
+                        if (e.data.type){
+                            window.dispatchEvent(new CustomEvent(`notification.add.${e.data.type}`, {
+                                detail: e.data,
+                            }));
+                        }
+                        
+                        window.dispatchEvent(new CustomEvent('notification.add', {
+                            detail: e.data,
+                        }));
                     }
                     else if (e.action === 'remove'){
                         let index = items.findIndex(item => (item.id === e.data.id));
@@ -213,11 +318,25 @@ namespace InlineJS{
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
                         }
 
-                        items.splice(index, 1);
+                        let item = items.splice(index, 1);
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `${index}.1.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+
+                        if (item && item['type']){
+                            window.dispatchEvent(new CustomEvent(`notification.remove.${item['type']}`, {
+                                detail: item,
+                            }));
+                        }
+                        
+                        window.dispatchEvent(new CustomEvent('notification.remove', {
+                            detail: item,
+                        }));
                     }
                     else if (e.action === 'clear'){
+                        if (items.length == 0){
+                            return;
+                        }
+                        
                         items = [];
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
 
@@ -225,12 +344,24 @@ namespace InlineJS{
                             unreadCount = 0;
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
                         }
+
+                        window.dispatchEvent(new CustomEvent('notification.clear'));
                     }
                     else if (e.action === 'pin'){
                         let item = items.find(item => (item.id === e.data.id));
                         if (item && (!! item.pinned) != (!! e.data.pinned)){
                             item.pinned = !! e.data.pinned;
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'pinned', `${scope.path}.items.${e.data.id}`);
+
+                            if (item['type']){
+                                window.dispatchEvent(new CustomEvent(`notification.pin.${item['type']}`, {
+                                    detail: item,
+                                }));
+                            }
+                            
+                            window.dispatchEvent(new CustomEvent('notification.pin', {
+                                detail: item,
+                            }));
                         }
                     }
                     else if (e.action === 'markAsRead'){
@@ -239,6 +370,16 @@ namespace InlineJS{
                             item.read = (e.data.read !== false);
                             unreadCount += ((e.data.read !== false) ? -1 : 1);
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+
+                            if (item['type']){
+                                window.dispatchEvent(new CustomEvent(`notification.read.${item['type']}`, {
+                                    detail: item,
+                                }));
+                            }
+                            
+                            window.dispatchEvent(new CustomEvent('notification.read', {
+                                detail: item,
+                            }));
                         }
                     }
                 });
@@ -254,6 +395,100 @@ namespace InlineJS{
                     listen();
                 }
             });
+
+            let compile = (data: Record<string, any>, intersectionOptions: string | number, index = 0) => {
+                const iconMap = {
+                    success: '<i class="material-icons-outlined text-8xl text-green-600 icon">check_circle</i>',
+                    warning: '<i class="material-icons-outlined text-8xl text-orange-600 icon">report</i>',
+                    error: '<i class="material-icons-outlined text-8xl text-red-600 icon">dangerous</i>',
+                    info: '<i class="material-icons-outlined text-8xl text-blue-600 icon">info</i>',
+                };
+                
+                const colorMap = {
+                    success: 'bg-green-50',
+                    warning: 'bg-orange-50',
+                    error: 'bg-red-50',
+                    info: 'bg-blue-50',
+                    none: 'bg-white',
+                };
+
+                if ('html' in data){
+                    return data.html;
+                }
+
+                let icon: string;
+                if ('iconHtml' in data){
+                    icon = data.iconHtml;
+                }
+                else{
+                    icon = iconMap[data.icon || 'info'];
+                }
+
+                let bgColor = (data.bgColor || colorMap[data.icon || 'none']), action = '';
+                if (('action' in data) && typeof data.action === 'string'){
+                    action = `${Config.GetDirectiveName('on')}:click="${data.action}"`;
+                }
+
+                let intersection = '', readOnVisible = (!('readOnVisible' in data) || data.readOnVisible);
+                if (readOnVisible && typeof intersectionOptions === 'string'){
+                    intersection = `${Config.GetDirectiveName('intersection')}="${intersectionOptions}"`;
+                }
+                else if (readOnVisible && typeof intersectionOptions === 'number'){
+                    intersection = `${Config.GetDirectiveName('intersection')}="{ threshold: 0.9, root: $getAncestor(${intersectionOptions}) }"`;
+                }
+
+                if (intersection){
+                    intersection += ` ${Config.GetDirectiveName('on')}:intersection-visible.join.once="$notifications.markAsRead('${data.id}')"`;
+                }
+
+                let extraClasses = (action ? 'cursor-pointer inlinejs-notification-item action' : 'inlinejs-notification-item');
+                let closeIcon = `
+                    <div class="absolute top-2 right-4 flex justify-start items-center bg-transparent remove">
+                        <i class="material-icons-outlined text-xl text-red-800 leading-none cursor-pointer"
+                            ${Config.GetDirectiveName('on')}:click.stop="$notifications.remove('${data.id}')">delete</i>
+                    </div>
+                `;
+                
+                let borderClass = ((index != 0 && items.length > 1) ? 'border-t' : '');
+                if ('bodyHtml' in data){
+                    return `
+                        <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
+                            ${icon}
+                            ${data.bodyHtml}
+                            ${closeIcon}
+                        </div>
+                    `;
+                }
+
+                let body: string;
+                if (!('body' in data)){
+                    let title = (data.titleHtml || `<h3 class="pr-4 text-lg font-bold title">${data.title || 'Untitled'}</h3>`);
+                    let text = (data.textHtml || `<p class="mt-1 leading-tight text">${data.text || 'Notification has no content.'}</p>`);
+                    
+                    body = `
+                        ${title}
+                        ${text}
+                    `;
+                }
+                else{
+                    body = data.body;
+                }
+
+                let bodyHtml = `
+                    <div class="flex flex-col justify-start items-start py-2 pl-2 pr-4 body">
+                        ${body}
+                        <span class="mt-1.5 text-xs timestamp" x-timeago.caps="item.timestamp || Date.now()" x-text="$timeago.label"></span>
+                    </div>
+                `;
+
+                return `
+                    <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
+                        ${icon}
+                        ${bodyHtml}
+                        ${closeIcon}
+                    </div>
+                `;
+            }
 
             let itemsProxy = CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop === 'length'){
@@ -310,6 +545,20 @@ namespace InlineJS{
                     };
                 }
 
+                if (prop === 'markAsRead' || prop === 'remove'){
+                    let uri = ((prop === 'markAsRead') ? 'read' : prop);
+                    return (id: string) => {
+                        if (baseUrl){//Send request
+                            fetch(`${baseUrl}/${uri}/${id}`, {
+                                method: 'GET',
+                                credentials: 'same-origin',
+                            }).then(ExtendedDirectiveHandlers.HandleJsonResponse).catch((err) => {
+                                ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                            });
+                        }
+                    };
+                }
+
                 if (prop === 'addTargetHandler'){
                     return (target: string, handler: (e: any) => boolean) => {
                         targets[target] = handler;
@@ -357,11 +606,122 @@ namespace InlineJS{
                         }
                     }
                 }
-            }, ['items', 'unreadCount', 'hasNew', 'status', 'connected']);
+
+                if (prop === 'compile'){
+                    return compile;
+                }
+            }, ['items', 'unreadCount', 'hasNew', 'status', 'connected', 'compile']);
 
             Region.AddGlobal('$notifications', () => proxy);
             
             return DirectiveHandlerReturn.Handled;
+        }
+
+        public static GetPublicChannel(name: string){
+            return LaravelEchoDirectiveHandlers.GetChannel(name, () => `public.${name}`, () => LaravelEchoDirectiveHandlers.echo.channel(name));
+        }
+
+        public static GetPrivateChannel(name: string){
+            return LaravelEchoDirectiveHandlers.GetChannel(name, () => `private.${name}`, () => LaravelEchoDirectiveHandlers.echo.private(name),
+                LaravelEchoDirectiveHandlers.GetPrivateProps, ['whisper', 'listenForWhisper']);
+        }
+
+        public static GetPresenceChannel(name: string){
+            return LaravelEchoDirectiveHandlers.GetChannel(name, () => `presence.${name}`, () => LaravelEchoDirectiveHandlers.echo.join(name), (prop: string, channel: any) => {
+                if (prop === 'here'){
+                    return (handler: (users: any) => void) => channel.here(handler);
+                }
+
+                if (prop === 'joining'){
+                    return (handler: (user: any) => void) => channel.joining(handler);
+                }
+
+                if (prop === 'leaving'){
+                    return (handler: (user: any) => void) => channel.leaving(handler);
+                }
+                
+                return LaravelEchoDirectiveHandlers.GetPrivateProps(prop, channel);
+            }, ['whisper', 'listenForWhisper', 'here', 'joining', 'leaving']);
+        }
+
+        public static GetNotificationChannel(idOrName: string | number){
+            let name = ((typeof idOrName === 'number') ? `App.Models.User.${idOrName}` : idOrName);
+            return LaravelEchoDirectiveHandlers.GetChannel(name, () => `notification.${name}`, () => LaravelEchoDirectiveHandlers.echo.private(name), null, null, true);
+        }
+
+        public static GetChannel(name: string, getQName: (name?: string) => string, creator: (name?: string) => any, callback?: (prop: string, channel: any) => any, props?: Array<string>, isNotification = false){
+            let qname = getQName(name);
+            if (qname in LaravelEchoDirectiveHandlers.channels_){
+                return LaravelEchoDirectiveHandlers.channels_[qname];
+            }
+
+            let channel = creator(name);
+            if (!channel){
+                return null;
+            }
+
+            let succeeded: boolean = null, statusHandlers = new Array<(status: boolean) => void>();
+            channel.listen('.pusher:subscription_succeeded', () => {
+                succeeded = true;
+                statusHandlers.splice(0).forEach(handler => handler(true));
+            });
+
+            channel.listen('.pusher:subscription_error', () => {
+                succeeded = false;
+                statusHandlers.splice(0).forEach(handler => handler(false));
+            });
+            
+            LaravelEchoDirectiveHandlers.channels_[qname] = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'name'){
+                    return qname;
+                }
+                
+                if (prop === 'channel'){
+                    return channel;
+                }
+                
+                if (prop === 'status'){
+                    return (handler: (status: boolean) => void) => {
+                        if (succeeded === null){
+                            statusHandlers.push(handler);
+                        }
+                        else{
+                            handler(succeeded);
+                        }
+                    };
+                }
+
+                if (prop === 'listen'){
+                    if (isNotification){
+                        return (handler: (e: any) => void) => channel.notification(handler);    
+                    }
+
+                    return (event: string, handler: (e: any) => void) => channel.listen(event, handler);
+                }
+
+                if (prop === 'leave'){
+                    return () => LaravelEchoDirectiveHandlers.echo.leave(name);
+                }
+
+                if (callback){
+                    return callback(prop, channel);
+                }
+            }, ['name', 'channel', 'listen', 'leave', ...(props || [])]);
+
+            return LaravelEchoDirectiveHandlers.channels_[qname];
+        }
+
+        public static GetPrivateProps(prop: string, channel: any){
+            if (prop === 'whisper'){
+                return (event: string, data: any) => {
+                    if (typeof data === 'function'){
+                        channel.listenForWhisper(event, data);
+                    }
+                    else{
+                        channel.whisper(event, data);
+                    }
+                };
+            }
         }
         
         public static AddAll(){
@@ -382,136 +742,53 @@ namespace InlineJS{
                 LaravelEchoDirectiveHandlers.connected_ = true;
             }
             
-            Region.AddGlobal('$echo', () => {
-                if ('meta' in LaravelEchoDirectiveHandlers.channels_){
+            if (!Region.GetGlobal(null, '$echo')){
+                Region.AddGlobal('$echo', () => {
+                    if ('meta' in LaravelEchoDirectiveHandlers.channels_){
+                        return LaravelEchoDirectiveHandlers.channels_['meta'];
+                    }
+    
+                    LaravelEchoDirectiveHandlers.channels_['meta'] = CoreDirectiveHandlers.CreateProxy((prop) => {
+                        if (prop === 'status'){
+                            return (handler: (status: boolean) => void) => {
+                                if (LaravelEchoDirectiveHandlers.connected_ === null){
+                                    LaravelEchoDirectiveHandlers.statusHandlers_.push(handler);
+                                }
+                                else{
+                                    handler(LaravelEchoDirectiveHandlers.connected_);
+                                }
+                            };
+                        }
+    
+                        if (prop === 'connect'){
+                            return () => {
+                                try{
+                                    LaravelEchoDirectiveHandlers.echo.connector.pusher.connection.connect();
+                                }
+                                catch (err){}
+                            };
+                        }
+    
+                        if (prop === 'error'){
+                            return LaravelEchoDirectiveHandlers.connectionError_;
+                        }
+                    }, ['status', 'connect', 'error']);
+    
                     return LaravelEchoDirectiveHandlers.channels_['meta'];
-                }
-
-                LaravelEchoDirectiveHandlers.channels_['meta'] = CoreDirectiveHandlers.CreateProxy((prop) => {
-                    if (prop === 'status'){
-                        return (handler: (status: boolean) => void) => {
-                            if (LaravelEchoDirectiveHandlers.connected_ === null){
-                                LaravelEchoDirectiveHandlers.statusHandlers_.push(handler);
-                            }
-                            else{
-                                handler(LaravelEchoDirectiveHandlers.connected_);
-                            }
-                        };
-                    }
-
-                    if (prop === 'connect'){
-                        return () => {
-                            try{
-                                LaravelEchoDirectiveHandlers.echo.connector.pusher.connection.connect();
-                            }
-                            catch (err){}
-                        };
-                    }
-
-                    if (prop === 'error'){
-                        return LaravelEchoDirectiveHandlers.connectionError_;
-                    }
-                }, ['status', 'connect', 'error']);
-
-                return LaravelEchoDirectiveHandlers.channels_['meta'];
-            });
-            
-            let getChannel = (name: string, getQName: (name?: string) => string, creator: (name?: string) => any, callback?: (prop: string, channel: any) => any, props?: Array<string>, isNotification = false) => {
-                let qname = getQName(name);
-                if (qname in LaravelEchoDirectiveHandlers.channels_){
-                    return LaravelEchoDirectiveHandlers.channels_[qname];
-                }
-
-                let channel = creator(name);
-                if (!channel){
-                    return null;
-                }
-
-                let succeeded: boolean = null, statusHandlers = new Array<(status: boolean) => void>();
-                channel.listen('.pusher:subscription_succeeded', () => {
-                    succeeded = true;
-                    statusHandlers.splice(0).forEach(handler => handler(true));
                 });
-
-                channel.listen('.pusher:subscription_error', () => {
-                    succeeded = false;
-                    statusHandlers.splice(0).forEach(handler => handler(false));
-                });
-                
-                LaravelEchoDirectiveHandlers.channels_[qname] = CoreDirectiveHandlers.CreateProxy((prop) => {
-                    if (prop === 'channel'){
-                        return channel;
-                    }
-                    
-                    if (prop === 'status'){
-                        return (handler: (status: boolean) => void) => {
-                            if (succeeded === null){
-                                statusHandlers.push(handler);
-                            }
-                            else{
-                                handler(succeeded);
-                            }
-                        };
-                    }
-
-                    if (prop === 'listen'){
-                        if (isNotification){
-                            return (handler: (e: any) => void) => channel.notification(handler);    
-                        }
-
-                        return (event: string, handler: (e: any) => void) => channel.listen(event, handler);
-                    }
-
-                    if (prop === 'leave'){
-                        return () => LaravelEchoDirectiveHandlers.echo.leave(name);
-                    }
-
-                    if (callback){
-                        return callback(prop, channel);
-                    }
-                }, ['channel', 'listen', 'leave', ...(props || [])]);
-
-                return LaravelEchoDirectiveHandlers.channels_[qname];
-            };
-
-            let privateProps = (prop: string, channel: any) => {
-                if (prop === 'whisper'){
-                    return (event: string, data: any) => {
-                        if (typeof data === 'function'){
-                            channel.listenForWhisper(event, data);
-                        }
-                        else{
-                            channel.whisper(event, data);
-                        }
-                    };
-                }
-            };
+            }
             
-            Region.AddGlobal('$echoPublicChannel', () => (name: string) => getChannel(name, () => `public.${name}`, () => LaravelEchoDirectiveHandlers.echo.channel(name)));
-            Region.AddGlobal('$echoPrivateChannel', () => (name: string) => getChannel(name, () => `private.${name}`, () => LaravelEchoDirectiveHandlers.echo.private(name), privateProps, ['whisper', 'listenForWhisper']));
-
-            Region.AddGlobal('$echoNotificationChannel', () => (idOrName: string | number) => getChannel(((typeof idOrName === 'number') ? `App.Models.User.${idOrName}` : idOrName),
-                (name: string) => `notification.${name}`, (name: string) => LaravelEchoDirectiveHandlers.echo.private(name), null, null, true));
-
-            Region.AddGlobal('$echoPresenceChannel', () => (name: string) => getChannel(name, () => `presence.${name}`, () => LaravelEchoDirectiveHandlers.echo.join(name), (prop: string, channel: any) => {
-                if (prop === 'here'){
-                    return (handler: (users: any) => void) => channel.here(handler);
-                }
-
-                if (prop === 'joining'){
-                    return (handler: (user: any) => void) => channel.joining(handler);
-                }
-
-                if (prop === 'leaving'){
-                    return (handler: (user: any) => void) => channel.leaving(handler);
-                }
-                
-                return privateProps(prop, channel);
-            }, ['whisper', 'listenForWhisper', 'here', 'joining', 'leaving']));
+            Region.AddGlobal('$echoPublicChannel', () => LaravelEchoDirectiveHandlers.GetPublicChannel);
+            Region.AddGlobal('$echoPrivateChannel', () => LaravelEchoDirectiveHandlers.GetPrivateChannel);
+            Region.AddGlobal('$echoPresenceChannel', () => LaravelEchoDirectiveHandlers.GetPresenceChannel);
+            Region.AddGlobal('$echoNotificationChannel', () => LaravelEchoDirectiveHandlers.GetNotificationChannel);
             
             DirectiveHandlerManager.AddHandler('echoTypingBind', LaravelEchoDirectiveHandlers.TypingBind);
             DirectiveHandlerManager.AddHandler('echoOn', LaravelEchoDirectiveHandlers.On);
+            DirectiveHandlerManager.AddHandler('channel', LaravelEchoDirectiveHandlers.Channel);
             DirectiveHandlerManager.AddHandler('notifications', LaravelEchoDirectiveHandlers.Notifications);
+
+            ExtendedDirectiveHandlers.BuildGlobal('channel');
         }
     }
 

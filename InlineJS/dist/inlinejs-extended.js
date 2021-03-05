@@ -2949,6 +2949,7 @@ var InlineJS;
                                 var value = (data.failed[key] || []);
                                 info.errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
+                            ExtendedDirectiveHandlers.Report(regionId, data);
                             return;
                         }
                         if (!ExtendedDirectiveHandlers.Report(regionId, data) && (!info.callback || info.callback(data))) {

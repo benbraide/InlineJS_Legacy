@@ -3601,6 +3601,7 @@ namespace InlineJS{
                                 info.errorBag[key] = (Array.isArray(value) ? value : [value]);
                             }
 
+                            ExtendedDirectiveHandlers.Report(regionId, data);
                             return;
                         }
                         

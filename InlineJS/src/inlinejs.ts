@@ -1795,6 +1795,11 @@ namespace InlineJS{
                 return (condition ? trueValue : falseValue);
             });
 
+            Region.AddGlobal('$evaluate', (regionId: string, contextElement: HTMLElement) => (value: string, useWindow = false, ...args: any) => {
+                let region = Region.Get(regionId);
+                return (region ? CoreDirectiveHandlers.Evaluate(region, contextElement, value, useWindow, ...args) : null);
+            });
+
             Region.AddGlobal('$__InlineJS_CallTemp__', (regionId: string) => (key: string) => {
                 let region = Region.Get(regionId);
                 return (region ? region.CallTemp(key) : null);
