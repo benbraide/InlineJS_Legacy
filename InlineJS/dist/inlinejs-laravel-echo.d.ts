@@ -9,6 +9,7 @@ declare namespace InlineJS {
         static On(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Channel(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Notifications(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static CompileNotification(data: Record<string, any>, intersectionOptions: string | number, index?: number, asHelper?: boolean, closeAction?: string, items?: any[]): any;
         static GetPublicChannel(name: string): any;
         static GetPrivateChannel(name: string): any;
         static GetPresenceChannel(name: string): any;

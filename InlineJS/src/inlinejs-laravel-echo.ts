@@ -396,100 +396,6 @@ namespace InlineJS{
                 }
             });
 
-            let compile = (data: Record<string, any>, intersectionOptions: string | number, index = 0) => {
-                const iconMap = {
-                    success: '<i class="material-icons-outlined text-8xl text-green-600 icon">check_circle</i>',
-                    warning: '<i class="material-icons-outlined text-8xl text-orange-600 icon">report</i>',
-                    error: '<i class="material-icons-outlined text-8xl text-red-600 icon">dangerous</i>',
-                    info: '<i class="material-icons-outlined text-8xl text-blue-600 icon">info</i>',
-                };
-                
-                const colorMap = {
-                    success: 'bg-green-50',
-                    warning: 'bg-orange-50',
-                    error: 'bg-red-50',
-                    info: 'bg-blue-50',
-                    none: 'bg-white',
-                };
-
-                if ('html' in data){
-                    return data.html;
-                }
-
-                let icon: string;
-                if ('iconHtml' in data){
-                    icon = data.iconHtml;
-                }
-                else{
-                    icon = iconMap[data.icon || 'info'];
-                }
-
-                let bgColor = (data.bgColor || colorMap[data.icon || 'none']), action = '';
-                if (('action' in data) && typeof data.action === 'string'){
-                    action = `${Config.GetDirectiveName('on')}:click="${data.action}"`;
-                }
-
-                let intersection = '', readOnVisible = (!('readOnVisible' in data) || data.readOnVisible);
-                if (readOnVisible && typeof intersectionOptions === 'string'){
-                    intersection = `${Config.GetDirectiveName('intersection')}="${intersectionOptions}"`;
-                }
-                else if (readOnVisible && typeof intersectionOptions === 'number'){
-                    intersection = `${Config.GetDirectiveName('intersection')}="{ threshold: 0.9, root: $getAncestor(${intersectionOptions}) }"`;
-                }
-
-                if (intersection){
-                    intersection += ` ${Config.GetDirectiveName('on')}:intersection-visible.join.once="$notifications.markAsRead('${data.id}')"`;
-                }
-
-                let extraClasses = (action ? 'cursor-pointer inlinejs-notification-item action' : 'inlinejs-notification-item');
-                let closeIcon = `
-                    <div class="absolute top-2 right-4 flex justify-start items-center bg-transparent remove">
-                        <i class="material-icons-outlined text-xl text-red-800 leading-none cursor-pointer"
-                            ${Config.GetDirectiveName('on')}:click.stop="$notifications.remove('${data.id}')">delete</i>
-                    </div>
-                `;
-                
-                let borderClass = ((index != 0 && items.length > 1) ? 'border-t' : '');
-                if ('bodyHtml' in data){
-                    return `
-                        <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
-                            ${icon}
-                            ${data.bodyHtml}
-                            ${closeIcon}
-                        </div>
-                    `;
-                }
-
-                let body: string;
-                if (!('body' in data)){
-                    let title = (data.titleHtml || `<h3 class="pr-4 text-lg font-bold title">${data.title || 'Untitled'}</h3>`);
-                    let text = (data.textHtml || `<p class="mt-1 leading-tight text">${data.text || 'Notification has no content.'}</p>`);
-                    
-                    body = `
-                        ${title}
-                        ${text}
-                    `;
-                }
-                else{
-                    body = data.body;
-                }
-
-                let bodyHtml = `
-                    <div class="flex flex-col justify-start items-start py-2 pl-2 pr-4 body">
-                        ${body}
-                        <span class="mt-1.5 text-xs timestamp" x-timeago.caps="item.timestamp || Date.now()" x-text="$timeago.label"></span>
-                    </div>
-                `;
-
-                return `
-                    <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
-                        ${icon}
-                        ${bodyHtml}
-                        ${closeIcon}
-                    </div>
-                `;
-            }
-
             let itemsProxy = CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop === 'length'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.items.${prop}`);
@@ -608,13 +514,130 @@ namespace InlineJS{
                 }
 
                 if (prop === 'compile'){
-                    return compile;
+                    return (data: Record<string, any>, intersectionOptions: string | number, index = 0, asHelper = false, closeAction = '') => {
+                        return LaravelEchoDirectiveHandlers.CompileNotification(data, intersectionOptions, index, asHelper, closeAction, items);
+                    };
                 }
             }, ['items', 'unreadCount', 'hasNew', 'status', 'connected', 'compile']);
 
             Region.AddGlobal('$notifications', () => proxy);
             
             return DirectiveHandlerReturn.Handled;
+        }
+
+        public static CompileNotification(data: Record<string, any>, intersectionOptions: string | number, index = 0, asHelper = false, closeAction = '', items = []){
+            const iconMap = {
+                success: '<i class="material-icons-outlined text-8xl text-green-600 icon">check_circle</i>',
+                warning: '<i class="material-icons-outlined text-8xl text-orange-600 icon">report</i>',
+                error: '<i class="material-icons-outlined text-8xl text-red-600 icon">dangerous</i>',
+                info: '<i class="material-icons-outlined text-8xl text-blue-600 icon">info</i>',
+            };
+            
+            const colorMap = {
+                success: 'bg-green-50',
+                warning: 'bg-orange-50',
+                error: 'bg-red-50',
+                info: 'bg-blue-50',
+                none: 'bg-white',
+            };
+
+            if ('html' in data){
+                return data.html;
+            }
+
+            let icon: string;
+            if ('iconHtml' in data){
+                icon = data.iconHtml;
+            }
+            else{
+                icon = iconMap[data.icon || 'info'];
+            }
+
+            let bgColor = (data.bgColor || colorMap[data.icon || 'none']), action = '';
+            if (('action' in data) && typeof data.action === 'string'){
+                action = `${Config.GetDirectiveName('on')}:click="${data.action}"`;
+            }
+
+            let intersection = '', readOnVisible = (!('readOnVisible' in data) || data.readOnVisible);
+            if (!asHelper && readOnVisible && typeof intersectionOptions === 'string'){
+                intersection = `${Config.GetDirectiveName('intersection')}="${intersectionOptions}"`;
+            }
+            else if (!asHelper && readOnVisible && typeof intersectionOptions === 'number'){
+                intersection = `${Config.GetDirectiveName('intersection')}="{ threshold: 0.9, root: $getAncestor(${intersectionOptions}) }"`;
+            }
+
+            if (intersection){
+                intersection += ` ${Config.GetDirectiveName('on')}:intersection-visible.join.once="$notifications.markAsRead('${data.id}')"`;
+            }
+
+            let extraClasses = (action ? 'cursor-pointer inlinejs-notification-item action' : 'inlinejs-notification-item'), closeIcon = '';
+            if (asHelper){
+                closeIcon = `
+                    <div class="absolute top-2 right-4 flex justify-start items-center bg-transparent remove">
+                        <i class="material-icons-outlined text-xl text-red-800 leading-none cursor-pointer"
+                            ${Config.GetDirectiveName('on')}:click.stop="${closeAction || '$scope.show = false'}">close</i>
+                    </div>
+                `;
+            }
+            else{
+                closeIcon = `
+                    <div class="absolute top-2 right-4 flex justify-start items-center bg-transparent remove">
+                        <i class="material-icons-outlined text-xl text-red-800 leading-none cursor-pointer"
+                            ${Config.GetDirectiveName('on')}:click.stop="$notifications.remove('${data.id}')">delete</i>
+                    </div>
+                `;
+            }
+            
+            let borderClass = ((!asHelper && index != 0 && items.length > 1) ? 'border-t' : '');
+            if ('bodyHtml' in data){
+                return `
+                    <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
+                        ${icon}
+                        ${data.bodyHtml}
+                        ${closeIcon}
+                    </div>
+                `;
+            }
+
+            let body: string;
+            if (!('body' in data)){
+                let title = (data.titleHtml || `<h3 class="pr-4 text-lg font-bold title">${data.title || 'Untitled'}</h3>`);
+                let text = (data.textHtml || `<p class="mt-1 leading-tight text">${data.text || 'Notification has no content.'}</p>`);
+                
+                body = `
+                    ${title}
+                    ${text}
+                `;
+            }
+            else{
+                body = data.body;
+            }
+
+            let bodyHtml = '';
+            if (asHelper){
+                bodyHtml = `
+                    <div class="flex flex-col justify-start items-start py-2 pl-2 pr-4 body">
+                        ${body}
+                        <span class="mt-1.5 text-xs timestamp" x-timeago.caps="Date.now()" x-text="$timeago.label"></span>
+                    </div>
+                `;
+            }
+            else{
+                bodyHtml = `
+                    <div class="flex flex-col justify-start items-start py-2 pl-2 pr-4 body">
+                        ${body}
+                        <span class="mt-1.5 text-xs timestamp" x-timeago.caps="item.timestamp || Date.now()" x-text="$timeago.label"></span>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
+                    ${icon}
+                    ${bodyHtml}
+                    ${closeIcon}
+                </div>
+            `;
         }
 
         public static GetPublicChannel(name: string){
@@ -778,6 +801,7 @@ namespace InlineJS{
                 });
             }
             
+            Region.AddGlobal('$compileNotification', () => LaravelEchoDirectiveHandlers.CompileNotification);
             Region.AddGlobal('$echoPublicChannel', () => LaravelEchoDirectiveHandlers.GetPublicChannel);
             Region.AddGlobal('$echoPrivateChannel', () => LaravelEchoDirectiveHandlers.GetPrivateChannel);
             Region.AddGlobal('$echoPresenceChannel', () => LaravelEchoDirectiveHandlers.GetPresenceChannel);

@@ -334,63 +334,6 @@ var InlineJS;
                     listen();
                 }
             });
-            var compile = function (data, intersectionOptions, index) {
-                if (index === void 0) { index = 0; }
-                var iconMap = {
-                    success: '<i class="material-icons-outlined text-8xl text-green-600 icon">check_circle</i>',
-                    warning: '<i class="material-icons-outlined text-8xl text-orange-600 icon">report</i>',
-                    error: '<i class="material-icons-outlined text-8xl text-red-600 icon">dangerous</i>',
-                    info: '<i class="material-icons-outlined text-8xl text-blue-600 icon">info</i>'
-                };
-                var colorMap = {
-                    success: 'bg-green-50',
-                    warning: 'bg-orange-50',
-                    error: 'bg-red-50',
-                    info: 'bg-blue-50',
-                    none: 'bg-white'
-                };
-                if ('html' in data) {
-                    return data.html;
-                }
-                var icon;
-                if ('iconHtml' in data) {
-                    icon = data.iconHtml;
-                }
-                else {
-                    icon = iconMap[data.icon || 'info'];
-                }
-                var bgColor = (data.bgColor || colorMap[data.icon || 'none']), action = '';
-                if (('action' in data) && typeof data.action === 'string') {
-                    action = InlineJS.Config.GetDirectiveName('on') + ":click=\"" + data.action + "\"";
-                }
-                var intersection = '', readOnVisible = (!('readOnVisible' in data) || data.readOnVisible);
-                if (readOnVisible && typeof intersectionOptions === 'string') {
-                    intersection = InlineJS.Config.GetDirectiveName('intersection') + "=\"" + intersectionOptions + "\"";
-                }
-                else if (readOnVisible && typeof intersectionOptions === 'number') {
-                    intersection = InlineJS.Config.GetDirectiveName('intersection') + "=\"{ threshold: 0.9, root: $getAncestor(" + intersectionOptions + ") }\"";
-                }
-                if (intersection) {
-                    intersection += " " + InlineJS.Config.GetDirectiveName('on') + ":intersection-visible.join.once=\"$notifications.markAsRead('" + data.id + "')\"";
-                }
-                var extraClasses = (action ? 'cursor-pointer inlinejs-notification-item action' : 'inlinejs-notification-item');
-                var closeIcon = "\n                    <div class=\"absolute top-2 right-4 flex justify-start items-center bg-transparent remove\">\n                        <i class=\"material-icons-outlined text-xl text-red-800 leading-none cursor-pointer\"\n                            " + InlineJS.Config.GetDirectiveName('on') + ":click.stop=\"$notifications.remove('" + data.id + "')\">delete</i>\n                    </div>\n                ";
-                var borderClass = ((index != 0 && items.length > 1) ? 'border-t' : '');
-                if ('bodyHtml' in data) {
-                    return "\n                        <div class=\"relative w-full flex justify-start items-start py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                            " + icon + "\n                            " + data.bodyHtml + "\n                            " + closeIcon + "\n                        </div>\n                    ";
-                }
-                var body;
-                if (!('body' in data)) {
-                    var title = (data.titleHtml || "<h3 class=\"pr-4 text-lg font-bold title\">" + (data.title || 'Untitled') + "</h3>");
-                    var text = (data.textHtml || "<p class=\"mt-1 leading-tight text\">" + (data.text || 'Notification has no content.') + "</p>");
-                    body = "\n                        " + title + "\n                        " + text + "\n                    ";
-                }
-                else {
-                    body = data.body;
-                }
-                var bodyHtml = "\n                    <div class=\"flex flex-col justify-start items-start py-2 pl-2 pr-4 body\">\n                        " + body + "\n                        <span class=\"mt-1.5 text-xs timestamp\" x-timeago.caps=\"item.timestamp || Date.now()\" x-text=\"$timeago.label\"></span>\n                    </div>\n                ";
-                return "\n                    <div class=\"relative w-full flex justify-start items-start py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                        " + icon + "\n                        " + bodyHtml + "\n                        " + closeIcon + "\n                    </div>\n                ";
-            };
             var itemsProxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'length') {
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".items." + prop);
@@ -491,11 +434,87 @@ var InlineJS;
                     };
                 }
                 if (prop === 'compile') {
-                    return compile;
+                    return function (data, intersectionOptions, index, asHelper, closeAction) {
+                        if (index === void 0) { index = 0; }
+                        if (asHelper === void 0) { asHelper = false; }
+                        if (closeAction === void 0) { closeAction = ''; }
+                        return LaravelEchoDirectiveHandlers.CompileNotification(data, intersectionOptions, index, asHelper, closeAction, items);
+                    };
                 }
             }, ['items', 'unreadCount', 'hasNew', 'status', 'connected', 'compile']);
             InlineJS.Region.AddGlobal('$notifications', function () { return proxy; });
             return InlineJS.DirectiveHandlerReturn.Handled;
+        };
+        LaravelEchoDirectiveHandlers.CompileNotification = function (data, intersectionOptions, index, asHelper, closeAction, items) {
+            if (index === void 0) { index = 0; }
+            if (asHelper === void 0) { asHelper = false; }
+            if (closeAction === void 0) { closeAction = ''; }
+            if (items === void 0) { items = []; }
+            var iconMap = {
+                success: '<i class="material-icons-outlined text-8xl text-green-600 icon">check_circle</i>',
+                warning: '<i class="material-icons-outlined text-8xl text-orange-600 icon">report</i>',
+                error: '<i class="material-icons-outlined text-8xl text-red-600 icon">dangerous</i>',
+                info: '<i class="material-icons-outlined text-8xl text-blue-600 icon">info</i>'
+            };
+            var colorMap = {
+                success: 'bg-green-50',
+                warning: 'bg-orange-50',
+                error: 'bg-red-50',
+                info: 'bg-blue-50',
+                none: 'bg-white'
+            };
+            if ('html' in data) {
+                return data.html;
+            }
+            var icon;
+            if ('iconHtml' in data) {
+                icon = data.iconHtml;
+            }
+            else {
+                icon = iconMap[data.icon || 'info'];
+            }
+            var bgColor = (data.bgColor || colorMap[data.icon || 'none']), action = '';
+            if (('action' in data) && typeof data.action === 'string') {
+                action = InlineJS.Config.GetDirectiveName('on') + ":click=\"" + data.action + "\"";
+            }
+            var intersection = '', readOnVisible = (!('readOnVisible' in data) || data.readOnVisible);
+            if (!asHelper && readOnVisible && typeof intersectionOptions === 'string') {
+                intersection = InlineJS.Config.GetDirectiveName('intersection') + "=\"" + intersectionOptions + "\"";
+            }
+            else if (!asHelper && readOnVisible && typeof intersectionOptions === 'number') {
+                intersection = InlineJS.Config.GetDirectiveName('intersection') + "=\"{ threshold: 0.9, root: $getAncestor(" + intersectionOptions + ") }\"";
+            }
+            if (intersection) {
+                intersection += " " + InlineJS.Config.GetDirectiveName('on') + ":intersection-visible.join.once=\"$notifications.markAsRead('" + data.id + "')\"";
+            }
+            var extraClasses = (action ? 'cursor-pointer inlinejs-notification-item action' : 'inlinejs-notification-item'), closeIcon = '';
+            if (asHelper) {
+                closeIcon = "\n                    <div class=\"absolute top-2 right-4 flex justify-start items-center bg-transparent remove\">\n                        <i class=\"material-icons-outlined text-xl text-red-800 leading-none cursor-pointer\"\n                            " + InlineJS.Config.GetDirectiveName('on') + ":click.stop=\"" + (closeAction || '$scope.show = false') + "\">close</i>\n                    </div>\n                ";
+            }
+            else {
+                closeIcon = "\n                    <div class=\"absolute top-2 right-4 flex justify-start items-center bg-transparent remove\">\n                        <i class=\"material-icons-outlined text-xl text-red-800 leading-none cursor-pointer\"\n                            " + InlineJS.Config.GetDirectiveName('on') + ":click.stop=\"$notifications.remove('" + data.id + "')\">delete</i>\n                    </div>\n                ";
+            }
+            var borderClass = ((!asHelper && index != 0 && items.length > 1) ? 'border-t' : '');
+            if ('bodyHtml' in data) {
+                return "\n                    <div class=\"relative w-full flex justify-start items-start py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                        " + icon + "\n                        " + data.bodyHtml + "\n                        " + closeIcon + "\n                    </div>\n                ";
+            }
+            var body;
+            if (!('body' in data)) {
+                var title = (data.titleHtml || "<h3 class=\"pr-4 text-lg font-bold title\">" + (data.title || 'Untitled') + "</h3>");
+                var text = (data.textHtml || "<p class=\"mt-1 leading-tight text\">" + (data.text || 'Notification has no content.') + "</p>");
+                body = "\n                    " + title + "\n                    " + text + "\n                ";
+            }
+            else {
+                body = data.body;
+            }
+            var bodyHtml = '';
+            if (asHelper) {
+                bodyHtml = "\n                    <div class=\"flex flex-col justify-start items-start py-2 pl-2 pr-4 body\">\n                        " + body + "\n                        <span class=\"mt-1.5 text-xs timestamp\" x-timeago.caps=\"Date.now()\" x-text=\"$timeago.label\"></span>\n                    </div>\n                ";
+            }
+            else {
+                bodyHtml = "\n                    <div class=\"flex flex-col justify-start items-start py-2 pl-2 pr-4 body\">\n                        " + body + "\n                        <span class=\"mt-1.5 text-xs timestamp\" x-timeago.caps=\"item.timestamp || Date.now()\" x-text=\"$timeago.label\"></span>\n                    </div>\n                ";
+            }
+            return "\n                <div class=\"relative w-full flex justify-start items-start py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                    " + icon + "\n                    " + bodyHtml + "\n                    " + closeIcon + "\n                </div>\n            ";
         };
         LaravelEchoDirectiveHandlers.GetPublicChannel = function (name) {
             return LaravelEchoDirectiveHandlers.GetChannel(name, function () { return "public." + name; }, function () { return LaravelEchoDirectiveHandlers.echo.channel(name); });
@@ -631,6 +650,7 @@ var InlineJS;
                     return LaravelEchoDirectiveHandlers.channels_['meta'];
                 });
             }
+            InlineJS.Region.AddGlobal('$compileNotification', function () { return LaravelEchoDirectiveHandlers.CompileNotification; });
             InlineJS.Region.AddGlobal('$echoPublicChannel', function () { return LaravelEchoDirectiveHandlers.GetPublicChannel; });
             InlineJS.Region.AddGlobal('$echoPrivateChannel', function () { return LaravelEchoDirectiveHandlers.GetPrivateChannel; });
             InlineJS.Region.AddGlobal('$echoPresenceChannel', function () { return LaravelEchoDirectiveHandlers.GetPresenceChannel; });
