@@ -359,10 +359,9 @@ declare namespace InlineJS {
     }
     interface IfOrEachInfo {
         regionId: string;
-        scopeKey: string;
+        template: HTMLTemplateElement;
         parent: HTMLElement;
-        marker: number;
-        attributes: Array<LiteAttr>;
+        blueprint: HTMLElement;
         subscriptions?: Record<string, Array<string>>;
     }
     interface IfOrEachItemInfo {
@@ -414,14 +413,9 @@ declare namespace InlineJS {
         static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.QuitAll;
         static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.QuitAll;
         static InitIfOrEach(region: Region, element: HTMLElement, except: string, onUninit: () => void): IfOrEachInfo;
-        static UninitIfOrEach(region: Region, info: IfOrEachInfo): void;
-        static InsertIfOrEach(regionId: string, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number, insertAttributes?: boolean): void;
-        static InsertIfOrEachItem(element: HTMLElement, info: IfOrEachInfo, animate: boolean, options: Array<string>, callback?: (itemInfo?: IfOrEachItemInfo) => void, offset?: number): IfOrEachItemInfo;
+        static InsertIfOrEach(regionId: string, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
+        static InsertIfOrEachItem(info: IfOrEachInfo, animate: boolean, options: Array<string>, callback?: (itemInfo?: IfOrEachItemInfo) => void, offset?: number): IfOrEachItemInfo;
         static RemoveIfOrEachItem(itemInfo: IfOrEachItemInfo, info: IfOrEachInfo): void;
-        static EvaluateIfOrEach(element: HTMLElement, info: IfOrEachInfo, expression: string): any;
-        static CreateContentLoadProxy(list: Array<OnLoadInfo>): any;
-        static BindOnContentLoad(region: Region, element: HTMLElement, callback: () => void): void;
-        static AlertContentLoad(list: Array<OnLoadInfo>): OnLoadInfo[];
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean), setter?: (target: object, prop: string | number | symbol, value: any) => boolean, target?: any): any;
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
         static EvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
@@ -431,7 +425,7 @@ declare namespace InlineJS {
         static ToString(value: any): string;
         static GetChildElementIndex(element: HTMLElement): number;
         static GetChildElementAt(parent: HTMLElement, index: number): HTMLElement;
-        static InsertOrAppendChildElement(parent: HTMLElement, element: HTMLElement, index: number): void;
+        static InsertOrAppendChildElement(parent: HTMLElement, element: HTMLElement, index: number, after?: HTMLElement): void;
         static GetAnimator(region: Region, animate: boolean, element: HTMLElement | ((step: number) => void), options: Array<string>, always?: boolean): AnimatorCallbackType;
         static AddAll(): void;
     }

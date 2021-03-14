@@ -2181,11 +2181,11 @@ var InlineJS;
             }
             var lastValue = false, itemInfo = null, animate = (directive.arg.key === 'animate');
             info.subscriptions = region.GetState().TrapGetAccess(function () {
-                var value = !!CoreDirectiveHandlers.EvaluateIfOrEach(element, info, directive.value);
+                var value = !!CoreDirectiveHandlers.Evaluate(Region.Get(info.regionId), element, directive.value);
                 if (value != lastValue) {
                     lastValue = value;
                     if (value) { //Insert into parent
-                        itemInfo = CoreDirectiveHandlers.InsertIfOrEachItem(element, info, animate, directive.arg.options);
+                        itemInfo = CoreDirectiveHandlers.InsertIfOrEachItem(info, animate, directive.arg.options);
                     }
                     else if (itemInfo) {
                         CoreDirectiveHandlers.RemoveIfOrEachItem(itemInfo, info);
@@ -2276,7 +2276,7 @@ var InlineJS;
                     else { //Array
                         key = options.clones.length;
                     }
-                    CoreDirectiveHandlers.InsertIfOrEachItem(element, info, animate, directive.arg.options, function (itemInfo) {
+                    CoreDirectiveHandlers.InsertIfOrEachItem(info, animate, directive.arg.options, function (itemInfo) {
                         if (key < options.clones.length) {
                             options.clones.splice(key, 0, {
                                 key: key,
@@ -2293,7 +2293,7 @@ var InlineJS;
                     }, key);
                 }
                 else { //Map
-                    CoreDirectiveHandlers.InsertIfOrEachItem(element, info, animate, directive.arg.options, function (itemInfo) {
+                    CoreDirectiveHandlers.InsertIfOrEachItem(info, animate, directive.arg.options, function (itemInfo) {
                         options.clones[key] = {
                             key: key,
                             itemInfo: itemInfo
@@ -2476,10 +2476,7 @@ var InlineJS;
                 return (((Array.isArray(target) || Region.IsObject(target)) && ('__InlineJS_Target__' in target)) ? target['__InlineJS_Target__'] : target);
             };
             info.subscriptions = region.GetState().TrapGetAccess(function () {
-                var myRegion = Region.Get(info.regionId), target = CoreDirectiveHandlers.EvaluateIfOrEach(element, info, expression);
-                if (element.parentElement) {
-                    element.parentElement.removeChild(element);
-                }
+                var myRegion = Region.Get(info.regionId), target = CoreDirectiveHandlers.Evaluate(myRegion, element, expression);
                 init(myRegion, target);
             }, function (changes) {
                 var myRegion = Region.Get(info.regionId);
@@ -2490,7 +2487,7 @@ var InlineJS;
                         }
                     }
                     else if (change.type === 'set') { //Target changed
-                        var target = CoreDirectiveHandlers.EvaluateIfOrEach(element, info, expression);
+                        var target = CoreDirectiveHandlers.Evaluate(myRegion, element, expression);
                         if (getTarget(target) !== options.itemsTarget) {
                             init(myRegion, target);
                         }
@@ -2506,95 +2503,98 @@ var InlineJS;
             return DirectiveHandlerReturn.QuitAll;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except, onUninit) {
-            if (!element.parentElement || region.GetRootElement() === element) {
+            if (!element.parentElement || !(element instanceof HTMLTemplateElement) || element.content.children.length != 1) {
                 return null;
             }
-            var elScopeKey = Region.GetElementKeyName(), attributes = new Array(), scope = region.AddElement(element), scopeKey = element.getAttribute(elScopeKey);
+            var scope = region.AddElement(element);
+            if (!scope) {
+                return null;
+            }
             var info = {
                 regionId: region.GetId(),
-                scopeKey: scopeKey,
+                template: element,
                 parent: element.parentElement,
-                marker: CoreDirectiveHandlers.GetChildElementIndex(element),
-                attributes: attributes
+                blueprint: element.content.firstElementChild
             };
-            CoreDirectiveHandlers.BindOnContentLoad(region, element, function () {
+            scope.uninitCallbacks.push(function () {
+                Object.keys(info.subscriptions || {}).forEach(function (key) {
+                    var targetRegion = Region.Get(key);
+                    if (targetRegion) {
+                        var changes_1 = targetRegion.GetChanges();
+                        info.subscriptions[key].forEach(function (id) { return changes_1.Unsubscribe(id); });
+                    }
+                    delete info.subscriptions[key];
+                });
                 onUninit();
-                CoreDirectiveHandlers.UninitIfOrEach(region, info);
             });
-            element.parentElement.removeChild(element);
-            Array.from(element.attributes).forEach(function (attr) {
-                element.removeAttribute(attr.name);
-                if (attr.name !== elScopeKey && attr.name !== except) {
-                    var directive = Processor.GetDirectiveWith(attr.name, attr.value);
-                    attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
-                }
-            });
-            if (scope) {
-                scope.preserveSubscriptions = true;
-            }
             return info;
+            // let elScopeKey = Region.GetElementKeyName(), attributes = new Array<LiteAttr>(), scopeKey = element.getAttribute(elScopeKey);
+            // let info = {
+            //     regionId: region.GetId(),
+            //     scopeKey: scopeKey,
+            //     parent: element.parentElement,
+            //     marker: CoreDirectiveHandlers.GetChildElementIndex(element),
+            //     attributes: attributes,
+            // };
+            // CoreDirectiveHandlers.BindOnContentLoad(region, element, () => {
+            //     onUninit();
+            //     CoreDirectiveHandlers.UninitIfOrEach(region, info);
+            // });
+            // element.parentElement.removeChild(element);
+            // Array.from(element.attributes).forEach((attr) => {
+            //     element.removeAttribute(attr.name);
+            //     if (attr.name !== elScopeKey && attr.name !== except){
+            //         let directive = Processor.GetDirectiveWith(attr.name, attr.value);
+            //         attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
+            //     }
+            // });
+            // if (scope){
+            //     scope.preserveSubscriptions = true;
+            // }
+            // return info;
         };
-        CoreDirectiveHandlers.UninitIfOrEach = function (region, info) {
-            Object.keys(info.subscriptions || {}).forEach(function (key) {
-                var targetRegion = Region.Get(key);
-                if (targetRegion) {
-                    var changes_1 = targetRegion.GetChanges();
-                    info.subscriptions[key].forEach(function (id) { return changes_1.Unsubscribe(id); });
-                }
-                delete info.subscriptions[key];
-            });
-        };
-        CoreDirectiveHandlers.InsertIfOrEach = function (regionId, element, info, callback, offset, insertAttributes) {
+        CoreDirectiveHandlers.InsertIfOrEach = function (regionId, element, info, callback, offset) {
             if (offset === void 0) { offset = 0; }
-            if (insertAttributes === void 0) { insertAttributes = true; }
             if (!element.parentElement) {
                 element.removeAttribute(Region.GetElementKeyName());
-                CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, (info.marker + (offset || 0)));
-            }
-            if (insertAttributes) {
-                info.attributes.forEach(function (attr) { return element.setAttribute(attr.name, attr.value); });
+                CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, element, (offset || 0), info.template);
             }
             if (callback) {
                 callback();
             }
             Processor.All((Region.Infer(element) || Region.Get(regionId) || Bootstrap.CreateRegion(element)), element);
         };
-        CoreDirectiveHandlers.InsertIfOrEachItem = function (element, info, animate, options, callback, offset) {
+        CoreDirectiveHandlers.InsertIfOrEachItem = function (info, animate, options, callback, offset) {
             if (offset === void 0) { offset = 0; }
-            var clone = element.cloneNode(true);
+            var clone = info.blueprint.cloneNode(true);
             var animator = (animate ? CoreDirectiveHandlers.GetAnimator(Region.Get(info.regionId), true, clone, options) : null);
-            CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, clone, (info.marker + offset)); //Temporarily insert element into DOM
+            CoreDirectiveHandlers.InsertOrAppendChildElement(info.parent, clone, offset, info.template); //Temporarily insert element into DOM
             var itemInfo = {
                 clone: clone,
                 animator: animator,
                 onLoadList: new Array()
             };
-            var elementScope = Region.Get(info.regionId).AddElement(clone, true);
-            if (elementScope) {
-                elementScope.locals['$contentLoad'] = CoreDirectiveHandlers.CreateContentLoadProxy(itemInfo.onLoadList);
-                CoreDirectiveHandlers.BindOnContentLoad(Region.Get(info.regionId), clone.parentElement, function () {
-                    itemInfo.onLoadList = CoreDirectiveHandlers.AlertContentLoad(itemInfo.onLoadList);
-                });
-            }
             if (callback) {
                 callback(itemInfo);
             }
             if (animator) { //Animate view
                 animator(true, null, function () {
                     if (clone.parentElement) { //Execute directives
-                        CoreDirectiveHandlers.InsertIfOrEach(info.regionId, clone, info, null, 0, true);
+                        CoreDirectiveHandlers.InsertIfOrEach(info.regionId, clone, info, null, 0);
                     }
                 });
             }
             else { //Immediate insertion
-                CoreDirectiveHandlers.InsertIfOrEach(info.regionId, clone, info, null, 0, true);
+                CoreDirectiveHandlers.InsertIfOrEach(info.regionId, clone, info, null, 0);
             }
             return itemInfo;
         };
         CoreDirectiveHandlers.RemoveIfOrEachItem = function (itemInfo, info) {
             var afterRemove = function () {
-                Region.Get(info.regionId).MarkElementAsRemoved(itemInfo.clone);
-                itemInfo.onLoadList = CoreDirectiveHandlers.AlertContentLoad(itemInfo.onLoadList);
+                var myRegion = Region.Get(info.regionId);
+                if (myRegion) {
+                    myRegion.MarkElementAsRemoved(itemInfo.clone);
+                }
             };
             if (itemInfo.animator) { //Animate view
                 itemInfo.animator(false, null, function () {
@@ -2602,69 +2602,12 @@ var InlineJS;
                         itemInfo.clone.parentElement.removeChild(itemInfo.clone);
                         afterRemove();
                     }
-                    else {
-                        itemInfo.onLoadList = CoreDirectiveHandlers.AlertContentLoad(itemInfo.onLoadList);
-                    }
                 });
             }
             else if (itemInfo.clone.parentElement) { //Immediate removal
                 itemInfo.clone.parentElement.removeChild(itemInfo.clone);
                 afterRemove();
             }
-            else {
-                itemInfo.onLoadList = CoreDirectiveHandlers.AlertContentLoad(itemInfo.onLoadList);
-            }
-        };
-        CoreDirectiveHandlers.EvaluateIfOrEach = function (element, info, expression) {
-            var myRegion = Region.Get(info.regionId);
-            if (!myRegion) {
-                return null;
-            }
-            myRegion.AddLocalHandler(element, function (element, prop, bubble) {
-                return myRegion.GetLocal(info.parent, prop, bubble);
-            });
-            var result = CoreDirectiveHandlers.EvaluateAlways(myRegion, element, expression);
-            myRegion.RemoveLocalHandler(element);
-            return result;
-        };
-        CoreDirectiveHandlers.CreateContentLoadProxy = function (list) {
-            return CoreDirectiveHandlers.CreateProxy(function (prop) {
-                if (prop === 'onUnload') {
-                    return function (callback, once) {
-                        if (once === void 0) { once = false; }
-                        list.push({
-                            callback: callback,
-                            once: once
-                        });
-                    };
-                }
-                if (prop === 'unbindOnUnload') {
-                    return function (callback) {
-                        list.splice(list.findIndex(function (item) { return (item.callback === callback); }), 1);
-                    };
-                }
-                if (prop === 'getList') {
-                    return function () { return list; };
-                }
-            }, ['onUnload', 'unbindOnUnload', 'getList']);
-        };
-        CoreDirectiveHandlers.BindOnContentLoad = function (region, element, callback) {
-            var contentLoad = region.GetLocal(element, '$contentLoad');
-            if (!contentLoad || contentLoad instanceof NoResult) {
-                contentLoad = Region.GetGlobalValue(region.GetId(), '$contentLoad', element);
-            }
-            if (contentLoad && !(contentLoad instanceof NoResult)) {
-                contentLoad.onUnload(callback, true);
-            }
-        };
-        CoreDirectiveHandlers.AlertContentLoad = function (list) {
-            return list.filter(function (item) {
-                try {
-                    item.callback();
-                }
-                catch (err) { }
-                return !item.once;
-            });
         };
         CoreDirectiveHandlers.CreateProxy = function (getter, contains, setter, target) {
             var handler = {
@@ -2793,7 +2736,10 @@ var InlineJS;
         CoreDirectiveHandlers.GetChildElementAt = function (parent, index) {
             return ((index < parent.children.length) ? parent.children.item(index) : null);
         };
-        CoreDirectiveHandlers.InsertOrAppendChildElement = function (parent, element, index) {
+        CoreDirectiveHandlers.InsertOrAppendChildElement = function (parent, element, index, after) {
+            if (after) {
+                index += (CoreDirectiveHandlers.GetChildElementIndex(after) + 1);
+            }
             var sibling = CoreDirectiveHandlers.GetChildElementAt(parent, index);
             if (sibling) {
                 parent.insertBefore(element, sibling);

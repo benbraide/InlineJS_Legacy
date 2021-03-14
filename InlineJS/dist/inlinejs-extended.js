@@ -675,9 +675,9 @@ var InlineJS;
                             ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'progress', scope);
                         }
                     }
-                }, function () { return (onLoadList = InlineJS.CoreDirectiveHandlers.AlertContentLoad(onLoadList)); });
+                });
             };
-            var elementScope = region.AddElement(element, true), onLoadList = new Array();
+            var elementScope = region.AddElement(element, true);
             var scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
             region.GetState().TrapGetAccess(function () {
                 var url = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value), reload = false;
@@ -711,8 +711,6 @@ var InlineJS;
                     return function (callback) { return scope.callbacks[prop].push(callback); };
                 }
             }, __spreadArrays(Object.keys(info), Object.keys(scope.callbacks)));
-            elementScope.locals['$contentLoad'] = InlineJS.CoreDirectiveHandlers.CreateContentLoadProxy(onLoadList);
-            InlineJS.CoreDirectiveHandlers.BindOnContentLoad(region, element.parentElement, function () { return (onLoadList = InlineJS.CoreDirectiveHandlers.AlertContentLoad(onLoadList)); });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.LazyLoad = function (region, element, directive) {
@@ -1018,7 +1016,7 @@ var InlineJS;
             else { //Empty
                 options.urlPrefix = '';
             }
-            var scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods)), onLoadList = new Array();
+            var scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
             var register = function (page, name, path, title, component, entry, exit, disabled, middlewares, uid) {
                 if (typeof page === 'string' && page.length > 1 && page.startsWith('/')) {
                     page = page.substr(1);
@@ -1289,7 +1287,7 @@ var InlineJS;
                                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'progress', scope);
                             }
                         }
-                    }, function () { return (onLoadList = InlineJS.CoreDirectiveHandlers.AlertContentLoad(onLoadList)); });
+                    });
                 };
                 info.mount = mount;
                 innerRegion.AddElement(innerElement).uninitCallbacks.push(function () {
@@ -1430,7 +1428,7 @@ var InlineJS;
                 }
                 return InlineJS.DirectiveHandlerReturn.Handled;
             });
-            var contentLoadProxy = InlineJS.CoreDirectiveHandlers.CreateContentLoadProxy(onLoadList), proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+            var proxy = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop in info) {
                     if (alertable.indexOf(prop) != -1) {
                         InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
@@ -1442,7 +1440,6 @@ var InlineJS;
                 }
             }, __spreadArrays(Object.keys(info), Object.keys(methods)));
             InlineJS.Region.AddGlobal('$router', function () { return proxy; });
-            InlineJS.Region.AddGlobal('$contentLoad', function () { return contentLoadProxy; });
             InlineJS.Region.AddPostProcessCallback(function () {
                 goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1) : pathname), query);
             });

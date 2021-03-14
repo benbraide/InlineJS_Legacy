@@ -903,10 +903,10 @@ namespace InlineJS{
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'progress', scope);
                         }
                     }
-                }, () => (onLoadList = CoreDirectiveHandlers.AlertContentLoad(onLoadList)));
+                });
             };
             
-            let elementScope = region.AddElement(element, true), onLoadList = new Array<OnLoadInfo>();
+            let elementScope = region.AddElement(element, true);
             let scope = ExtendedDirectiveHandlers.AddScope('xhr', elementScope, ['onLoad']);
 
             region.GetState().TrapGetAccess(() => {
@@ -946,9 +946,6 @@ namespace InlineJS{
                     return (callback: (value: any) => boolean) => (scope.callbacks[prop] as Array<(value?: any) => boolean>).push(callback);
                 }
             }, [...Object.keys(info), ...Object.keys(scope.callbacks)]);
-
-            elementScope.locals['$contentLoad'] = CoreDirectiveHandlers.CreateContentLoadProxy(onLoadList);
-            CoreDirectiveHandlers.BindOnContentLoad(region, element.parentElement, () => (onLoadList = CoreDirectiveHandlers.AlertContentLoad(onLoadList)));
 
             return DirectiveHandlerReturn.Handled;
         }
@@ -1307,7 +1304,7 @@ namespace InlineJS{
                 options.urlPrefix = '';
             }
 
-            let scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods)), onLoadList = new Array<OnLoadInfo>();
+            let scope = ExtendedDirectiveHandlers.AddScope('router', region.AddElement(element, true), Object.keys(methods));
             let register = (page: string | RegExp, name: string, path: string, title: string, component: string, entry: string, exit: string, disabled: boolean, middlewares: Array<string>, uid: number) => {
                 if (typeof page === 'string' && page.length > 1 && page.startsWith('/')){
                     page = page.substr(1);
@@ -1624,7 +1621,7 @@ namespace InlineJS{
                                 ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'progress', scope);
                             }
                         }
-                    }, () => (onLoadList = CoreDirectiveHandlers.AlertContentLoad(onLoadList)));
+                    });
                 };
 
                 info.mount = mount;
@@ -1795,7 +1792,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Handled;
             });
             
-            let contentLoadProxy = CoreDirectiveHandlers.CreateContentLoadProxy(onLoadList), proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop in info){
                     if (alertable.indexOf(prop) != -1){
                         Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
@@ -1809,8 +1806,6 @@ namespace InlineJS{
             }, [...Object.keys(info), ...Object.keys(methods)]);
 
             Region.AddGlobal('$router', () => proxy);
-            Region.AddGlobal('$contentLoad', () => contentLoadProxy);
-
             Region.AddPostProcessCallback(() => {
                 goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1): pathname), query);
             });
