@@ -353,17 +353,26 @@ declare namespace InlineJS {
         name: string;
         value: string;
     }
+    interface OnLoadInfo {
+        callback: () => void;
+        once: boolean;
+    }
     interface IfOrEachInfo {
         regionId: string;
         scopeKey: string;
         parent: HTMLElement;
         marker: number;
         attributes: Array<LiteAttr>;
+        subscriptions?: Record<string, Array<string>>;
+    }
+    interface IfOrEachItemInfo {
+        clone: HTMLElement;
+        animator: AnimatorCallbackType;
+        onLoadList: Array<OnLoadInfo>;
     }
     interface EachCloneInfo {
         key: string | number;
-        element: HTMLElement;
-        animator: (show: boolean, beforeCallback?: (show?: boolean) => void, afterCallback?: (show?: boolean) => void) => void;
+        itemInfo: IfOrEachItemInfo;
     }
     interface EachOptions {
         clones: Array<EachCloneInfo> | Record<string, EachCloneInfo>;
@@ -402,11 +411,17 @@ declare namespace InlineJS {
         static On(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Model(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Show(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static InitIfOrEach(region: Region, element: HTMLElement, except: string): IfOrEachInfo;
-        static UninitIfOrEach(region: Region, info: IfOrEachInfo, subscriptions: Record<string, Array<string>>): void;
+        static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.QuitAll;
+        static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.QuitAll;
+        static InitIfOrEach(region: Region, element: HTMLElement, except: string, onUninit: () => void): IfOrEachInfo;
+        static UninitIfOrEach(region: Region, info: IfOrEachInfo): void;
         static InsertIfOrEach(regionId: string, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number, insertAttributes?: boolean): void;
+        static InsertIfOrEachItem(element: HTMLElement, info: IfOrEachInfo, animate: boolean, options: Array<string>, callback?: (itemInfo?: IfOrEachItemInfo) => void, offset?: number): IfOrEachItemInfo;
+        static RemoveIfOrEachItem(itemInfo: IfOrEachItemInfo, info: IfOrEachInfo): void;
+        static EvaluateIfOrEach(element: HTMLElement, info: IfOrEachInfo, expression: string): any;
+        static CreateContentLoadProxy(list: Array<OnLoadInfo>): any;
+        static BindOnContentLoad(region: Region, element: HTMLElement, callback: () => void): void;
+        static AlertContentLoad(list: Array<OnLoadInfo>): OnLoadInfo[];
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean), setter?: (target: object, prop: string | number | symbol, value: any) => boolean, target?: any): any;
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
         static EvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;

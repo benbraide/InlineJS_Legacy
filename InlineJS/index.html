@@ -54,8 +54,8 @@
             <span>State: </span>
             <strong x-text="state"></strong>
         </div>
-        <p x-uninit="$console.log('State was changed to false', $self)" x-if="state">State is true</p>
-        <p x-uninit="$console.log('State was changed to true', $self)" x-if:animate="!state">State is false</p>
+        <p x-uninit="$console.log('State was changed to false', $self)" x-if:animate.show="state">State is true</p>
+        <p x-uninit="$console.log('State was changed to true', $self)" x-if:animate.show="!state" x-each="2">State is false</p>
     </div>
     <div x-data="{list: ['First', 'Second', 'Third', 'Last']}">
         <h2>Array Loop</h2>
