@@ -2192,7 +2192,7 @@ var InlineJS;
                     }
                 }
             }, true, null);
-            return DirectiveHandlerReturn.QuitAll;
+            return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Each = function (region, element, directive) {
             var info = CoreDirectiveHandlers.InitIfOrEach(region, element, directive.original, function () {
@@ -2500,7 +2500,7 @@ var InlineJS;
                 });
                 return true;
             }, null);
-            return DirectiveHandlerReturn.QuitAll;
+            return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.InitIfOrEach = function (region, element, except, onUninit) {
             if (!element.parentElement || !(element instanceof HTMLTemplateElement) || element.content.children.length != 1) {

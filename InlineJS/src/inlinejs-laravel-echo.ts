@@ -465,6 +465,19 @@ namespace InlineJS{
                     };
                 }
 
+                if (prop === 'clear'){
+                    return () => {
+                        if (baseUrl){//Send request
+                            fetch(`${baseUrl}/${prop}`, {
+                                method: 'GET',
+                                credentials: 'same-origin',
+                            }).then(ExtendedDirectiveHandlers.HandleJsonResponse).catch((err) => {
+                                ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                            });
+                        }
+                    };
+                }
+
                 if (prop === 'addTargetHandler'){
                     return (target: string, handler: (e: any) => boolean) => {
                         targets[target] = handler;
@@ -583,7 +596,7 @@ namespace InlineJS{
                 closeIcon = `
                     <div class="absolute top-2 right-4 flex justify-start items-center bg-transparent remove">
                         <i class="material-icons-outlined text-xl text-red-800 leading-none cursor-pointer"
-                            ${Config.GetDirectiveName('on')}:click.stop="$notifications.remove('${data.id}')">delete</i>
+                            ${Config.GetDirectiveName('on')}:click.stop="$notifications.remove('${data.id}')">close</i>
                     </div>
                 `;
             }
@@ -591,7 +604,7 @@ namespace InlineJS{
             let borderClass = ((!asHelper && index != 0 && items.length > 1) ? 'border-t' : '');
             if ('bodyHtml' in data){
                 return `
-                    <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
+                    <div class="relative w-full flex justify-start items-start pl-2 py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
                         ${icon}
                         ${data.bodyHtml}
                         ${closeIcon}
@@ -632,7 +645,7 @@ namespace InlineJS{
             }
 
             return `
-                <div class="relative w-full flex justify-start items-start py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
+                <div class="relative w-full flex justify-start items-start pl-2 py-1 ${borderClass} ${bgColor} ${extraClasses}" ${action} ${intersection}>
                     ${icon}
                     ${bodyHtml}
                     ${closeIcon}

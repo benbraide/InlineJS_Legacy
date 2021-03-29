@@ -117,6 +117,7 @@ namespace InlineJS{
     export class ExtendedDirectiveHandlers{
         private static scopeId_ = 0;
         private static scopes_: Record<string, ExtendedDirectiveHandlerScope> = {};
+        private static formData_: Record<string, any> = null;
 
         public static Watch(region: Region, element: HTMLElement, directive: Directive){
             let previousValue: any;
@@ -3464,7 +3465,7 @@ namespace InlineJS{
                 redirect: false,
             };
 
-            let regionId = region.GetId(), middlewares = new Array<(callback: (state: boolean) => void, form?: HTMLFormElement) => void>();
+            let regionId = region.GetId(), middlewares = new Array<(callback: (state: boolean | null) => void, form?: HTMLFormElement) => void>();
             directiveOptions.forEach((key) => {
                 if (key in options){
                     options[key] = true;
@@ -3488,7 +3489,7 @@ namespace InlineJS{
                 }
             });
             
-            let active = false, elementScope = region.AddElement(element, true), formData: Record<string, any> = null;
+            let active = false, elementScope = region.AddElement(element, true);
             let scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
 
             elementScope.locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
@@ -3610,7 +3611,7 @@ namespace InlineJS{
                                 detail: data
                             }));
 
-                            formData = null;
+                            ExtendedDirectiveHandlers.formData_ = null;
                             if (options.db){
                                 let db = Region.GetGlobalValue(regionId, '$db'), name = element.getAttribute('name');
                                 if (db && name){//Write to DB
@@ -3637,6 +3638,11 @@ namespace InlineJS{
                                 }
 
                                 if (Region.IsObject(redirectData)){
+                                    if (redirectData['reresh']){
+                                        window.location.href = redirectData['page'];
+                                        return;
+                                    }
+                                    
                                     if ('data' in redirectData){
                                         if (Region.IsObject(redirectData['data'])){
                                             if ('formData' in redirectData['data']){
@@ -3656,10 +3662,11 @@ namespace InlineJS{
                                         };
                                     }
                                     
-                                    formData = fields;
+                                    ExtendedDirectiveHandlers.formData_ = fields;
                                     router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
                                 }
                                 else{
+                                    ExtendedDirectiveHandlers.formData_ = fields;
                                     router.goto(redirectData, data['__redirectQuery'], {
                                         'formData': fields,
                                     });
@@ -3706,6 +3713,9 @@ namespace InlineJS{
                         if (state){//Run next
                             runMiddleWares(index + 1);
                         }
+                        else if (state === null){
+                            submit();
+                        }
                         else{//Rejected
                             setActiveState(false);
                         }
@@ -3726,8 +3736,8 @@ namespace InlineJS{
 
             if (!Region.GetGlobal(region.GetId(), '$formData')){
                 let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
-                    return ((Region.IsObject(formData) && prop in formData) ? formData[prop] : null);
-                }, prop => (Region.IsObject(formData) && prop in formData));
+                    return ((Region.IsObject(ExtendedDirectiveHandlers.formData_) && prop in ExtendedDirectiveHandlers.formData_) ? ExtendedDirectiveHandlers.formData_[prop] : null);
+                }, prop => (Region.IsObject(ExtendedDirectiveHandlers.formData_) && prop in ExtendedDirectiveHandlers.formData_));
     
                 Region.AddGlobal('$formData', () => proxy);
             }

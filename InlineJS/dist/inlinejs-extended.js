@@ -2851,7 +2851,7 @@ var InlineJS;
                     }
                 }
             });
-            var active = false, elementScope = region.AddElement(element, true), formData = null;
+            var active = false, elementScope = region.AddElement(element, true);
             var scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
             elementScope.locals['$form'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
                 if (prop === 'active') {
@@ -2956,7 +2956,7 @@ var InlineJS;
                             element.dispatchEvent(new CustomEvent('form.success', {
                                 detail: data
                             }));
-                            formData = null;
+                            ExtendedDirectiveHandlers.formData_ = null;
                             if (options.db) {
                                 var db = InlineJS.Region.GetGlobalValue(regionId, '$db'), name_2 = element.getAttribute('name');
                                 if (db && name_2) { //Write to DB
@@ -2980,6 +2980,10 @@ var InlineJS;
                                     }
                                 }
                                 if (InlineJS.Region.IsObject(redirectData)) {
+                                    if (redirectData['reresh']) {
+                                        window.location.href = redirectData['page'];
+                                        return;
+                                    }
                                     if ('data' in redirectData) {
                                         if (InlineJS.Region.IsObject(redirectData['data'])) {
                                             if ('formData' in redirectData['data']) {
@@ -2998,10 +3002,11 @@ var InlineJS;
                                             'formData': fields_1
                                         };
                                     }
-                                    formData = fields_1;
+                                    ExtendedDirectiveHandlers.formData_ = fields_1;
                                     router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
                                 }
                                 else {
+                                    ExtendedDirectiveHandlers.formData_ = fields_1;
                                     router.goto(redirectData, data['__redirectQuery'], {
                                         'formData': fields_1
                                     });
@@ -3042,6 +3047,9 @@ var InlineJS;
                         if (state) { //Run next
                             runMiddleWares(index + 1);
                         }
+                        else if (state === null) {
+                            submit();
+                        }
                         else { //Rejected
                             setActiveState(false);
                         }
@@ -3060,8 +3068,8 @@ var InlineJS;
             });
             if (!InlineJS.Region.GetGlobal(region.GetId(), '$formData')) {
                 var proxy_1 = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
-                    return ((InlineJS.Region.IsObject(formData) && prop in formData) ? formData[prop] : null);
-                }, function (prop) { return (InlineJS.Region.IsObject(formData) && prop in formData); });
+                    return ((InlineJS.Region.IsObject(ExtendedDirectiveHandlers.formData_) && prop in ExtendedDirectiveHandlers.formData_) ? ExtendedDirectiveHandlers.formData_[prop] : null);
+                }, function (prop) { return (InlineJS.Region.IsObject(ExtendedDirectiveHandlers.formData_) && prop in ExtendedDirectiveHandlers.formData_); });
                 InlineJS.Region.AddGlobal('$formData', function () { return proxy_1; });
             }
         };
@@ -3531,6 +3539,7 @@ var InlineJS;
         };
         ExtendedDirectiveHandlers.scopeId_ = 0;
         ExtendedDirectiveHandlers.scopes_ = {};
+        ExtendedDirectiveHandlers.formData_ = null;
         return ExtendedDirectiveHandlers;
     }());
     InlineJS.ExtendedDirectiveHandlers = ExtendedDirectiveHandlers;

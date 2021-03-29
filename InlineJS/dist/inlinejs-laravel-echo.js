@@ -391,6 +391,18 @@ var InlineJS;
                         }
                     };
                 }
+                if (prop === 'clear') {
+                    return function () {
+                        if (baseUrl) { //Send request
+                            fetch(baseUrl + "/" + prop, {
+                                method: 'GET',
+                                credentials: 'same-origin'
+                            }).then(InlineJS.ExtendedDirectiveHandlers.HandleJsonResponse)["catch"](function (err) {
+                                InlineJS.ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                            });
+                        }
+                    };
+                }
                 if (prop === 'addTargetHandler') {
                     return function (target, handler) {
                         targets[target] = handler;
@@ -492,11 +504,11 @@ var InlineJS;
                 closeIcon = "\n                    <div class=\"absolute top-2 right-4 flex justify-start items-center bg-transparent remove\">\n                        <i class=\"material-icons-outlined text-xl text-red-800 leading-none cursor-pointer\"\n                            " + InlineJS.Config.GetDirectiveName('on') + ":click.stop=\"" + (closeAction || '$scope.show = false') + "\">close</i>\n                    </div>\n                ";
             }
             else {
-                closeIcon = "\n                    <div class=\"absolute top-2 right-4 flex justify-start items-center bg-transparent remove\">\n                        <i class=\"material-icons-outlined text-xl text-red-800 leading-none cursor-pointer\"\n                            " + InlineJS.Config.GetDirectiveName('on') + ":click.stop=\"$notifications.remove('" + data.id + "')\">delete</i>\n                    </div>\n                ";
+                closeIcon = "\n                    <div class=\"absolute top-2 right-4 flex justify-start items-center bg-transparent remove\">\n                        <i class=\"material-icons-outlined text-xl text-red-800 leading-none cursor-pointer\"\n                            " + InlineJS.Config.GetDirectiveName('on') + ":click.stop=\"$notifications.remove('" + data.id + "')\">close</i>\n                    </div>\n                ";
             }
             var borderClass = ((!asHelper && index != 0 && items.length > 1) ? 'border-t' : '');
             if ('bodyHtml' in data) {
-                return "\n                    <div class=\"relative w-full flex justify-start items-start py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                        " + icon + "\n                        " + data.bodyHtml + "\n                        " + closeIcon + "\n                    </div>\n                ";
+                return "\n                    <div class=\"relative w-full flex justify-start items-start pl-2 py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                        " + icon + "\n                        " + data.bodyHtml + "\n                        " + closeIcon + "\n                    </div>\n                ";
             }
             var body;
             if (!('body' in data)) {
@@ -514,7 +526,7 @@ var InlineJS;
             else {
                 bodyHtml = "\n                    <div class=\"flex flex-col justify-start items-start py-2 pl-2 pr-4 body\">\n                        " + body + "\n                        <span class=\"mt-1.5 text-xs timestamp\" x-timeago.caps=\"item.timestamp || Date.now()\" x-text=\"$timeago.label\"></span>\n                    </div>\n                ";
             }
-            return "\n                <div class=\"relative w-full flex justify-start items-start py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                    " + icon + "\n                    " + bodyHtml + "\n                    " + closeIcon + "\n                </div>\n            ";
+            return "\n                <div class=\"relative w-full flex justify-start items-start pl-2 py-1 " + borderClass + " " + bgColor + " " + extraClasses + "\" " + action + " " + intersection + ">\n                    " + icon + "\n                    " + bodyHtml + "\n                    " + closeIcon + "\n                </div>\n            ";
         };
         LaravelEchoDirectiveHandlers.GetPublicChannel = function (name) {
             return LaravelEchoDirectiveHandlers.GetChannel(name, function () { return "public." + name; }, function () { return LaravelEchoDirectiveHandlers.echo.channel(name); });

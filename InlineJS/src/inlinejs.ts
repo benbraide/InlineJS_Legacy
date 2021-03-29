@@ -2725,7 +2725,7 @@ namespace InlineJS{
                 }
             }, true, null);
 
-            return DirectiveHandlerReturn.QuitAll;
+            return DirectiveHandlerReturn.Handled;
         }
 
         public static Each(region: Region, element: HTMLElement, directive: Directive){
@@ -3093,7 +3093,7 @@ namespace InlineJS{
                 return true;
             }, null);
             
-            return DirectiveHandlerReturn.QuitAll;
+            return DirectiveHandlerReturn.Handled;
         }
 
         public static InitIfOrEach(region: Region, element: HTMLElement, except: string, onUninit: () => void){

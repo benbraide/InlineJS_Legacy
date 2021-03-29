@@ -410,8 +410,8 @@ declare namespace InlineJS {
         static On(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Model(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Show(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
-        static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.QuitAll;
-        static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.QuitAll;
+        static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Each(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static InitIfOrEach(region: Region, element: HTMLElement, except: string, onUninit: () => void): IfOrEachInfo;
         static InsertIfOrEach(regionId: string, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset?: number): void;
         static InsertIfOrEachItem(info: IfOrEachInfo, animate: boolean, options: Array<string>, callback?: (itemInfo?: IfOrEachItemInfo) => void, offset?: number): IfOrEachItemInfo;

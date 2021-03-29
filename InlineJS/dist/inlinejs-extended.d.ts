@@ -102,6 +102,7 @@ declare namespace InlineJS {
     class ExtendedDirectiveHandlers {
         private static scopeId_;
         private static scopes_;
+        private static formData_;
         static Watch(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static When(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Once(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
