@@ -120,7 +120,9 @@ declare namespace InlineJS {
         static Router(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Page(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Screen(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static DarkMode(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Cart(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Favorites(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static DB(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Auth(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Geolocation(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
@@ -129,6 +131,7 @@ declare namespace InlineJS {
         static Form(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static BindForm(region: Region, element: HTMLFormElement, info: FormInfo, directiveOptions: Array<string>, onSubmit?: (after: () => void, info?: FormInfo) => void): DirectiveHandlerReturn;
         static FormSubmit(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
+        static FormError(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Modal(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Counter(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static GetIntersectionOptions(region: Region, element: HTMLElement, expression: string): any;

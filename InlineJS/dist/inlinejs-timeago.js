@@ -46,6 +46,18 @@ var InlineJS;
                 if (now < then) {
                     diff = (then - now);
                     getLabel = function (value) {
+                        var seconds = Math.floor(value / 1000), years = Math.floor(seconds / (365 * 24 * 60 * 60));
+                        if (years >= 1) {
+                            return [years + " " + ((years == 1) ? 'year' : 'years') + " until", null];
+                        }
+                        var months = Math.floor(seconds / (30 * 24 * 60 * 60));
+                        if (months >= 1) {
+                            return [months + " " + ((months == 1) ? 'month' : 'months') + " until", null];
+                        }
+                        var weeks = Math.floor(seconds / (7 * 24 * 60 * 60));
+                        if (weeks >= 1) {
+                            return [weeks + " " + ((weeks == 1) ? 'week' : 'weeks') + " until", null];
+                        }
                         return ['', 0];
                     };
                 }
@@ -66,21 +78,27 @@ var InlineJS;
                         }
                         var days = Math.floor(seconds / (24 * 60 * 60));
                         if (days >= 1) {
-                            return [days + " " + ((days == 1) ? 'day' : 'days') + " ago", (24 * 60 * 60 * 1000)];
+                            return [days + " " + ((days == 1) ? 'day' : 'days') + " ago", (((24 * 60 * 60) - (seconds % (24 * 60 * 60))) * 1000)];
                         }
                         var hours = Math.floor(seconds / (60 * 60));
                         if (hours >= 1) {
-                            return [hours + " " + ((hours == 1) ? 'hour' : 'hours') + " ago", (60 * 60 * 1000)];
+                            return [hours + " " + ((hours == 1) ? 'hour' : 'hours') + " ago", (((60 * 60) - (seconds % (60 * 60))) * 1000)];
                         }
                         var minutes = Math.floor(seconds / 60);
                         if (minutes >= 1) {
-                            return [minutes + " " + ((minutes == 1) ? 'minute' : 'minutes') + " ago", (60 * 1000)];
+                            return [minutes + " " + ((minutes == 1) ? 'minute' : 'minutes') + " ago", ((60 - (seconds % 60)) * 1000)];
                         }
-                        if (seconds >= 30) { //Check in 30 seconds
+                        if (seconds >= 45) { //Check in 15 seconds
                             return ['30 seconds ago', ((60 - seconds) * 1000)];
                         }
-                        if (seconds >= 15) { //Check in 15 seconds
+                        if (seconds >= 30) { //Check in 15 seconds
+                            return ['30 seconds ago', ((45 - seconds) * 1000)];
+                        }
+                        if (seconds >= 20) { //Check in 10 seconds
                             return ['15 seconds ago', ((30 - seconds) * 1000)];
+                        }
+                        if (seconds >= 15) { //Check in 5 seconds
+                            return ['15 seconds ago', ((20 - seconds) * 1000)];
                         }
                         if (seconds >= 10) { //Check in 5 seconds
                             return ['10 seconds ago', ((15 - seconds) * 1000)];
@@ -88,7 +106,7 @@ var InlineJS;
                         if (seconds >= 5) { //Check in 5 seconds
                             return ['5 seconds ago', ((10 - seconds) * 1000)];
                         }
-                        if (seconds >= 2) {
+                        if (seconds >= 2) { //Check in 3 seconds
                             return ['few seconds ago', ((5 - seconds) * 1000)];
                         }
                         if (seconds >= 1) {

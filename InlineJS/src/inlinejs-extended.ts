@@ -812,7 +812,7 @@ namespace InlineJS{
                 }
             }, true, element);
 
-            elementScope.locals['$json'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+            elementScope.locals['$json'] = CoreDirectiveHandlers.CreateProxy((prop) => {
                 if (prop in info){
                     if (prop === 'active' || prop === 'data'){
                         Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
@@ -1112,7 +1112,7 @@ namespace InlineJS{
             
             options.key = (options.key || elementScope.key);
             ((options.events as Array<string>) || ((element instanceof HTMLFormElement) ? ['submit'] : ['click', 'keydown.enter'])).forEach((e) => {
-                CoreDirectiveHandlers.On(region, element, Processor.GetDirectiveWith(`x-on:${e}`, '$busy.handleEvent($event)'));
+                CoreDirectiveHandlers.On(region, element, Processor.GetDirectiveWith(`${Region.directivePrfix}-on:${e}`, '$busy.handleEvent($event)'));
             });
 
             window.addEventListener(`busy.${options.key}`, (e) => {
@@ -1225,7 +1225,7 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let options = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) as RouterOptions), uid = 0;
+            let options = (CoreDirectiveHandlers.Evaluate(region, element, directive.value) as RouterOptions), uid = 0, notifCount = 0, title = '';
             if (!Region.IsObject(options)){
                 options = {};
             }
@@ -1288,8 +1288,13 @@ namespace InlineJS{
                     parsedQuery = (parsedQuery || methods.parseQuery(info.currentQuery));
                     return (Region.IsObject(parsedQuery) ? parsedQuery[key] : null);
                 },
-                setTitle: (title: string) => {
-                    document.title = `${options.titlePrefix || ''}${title || 'Untitled'}${options.titleSuffix || ''}`;
+                updateUnreadCount: (value: number) => {
+                    notifCount = value;
+                    updateTitle();
+                },
+                setTitle: (value: string) => {
+                    title = (value || 'Untitled');
+                    updateTitle();
                 },
                 addHook: (key: string, handler: (...args: any) => any) => {
                     if (key in hooks){
@@ -1549,6 +1554,15 @@ namespace InlineJS{
             
             let buildHistoryPath = (path: string, query: string) => {
                 return `${origin}/${(path === '/') ? '' : path}${query || ''}`;
+            };
+
+            let updateTitle = () => {
+                let computedTitle = `${options.titlePrefix || ''}${title}${options.titleSuffix || ''}`;
+                if (notifCount){
+                    computedTitle = `(${notifCount}) ${computedTitle}`;
+                }
+                
+                document.title = computedTitle;
             };
             
             window.addEventListener('popstate', (event) => {
@@ -1810,7 +1824,7 @@ namespace InlineJS{
             Region.AddPostProcessCallback(() => {
                 goto(((pathname.length > 1 && pathname.startsWith('/')) ? pathname.substr(1): pathname), query);
             });
-            
+
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -1843,6 +1857,7 @@ namespace InlineJS{
                 return entries[prop];
             }, ['$title', '$location', 'reset'], (target: object, prop: string | number | symbol, value: any) => {
                 if (prop.toString() === '$title'){
+                    let router = Region.GetGlobalValue(regionId, '$router');
                     if (router){
                         router.setTitle(value);
                     }
@@ -1862,9 +1877,8 @@ namespace InlineJS{
             Region.AddGlobal('$page', () => proxy);
             window.addEventListener('router.load', reset);
 
-            let router = Region.GetGlobalValue(regionId, '$router');
             let title = document.title, observer = new MutationObserver(function(mutations) {
-                if (!router && title !== mutations[0].target.nodeValue){
+                if (title === mutations[0].target.nodeValue && Region.GetGlobalValue(regionId, '$router')){
                     title = mutations[0].target.nodeValue;
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), '$title', scope);
                 }
@@ -1968,12 +1982,43 @@ namespace InlineJS{
                             x: ((document.documentElement.scrollWidth || document.body.scrollWidth) - (document.documentElement.clientWidth || document.body.clientWidth)),
                             y: ((document.documentElement.scrollHeight || document.body.scrollHeight) - (document.documentElement.clientHeight || document.body.clientHeight)),
                         };
-                        
+
                         position = myPosition;
-                        percentage = {
+                        let myPercentage = {
                             x: ((offset.x <= 0) ? 0 : ((position.x / offset.x) * 100)),
                             y: ((offset.y <= 0) ? 0 : ((position.y / offset.y) * 100)),
                         };
+
+                        if (myPercentage.x < percentage.x){
+                            window.dispatchEvent(new CustomEvent('screen.left', {
+                                detail: myPosition
+                            }));
+                        }
+                        else if (myPercentage.x > percentage.x){
+                            window.dispatchEvent(new CustomEvent('screen.right', {
+                                detail: myPosition
+                            }));
+                        }
+                        
+                        if (myPercentage.y < percentage.y){
+                            window.dispatchEvent(new CustomEvent('screen.up', {
+                                detail: myPosition
+                            }));
+                        }
+                        else if (myPercentage.y > percentage.y){
+                            window.dispatchEvent(new CustomEvent('screen.down', {
+                                detail: myPosition
+                            }));
+                        }
+                        
+                        percentage = myPercentage;
+                        window.dispatchEvent(new CustomEvent('screen.position', {
+                            detail: position
+                        }));
+
+                        window.dispatchEvent(new CustomEvent('screen.percentage', {
+                            detail: percentage
+                        }));
                         
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'position', scope);
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'percentage', scope);
@@ -2103,6 +2148,83 @@ namespace InlineJS{
             }, ['size', 'breakpoint', 'checkpoint', 'scrollOffset', 'position', 'scrollPercentage', 'getScrollOffset', 'getPosition', 'getScrollPercentage', 'scroll']);
             
             Region.AddGlobal('$screen', () => proxy);
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static DarkMode(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal(region.GetId(), '$darkMode')){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let updateLink = CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            if (typeof updateLink !== 'string'){
+                updateLink = '';
+            }
+            
+            let scope = ExtendedDirectiveHandlers.AddScope('darkMode', region.AddElement(element, true), []), regionId = region.GetId(), enabled: boolean = null;
+            let setEnabled = (value: boolean, isInitial = false) => {
+                if (value === enabled){
+                    return;
+                }
+                
+                enabled = value;
+                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'enabled', scope);
+
+                if (value === true){
+                    document.documentElement.classList.add('dark');
+                }
+                else if (value === false){
+                    if (document.documentElement.classList.contains('dark')){
+                        document.documentElement.classList.remove('dark');
+                    }
+                }
+                else if (window.matchMedia('(prefers-color-scheme: dark)').matches){
+                    document.documentElement.classList.add('dark');
+                }
+                else if (!isInitial && document.documentElement.classList.contains('dark')){
+                    document.documentElement.classList.remove('dark');
+                }
+
+                if (!isInitial){
+                    let db = Region.GetGlobalValue(regionId, '$db');
+                    if (db){
+                        db.write(value, '__InlineJS_DarkMode_Enabled');
+                    }
+                    
+                    if (updateLink){
+                        fetch(`${updateLink}?enabled=${(value === true) ? true : false}`, {
+                            method: 'GET',
+                            credentials: 'same-origin',
+                        }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {}).catch((err) => {
+                            ExtendedDirectiveHandlers.ReportServerError(regionId, err);
+                        });
+                    }
+                }
+            };
+            
+            let proxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === 'enabled'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return enabled;
+                }
+            }, ['enabled'], (target: object, prop: string | number | symbol, value: any) => {
+                if (prop.toString() === 'enabled'){
+                    setEnabled(value);
+                    return true;
+                }
+
+                return false;
+            });
+            
+            Region.AddGlobal('$darkMode', () => proxy);
+
+            let db = Region.GetGlobalValue(regionId, '$db');
+            if (db){
+                db.read('__InlineJS_DarkMode_Enabled', (value: boolean) => {
+                    setEnabled(value, true);
+                });
+            }
+
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -2480,12 +2602,30 @@ namespace InlineJS{
             }, [...Object.keys(info), 'hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json']);
 
             Region.AddGlobal('$cart', () => proxy);
-            DirectiveHandlerManager.AddHandler('cartClear', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
-                innerElement.addEventListener('click', (e) => {
+
+            let cartAction = (myRegion: Region, myElement: HTMLElement, myDirective: Directive, eventHandler: () => void, valueCallback?: (value: any) => void,
+                eventBinder?: (handler: (e: Event) => void) => void) => {
+                if (valueCallback){//Bind value
+                    let myRegionId = myRegion.GetId();
+                    myRegion.GetState().TrapGetAccess(() => {
+                        valueCallback(InlineJS.CoreDirectiveHandlers.Evaluate(Region.Get(myRegionId), myElement, myDirective.value));
+                    }, true, myElement);
+                }
+
+                let defaultEventBinder = (handler: (e: Event) => void) => {
+                    myElement.addEventListener('click', handler);
+                };
+
+                (eventBinder || defaultEventBinder)((e) => {
                     e.preventDefault();
-                    clear();
+                    eventHandler();
                 });
+
                 return DirectiveHandlerReturn.Handled;
+            };
+            
+            DirectiveHandlerManager.AddHandler('cartClear', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+                return cartAction(innerRegion, innerElement, innerDirective, clear);
             });
             
             DirectiveHandlerManager.AddHandler('cartUpdate', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
@@ -2495,62 +2635,32 @@ namespace InlineJS{
                 }
                 
                 let sku = '';
-                innerRegion.GetState().TrapGetAccess(() => {
-                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                }, true, innerElement);
-
-                if (!sku){
-                    return DirectiveHandlerReturn.Nil;    
-                }
-
-                form.addEventListener('submit', (e) => {
-                    e.preventDefault();
+                return cartAction(innerRegion, innerElement, innerDirective, () => {
                     update(sku, parseInt(((form as HTMLFormElement).elements.namedItem('cart-value') as HTMLInputElement).value), false);
+                }, value => (sku = value), (handler) => {
+                    form.addEventListener('submit', handler);
                 });
-                
-                return DirectiveHandlerReturn.Handled;
             });
 
             DirectiveHandlerManager.AddHandler('cartIncrement', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let sku = '';
-                innerRegion.GetState().TrapGetAccess(() => {
-                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                }, true, innerElement);
-                
-                innerElement.addEventListener('click', (e) => {
-                    e.preventDefault();
+                return cartAction(innerRegion, innerElement, innerDirective, () => {
                     update(sku, 1, true);
-                });
-                
-                return DirectiveHandlerReturn.Handled;
+                }, value => (sku = value));
             });
 
             DirectiveHandlerManager.AddHandler('cartDecrement', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let sku = '';
-                innerRegion.GetState().TrapGetAccess(() => {
-                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                }, true, innerElement);
-
-                innerElement.addEventListener('click', (e) => {
-                    e.preventDefault();
+                return cartAction(innerRegion, innerElement, innerDirective, () => {
                     update(sku, -1, true);
-                });
-
-                return DirectiveHandlerReturn.Handled;
+                }, value => (sku = value));
             });
 
             DirectiveHandlerManager.AddHandler('cartRemove', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let sku = '';
-                innerRegion.GetState().TrapGetAccess(() => {
-                    sku = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, innerDirective.value);
-                }, true, innerElement);
-
-                innerElement.addEventListener('click', (e) => {
-                    e.preventDefault();
+                return cartAction(innerRegion, innerElement, innerDirective, () => {
                     update(sku, 0, false);
-                });
-
-                return DirectiveHandlerReturn.Handled;
+                }, value => (sku = value));
             });
             
             if (handlers.init){
@@ -2561,6 +2671,12 @@ namespace InlineJS{
             handlers.load();
             
             return DirectiveHandlerReturn.Handled;
+        }
+
+        public static Favorites(region: Region, element: HTMLElement, directive: Directive){
+            if (Region.GetGlobal(region.GetId(), '$favorites')){
+                return DirectiveHandlerReturn.Nil;
+            }
         }
 
         public static DB(region: Region, element: HTMLElement, directive: Directive){
@@ -3459,6 +3575,7 @@ namespace InlineJS{
             }
 
             let options = {
+                refresh: false,
                 reload: false,
                 files: false,
                 db: false,
@@ -3490,12 +3607,30 @@ namespace InlineJS{
             });
             
             let active = false, elementScope = region.AddElement(element, true);
-            let scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []);
+            let scope = ExtendedDirectiveHandlers.AddScope('form', elementScope, []), errors: Record<string, Array<string>> = {};
 
+            let errorsProxy = CoreDirectiveHandlers.CreateProxy((prop) => {
+                if (prop === '__InlineJS_Target__'){
+                    return errors;
+                }
+
+                if (prop === '__InlineJS_Path__'){
+                    return `${scope.path}.errors`;
+                }
+
+                Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.errors.${prop}`);
+                return (errors[prop] || []);
+            }, ['__InlineJS_Target__', '__InlineJS_Path__'], null, errors);
+            
             elementScope.locals['$form'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
                 if (prop === 'active'){
                     Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
                     return active;
+                }
+
+                if (prop === 'errors'){
+                    Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    return errorsProxy;
                 }
                 
                 if (prop === 'element'){
@@ -3505,7 +3640,7 @@ namespace InlineJS{
                 if (prop === 'submit'){
                     return submit;
                 }
-            }, ['active', 'element', 'submit']);
+            }, ['active', 'element', 'submit', 'errors']);
             
             let setActiveState = (state: boolean) => {
                 if (active != state){
@@ -3521,7 +3656,7 @@ namespace InlineJS{
                     db.read(`__InlineJS_Form_${name}`, (fields: Record<string, string>) => {
                         Object.keys(fields || {}).forEach((key) => {
                             let member = element.elements.namedItem(key);
-                            if (!(member instanceof RadioNodeList) && 'value' in member){
+                            if (!(member instanceof RadioNodeList) && 'value' in member && !(member as any).value){
                                 (member as any).value = fields[key];
                             }
                         });
@@ -3595,11 +3730,24 @@ namespace InlineJS{
                 fetch(action, initInfo).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
                     setActiveState(false);
                     
+                    let myRegion = Region.Get(regionId);
+                    for (let key in errors){
+                        ExtendedDirectiveHandlers.Alert(myRegion, key, `${scope.path}.errors`);
+                    }
+
+                    errors = {};
+                    ExtendedDirectiveHandlers.Alert(myRegion, 'errors', scope);
+                    
                     try{
-                        if (info.errorBag && 'failed' in data){
-                            for (let key in info.errorBag){
+                        if ('failed' in data){
+                            for (let key in (info.errorBag || {})){
                                 let value = (data.failed[key] || []);
                                 info.errorBag[key] = (Array.isArray(value) ? value : [value]);
+                            }
+
+                            for (let key in data.failed){
+                                errors[key] = data.failed[key];
+                                ExtendedDirectiveHandlers.Alert(myRegion, key, `${scope.path}.errors`);
                             }
 
                             ExtendedDirectiveHandlers.Report(regionId, data);
@@ -3627,57 +3775,73 @@ namespace InlineJS{
                                 }
                             }
 
-                            let router = Region.GetGlobalValue(regionId, '$router');
-                            if ('__redirect' in data && router){
-                                let redirectData = data['__redirect'], fields: Record<string, string> = {};
-                                for (let i = 0; i < element.elements.length; ++i){
-                                    let key = element.elements[i].getAttribute('name');
-                                    if (key && 'value' in element.elements[i]){
-                                        fields[key] = (element.elements[i] as any).value;
-                                    }
+                            if ('__redirect' in data){
+                                let redirectData = data['__redirect'], isObject = Region.IsObject(redirectData);
+                                if (isObject && redirectData['refresh']){
+                                    window.location.href = redirectData['page'];
+                                    return;
                                 }
 
-                                if (Region.IsObject(redirectData)){
-                                    if (redirectData['reresh']){
-                                        window.location.href = redirectData['page'];
-                                        return;
+                                let router = Region.GetGlobalValue(regionId, '$router');
+                                if (router){
+                                    let fields: Record<string, string> = {};
+                                    for (let i = 0; i < element.elements.length; ++i){
+                                        let key = element.elements[i].getAttribute('name');
+                                        if (key && 'value' in element.elements[i]){
+                                            fields[key] = (element.elements[i] as any).value;
+                                        }
                                     }
-                                    
-                                    if ('data' in redirectData){
-                                        if (Region.IsObject(redirectData['data'])){
-                                            if ('formData' in redirectData['data']){
-                                                let formData = redirectData['data']['formData'];
-                                                Object.keys(formData || {}).forEach(key => (fields[key] = formData[key]));
+    
+                                    if (isObject){
+                                        if (redirectData['reresh']){
+                                            window.location.href = redirectData['page'];
+                                            return;
+                                        }
+                                        
+                                        if ('data' in redirectData){
+                                            if (Region.IsObject(redirectData['data'])){
+                                                if ('formData' in redirectData['data']){
+                                                    let formData = redirectData['data']['formData'];
+                                                    Object.keys(formData || {}).forEach(key => (fields[key] = formData[key]));
+                                                }
+                                            }
+                                            else{
+                                                redirectData['data'] = {
+                                                    '$loadData': redirectData['data'],
+                                                };
                                             }
                                         }
                                         else{
                                             redirectData['data'] = {
-                                                '$loadData': redirectData['data'],
+                                                'formData': fields,
                                             };
                                         }
+                                        
+                                        ExtendedDirectiveHandlers.formData_ = fields;
+                                        router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
                                     }
                                     else{
-                                        redirectData['data'] = {
+                                        ExtendedDirectiveHandlers.formData_ = fields;
+                                        router.goto(redirectData, data['__redirectQuery'], {
                                             'formData': fields,
-                                        };
+                                        });
                                     }
                                     
-                                    ExtendedDirectiveHandlers.formData_ = fields;
-                                    router.goto(redirectData['page'], (redirectData['query'] || data['__redirectQuery']), redirectData['data']);
+                                    return;
                                 }
-                                else{
-                                    ExtendedDirectiveHandlers.formData_ = fields;
-                                    router.goto(redirectData, data['__redirectQuery'], {
-                                        'formData': fields,
-                                    });
-                                }
-                                
+                            }
+    
+                            if (options.refresh){
+                                window.location.reload();
                                 return;
                             }
     
-                            if (options.reload && router){
-                                router.reload();
-                                return;
+                            if (options.reload){
+                                let router = Region.GetGlobalValue(regionId, '$router');
+                                if (router){
+                                    router.reload();
+                                    return;
+                                }
                             }
 
                             let auth = Region.GetGlobalValue(regionId, '$auth');
@@ -3744,7 +3908,40 @@ namespace InlineJS{
         }
 
         public static FormSubmit(region: Region, element: HTMLElement, directive: Directive){
-            CoreDirectiveHandlers.Attr(region, element, Processor.GetDirectiveWith('x-attr:disabled', '$form.active'));
+            CoreDirectiveHandlers.Attr(region, element, Processor.GetDirectiveWith(`${Region.directivePrfix}-attr:disabled`, '$form.active'));
+            return DirectiveHandlerReturn.Handled;
+        }
+
+        public static FormError(region: Region, element: HTMLElement, directive: Directive){
+            if (!element.parentElement){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let name = element.getAttribute('name');
+            if (!name){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let tmpl = document.createElement('template');
+            tmpl.innerHTML = `
+                <div class="inlinejs-form-error">
+                    <template ${Region.directivePrfix}-each="$form.errors['${name}'] as error">
+                        <p class="inlinejs-form-error-item" ${Region.directivePrfix}-text="error"></p>
+                    </template>
+                </div>
+            `;
+
+            Array.from(tmpl.content.children).forEach((child) => {
+                if (child instanceof HTMLElement){
+                    CoreDirectiveHandlers.InsertOrAppendChildElement(element.parentElement, child, 0, element);
+                }
+            });
+
+            let regionId = region.GetId();
+            Region.AddPostProcessCallback(() => {
+                Processor.All(Region.Get(regionId), element.parentElement);
+            });
+
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -4159,7 +4356,7 @@ namespace InlineJS{
                     if (append){
                         let tmpl = document.createElement('template');
                         tmpl.innerHTML = ((typeof data === 'string') ? data : (data as object).toString());
-                        tmpl.content.childNodes.forEach(child => element.appendChild(child));
+                        Array.from(tmpl.content.childNodes).forEach(child => element.appendChild(child));
                     }
                     else{
                         removeAll();
@@ -4268,8 +4465,10 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('router', ExtendedDirectiveHandlers.Router);
             DirectiveHandlerManager.AddHandler('page', ExtendedDirectiveHandlers.Page);
             DirectiveHandlerManager.AddHandler('screen', ExtendedDirectiveHandlers.Screen);
+            DirectiveHandlerManager.AddHandler('darkMode', ExtendedDirectiveHandlers.DarkMode);
 
             DirectiveHandlerManager.AddHandler('cart', ExtendedDirectiveHandlers.Cart);
+            DirectiveHandlerManager.AddHandler('favorites', ExtendedDirectiveHandlers.Favorites);
             DirectiveHandlerManager.AddHandler('db', ExtendedDirectiveHandlers.DB);
             DirectiveHandlerManager.AddHandler('auth', ExtendedDirectiveHandlers.Auth);
 
@@ -4280,6 +4479,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('form', ExtendedDirectiveHandlers.Form);
             DirectiveHandlerManager.AddHandler('formSubmit', ExtendedDirectiveHandlers.FormSubmit);
             DirectiveHandlerManager.AddHandler('formButton', ExtendedDirectiveHandlers.FormSubmit);
+            DirectiveHandlerManager.AddHandler('formError', ExtendedDirectiveHandlers.FormError);
             
             DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);

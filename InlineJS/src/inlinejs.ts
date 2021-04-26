@@ -3225,6 +3225,7 @@ namespace InlineJS{
 
         public static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean),
             setter?: (target: object, prop: string | number | symbol, value: any) => boolean, target?: any){
+            let hasTarget = !! target;
             let handler = {
                 get(target: object, prop: string | number | symbol): any{
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')){
@@ -3234,10 +3235,14 @@ namespace InlineJS{
                     return getter(prop.toString());
                 },
                 set(target: object, prop: string | number | symbol, value: any){
+                    if (hasTarget){
+                        return (setter ? setter(target, prop, value) : Reflect.set(target, prop, value));    
+                    }
+
                     return (setter && setter(target, prop, value));
                 },
                 deleteProperty(target: object, prop: string | number | symbol){
-                    return false;
+                    return (hasTarget ? Reflect.deleteProperty(target, prop) : false);
                 },
                 has(target: object, prop: string | number | symbol){
                     if (Reflect.has(target, prop)){

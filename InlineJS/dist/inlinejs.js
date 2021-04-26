@@ -2610,6 +2610,7 @@ var InlineJS;
             }
         };
         CoreDirectiveHandlers.CreateProxy = function (getter, contains, setter, target) {
+            var hasTarget = !!target;
             var handler = {
                 get: function (target, prop) {
                     if (typeof prop === 'symbol' || (typeof prop === 'string' && prop === 'prototype')) {
@@ -2618,10 +2619,13 @@ var InlineJS;
                     return getter(prop.toString());
                 },
                 set: function (target, prop, value) {
+                    if (hasTarget) {
+                        return (setter ? setter(target, prop, value) : Reflect.set(target, prop, value));
+                    }
                     return (setter && setter(target, prop, value));
                 },
                 deleteProperty: function (target, prop) {
-                    return false;
+                    return (hasTarget ? Reflect.deleteProperty(target, prop) : false);
                 },
                 has: function (target, prop) {
                     if (Reflect.has(target, prop)) {

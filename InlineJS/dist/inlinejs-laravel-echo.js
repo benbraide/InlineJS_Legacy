@@ -190,11 +190,18 @@ var InlineJS;
                     InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
                     if (unreadCount != 0) {
                         InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'unreadCount', scope);
+                        updateRouter();
                     }
                 }
             };
             var status = null, unreadCount = 0, hasNew = false, targets = {}, actionHandlers = {};
             var scope = InlineJS.ExtendedDirectiveHandlers.AddScope('notifications', region.AddElement(element, true), []), items = new Array(), connected = null;
+            var updateRouter = function () {
+                var router = InlineJS.Region.GetGlobalValue(regionId, '$router');
+                if (router) {
+                    router.updateUnreadCount(unreadCount);
+                }
+            };
             if (!initItems && baseUrl) { //Load items
                 fetch(baseUrl + "/get", {
                     method: 'GET',
@@ -240,6 +247,7 @@ var InlineJS;
                         if (!e.data.read) {
                             ++unreadCount;
                             InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
                         }
                         items.unshift(e.data);
                         InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), '1', scope.path + ".items.unshift", scope.path + ".items");
@@ -267,6 +275,7 @@ var InlineJS;
                         if (!items[index].read) {
                             --unreadCount;
                             InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
                         }
                         var item = items.splice(index, 1);
                         InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".items.splice", scope.path + ".items");
@@ -289,6 +298,7 @@ var InlineJS;
                         if (unreadCount != 0) {
                             unreadCount = 0;
                             InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
                         }
                         window.dispatchEvent(new CustomEvent('notification.clear'));
                     }
@@ -313,6 +323,7 @@ var InlineJS;
                             item.read = (e.data.read !== false);
                             unreadCount += ((e.data.read !== false) ? -1 : 1);
                             InlineJS.ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
                             if (item['type']) {
                                 window.dispatchEvent(new CustomEvent("notification.read." + item['type'], {
                                     detail: item

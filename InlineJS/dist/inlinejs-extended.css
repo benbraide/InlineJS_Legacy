@@ -113,6 +113,14 @@ body.inlinejs-overlay > div.inlinejs-overlay{
     background-color: #ffffff;
 }
 
+.inlinejs-form-error{
+    margin-top: 0.25rem;
+    color: rgba(200, 30, 30, 1);
+    font-weight: 600;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+}
+
 .inlinejs-loader{
     position: absolute;
     top: 0;

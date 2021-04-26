@@ -222,12 +222,20 @@ namespace InlineJS{
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
                     if (unreadCount != 0){
                         ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                        updateRouter();
                     }
                 }
             };
 
             let status: boolean = null, unreadCount = 0, hasNew = false, targets: Record<string, (e: any) => boolean> = {}, actionHandlers: Record<string, (e: any) => boolean> = {};
             let scope = ExtendedDirectiveHandlers.AddScope('notifications', region.AddElement(element, true), []), items = new Array<any>(), connected: boolean = null;
+
+            let updateRouter = () => {
+                let router = Region.GetGlobalValue(regionId, '$router');
+                if (router){
+                    router.updateUnreadCount(unreadCount);
+                }
+            };
             
             if (!initItems && baseUrl){//Load items
                 fetch(`${baseUrl}/get`, {
@@ -283,6 +291,7 @@ namespace InlineJS{
                         if (!e.data.read){
                             ++unreadCount;
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
                         }
 
                         items.unshift(e.data);
@@ -316,6 +325,7 @@ namespace InlineJS{
                         if (!items[index].read){
                             --unreadCount;
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
                         }
 
                         let item = items.splice(index, 1);
@@ -343,6 +353,7 @@ namespace InlineJS{
                         if (unreadCount != 0){
                             unreadCount = 0;
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
                         }
 
                         window.dispatchEvent(new CustomEvent('notification.clear'));
@@ -369,7 +380,9 @@ namespace InlineJS{
                         if (item && item.read != (e.data.read !== false)){
                             item.read = (e.data.read !== false);
                             unreadCount += ((e.data.read !== false) ? -1 : 1);
+                            
                             ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'unreadCount', scope);
+                            updateRouter();
 
                             if (item['type']){
                                 window.dispatchEvent(new CustomEvent(`notification.read.${item['type']}`, {
