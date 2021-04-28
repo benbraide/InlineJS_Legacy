@@ -1024,9 +1024,10 @@ var InlineJS;
     var Evaluator = /** @class */ (function () {
         function Evaluator() {
         }
-        Evaluator.Evaluate = function (regionId, elementContext, expression, useWindow, ignoreRemoved) {
+        Evaluator.Evaluate = function (regionId, elementContext, expression, useWindow, ignoreRemoved, useBlock) {
             if (useWindow === void 0) { useWindow = false; }
             if (ignoreRemoved === void 0) { ignoreRemoved = true; }
+            if (useBlock === void 0) { useBlock = false; }
             if (!(expression = expression.trim())) {
                 return null;
             }
@@ -1042,7 +1043,12 @@ var InlineJS;
             RegionMap.scopeRegionIds.Push(regionId);
             state.PushElementContext(region.GetElement(elementContext));
             try {
-                result = (new Function(Evaluator.GetContextKey(), "\n                    with (" + Evaluator.GetContextKey() + "){\n                        return (" + expression + ");\n                    };\n                ")).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
+                if (useBlock) {
+                    result = (new Function(Evaluator.GetContextKey(), "\n                        with (" + Evaluator.GetContextKey() + "){\n                            { " + expression + "; };\n                        };\n                    ")).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
+                }
+                else {
+                    result = (new Function(Evaluator.GetContextKey(), "\n                        with (" + Evaluator.GetContextKey() + "){\n                            return (" + expression + ");\n                        };\n                    ")).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
+                }
             }
             catch (err) {
                 result = null;
@@ -1729,16 +1735,16 @@ var InlineJS;
         };
         CoreDirectiveHandlers.Post = function (region, element, directive) {
             var regionId = region.GetId();
-            region.AddElement(element, true).postProcessCallbacks.push(function () { return CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value); });
+            region.AddElement(element, true).postProcessCallbacks.push(function () { return CoreDirectiveHandlers.BlockEvaluate(Region.Get(regionId), element, directive.value); });
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Init = function (region, element, directive) {
-            CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            CoreDirectiveHandlers.BlockEvaluate(region, element, directive.value);
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Bind = function (region, element, directive) {
             region.GetState().TrapGetAccess(function () {
-                CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+                CoreDirectiveHandlers.BlockEvaluate(region, element, directive.value);
                 return true;
             }, true, element);
             return DirectiveHandlerReturn.Handled;
@@ -1760,7 +1766,7 @@ var InlineJS;
         };
         CoreDirectiveHandlers.Uninit = function (region, element, directive) {
             var regionId = region.GetId();
-            region.AddElement(element, true).uninitCallbacks.push(function () { return CoreDirectiveHandlers.EvaluateAlways(Region.Get(regionId), element, directive.value); });
+            region.AddElement(element, true).uninitCallbacks.push(function () { return CoreDirectiveHandlers.BlockEvaluateAlways(Region.Get(regionId), element, directive.value); });
             return DirectiveHandlerReturn.Handled;
         };
         CoreDirectiveHandlers.Ref = function (region, element, directive) {
@@ -1984,7 +1990,7 @@ var InlineJS;
                     if (myRegion) {
                         myRegion.GetState().PushEventContext(e);
                     }
-                    CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value, false, e);
+                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
                 }
                 finally {
                     if (myRegion) {
@@ -2621,7 +2627,7 @@ var InlineJS;
             for (var _i = 4; _i < arguments.length; _i++) {
                 args[_i - 4] = arguments[_i];
             }
-            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, true], args));
+            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, true, false], args));
         };
         CoreDirectiveHandlers.EvaluateAlways = function (region, element, expression, useWindow) {
             if (useWindow === void 0) { useWindow = false; }
@@ -2629,12 +2635,28 @@ var InlineJS;
             for (var _i = 4; _i < arguments.length; _i++) {
                 args[_i - 4] = arguments[_i];
             }
-            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, false], args));
+            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, false, false], args));
         };
-        CoreDirectiveHandlers.DoEvaluation = function (region, element, expression, useWindow, ignoreRemoved) {
+        CoreDirectiveHandlers.BlockEvaluate = function (region, element, expression, useWindow) {
+            if (useWindow === void 0) { useWindow = false; }
             var args = [];
-            for (var _i = 5; _i < arguments.length; _i++) {
-                args[_i - 5] = arguments[_i];
+            for (var _i = 4; _i < arguments.length; _i++) {
+                args[_i - 4] = arguments[_i];
+            }
+            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, true, true], args));
+        };
+        CoreDirectiveHandlers.BlockEvaluateAlways = function (region, element, expression, useWindow) {
+            if (useWindow === void 0) { useWindow = false; }
+            var args = [];
+            for (var _i = 4; _i < arguments.length; _i++) {
+                args[_i - 4] = arguments[_i];
+            }
+            return CoreDirectiveHandlers.DoEvaluation.apply(CoreDirectiveHandlers, __spreadArrays([region, element, expression, useWindow, false, true], args));
+        };
+        CoreDirectiveHandlers.DoEvaluation = function (region, element, expression, useWindow, ignoreRemoved, useBlock) {
+            var args = [];
+            for (var _i = 6; _i < arguments.length; _i++) {
+                args[_i - 6] = arguments[_i];
             }
             if (!region) {
                 return null;
@@ -2643,7 +2665,7 @@ var InlineJS;
             region.GetState().PushElementContext(element);
             var result;
             try {
-                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow, ignoreRemoved);
+                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow, ignoreRemoved, useBlock);
                 if (typeof result === 'function') {
                     result = region.Call.apply(region, __spreadArrays([result], args));
                 }

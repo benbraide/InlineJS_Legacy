@@ -1755,7 +1755,7 @@ var InlineJS;
                 }
                 var animator = InlineJS.CoreDirectiveHandlers.GetAnimator(region, animate, function (step) {
                     window.scrollTo((((to.x - from.x) * step) + from.x), (((to.y - from.y) * step) + from.y));
-                }, animateOptions, false);
+                }, (animateOptions || ['fast', 'ease-out']), false);
                 if (animator) {
                     animator(true);
                 }

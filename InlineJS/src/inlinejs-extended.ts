@@ -2185,7 +2185,7 @@ namespace InlineJS{
 
                 let animator = CoreDirectiveHandlers.GetAnimator(region, animate, (step) => {
                     window.scrollTo((((to.x - from.x) * step) + from.x), (((to.y - from.y) * step) + from.y));
-                }, animateOptions, false);
+                }, (animateOptions || ['fast', 'ease-out']), false);
 
                 if (animator){
                     animator(true);

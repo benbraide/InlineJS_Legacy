@@ -65,7 +65,7 @@ var InlineJS;
                     if (myRegion) {
                         myRegion.GetState().PushEventContext(e);
                     }
-                    InlineJS.CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value, false, e);
+                    InlineJS.CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
                 }
                 finally {
                     if (myRegion) {

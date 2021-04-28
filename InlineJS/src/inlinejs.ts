@@ -1283,7 +1283,7 @@ namespace InlineJS{
     export class Evaluator{
         private static cachedProxy_: Record<string, object> = {};
         
-        public static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow = false, ignoreRemoved = true): any{
+        public static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow = false, ignoreRemoved = true, useBlock = false): any{
             if (!(expression = expression.trim())){
                 return null;
             }
@@ -1304,11 +1304,20 @@ namespace InlineJS{
             state.PushElementContext(region.GetElement(elementContext));
 
             try{
-                result = (new Function(Evaluator.GetContextKey(), `
-                    with (${Evaluator.GetContextKey()}){
-                        return (${expression});
-                    };
-                `)).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
+                if (useBlock){
+                    result = (new Function(Evaluator.GetContextKey(), `
+                        with (${Evaluator.GetContextKey()}){
+                            { ${expression}; };
+                        };
+                    `)).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
+                }
+                else{
+                    result = (new Function(Evaluator.GetContextKey(), `
+                        with (${Evaluator.GetContextKey()}){
+                            return (${expression});
+                        };
+                    `)).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
+                }
             }
             catch (err){
                 result = null;
@@ -2184,18 +2193,18 @@ namespace InlineJS{
 
         public static Post(region: Region, element: HTMLElement, directive: Directive){
             let regionId = region.GetId();
-            region.AddElement(element, true).postProcessCallbacks.push(() => CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value));
+            region.AddElement(element, true).postProcessCallbacks.push(() => CoreDirectiveHandlers.BlockEvaluate(Region.Get(regionId), element, directive.value));
             return DirectiveHandlerReturn.Handled;
         }
 
         public static Init(region: Region, element: HTMLElement, directive: Directive){
-            CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+            CoreDirectiveHandlers.BlockEvaluate(region, element, directive.value);
             return DirectiveHandlerReturn.Handled;
         }
 
         public static Bind(region: Region, element: HTMLElement, directive: Directive){
             region.GetState().TrapGetAccess(() => {
-                CoreDirectiveHandlers.Evaluate(region, element, directive.value);
+                CoreDirectiveHandlers.BlockEvaluate(region, element, directive.value);
                 return true;
             }, true, element);
             return DirectiveHandlerReturn.Handled;
@@ -2223,7 +2232,7 @@ namespace InlineJS{
 
         public static Uninit(region: Region, element: HTMLElement, directive: Directive){
             let regionId = region.GetId();
-            region.AddElement(element, true).uninitCallbacks.push(() => CoreDirectiveHandlers.EvaluateAlways(Region.Get(regionId), element, directive.value));
+            region.AddElement(element, true).uninitCallbacks.push(() => CoreDirectiveHandlers.BlockEvaluateAlways(Region.Get(regionId), element, directive.value));
             return DirectiveHandlerReturn.Handled;
         }
 
@@ -2483,7 +2492,7 @@ namespace InlineJS{
                         myRegion.GetState().PushEventContext(e);
                     }
 
-                    CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value, false, e);
+                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
                 }
                 finally{
                     if (myRegion){
@@ -3232,14 +3241,22 @@ namespace InlineJS{
         }
         
         public static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{
-            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, true, ...args);
+            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, true, false, ...args);
         }
 
         public static EvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{
-            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, false, ...args);
+            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, false, false, ...args);
         }
         
-        public static DoEvaluation(region: Region, element: HTMLElement, expression: string, useWindow: boolean, ignoreRemoved: boolean, ...args: any): any{
+        public static BlockEvaluate(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{
+            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, true, true, ...args);
+        }
+
+        public static BlockEvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow = false, ...args: any): any{
+            return CoreDirectiveHandlers.DoEvaluation(region, element, expression, useWindow, false, true, ...args);
+        }
+        
+        public static DoEvaluation(region: Region, element: HTMLElement, expression: string, useWindow: boolean, ignoreRemoved: boolean, useBlock: boolean, ...args: any): any{
             if (!region){
                 return null;
             }
@@ -3249,7 +3266,7 @@ namespace InlineJS{
 
             let result: any;
             try{
-                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow, ignoreRemoved);
+                result = Evaluator.Evaluate(region.GetId(), element, expression, useWindow, ignoreRemoved, useBlock);
                 if (typeof result === 'function'){
                     result = region.Call(result as (...values: any) => any, ...args);
                 }

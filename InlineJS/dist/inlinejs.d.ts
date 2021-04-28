@@ -264,7 +264,7 @@ declare namespace InlineJS {
     }
     class Evaluator {
         private static cachedProxy_;
-        static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow?: boolean, ignoreRemoved?: boolean): any;
+        static Evaluate(regionId: string, elementContext: HTMLElement | string, expression: string, useWindow?: boolean, ignoreRemoved?: boolean, useBlock?: boolean): any;
         static GetContextKey(): string;
         static GetProxy(regionId: string, proxy: object): object;
         static CreateProxy(proxy: object): {};
@@ -419,7 +419,9 @@ declare namespace InlineJS {
         static CreateProxy(getter: (prop: string) => any, contains: Array<string> | ((prop: string) => boolean), setter?: (target: object, prop: string | number | symbol, value: any) => boolean, target?: any): any;
         static Evaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
         static EvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
-        static DoEvaluation(region: Region, element: HTMLElement, expression: string, useWindow: boolean, ignoreRemoved: boolean, ...args: any): any;
+        static BlockEvaluate(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
+        static BlockEvaluateAlways(region: Region, element: HTMLElement, expression: string, useWindow?: boolean, ...args: any): any;
+        static DoEvaluation(region: Region, element: HTMLElement, expression: string, useWindow: boolean, ignoreRemoved: boolean, useBlock: boolean, ...args: any): any;
         static Call(regionId: string, callback: (...args: any) => any, ...args: any): any;
         static ExtractDuration(value: string, defaultValue: number): number;
         static ToString(value: any): string;

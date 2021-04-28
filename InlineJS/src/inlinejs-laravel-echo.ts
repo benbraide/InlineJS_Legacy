@@ -72,7 +72,7 @@ namespace InlineJS{
                         myRegion.GetState().PushEventContext(e);
                     }
 
-                    CoreDirectiveHandlers.Evaluate(myRegion, element, directive.value, false, e);
+                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
                 }
                 finally{
                     if (myRegion){
