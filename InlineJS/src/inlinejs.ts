@@ -3128,35 +3128,6 @@ namespace InlineJS{
             });
             
             return info;
-            
-            // let elScopeKey = Region.GetElementKeyName(), attributes = new Array<LiteAttr>(), scopeKey = element.getAttribute(elScopeKey);
-            // let info = {
-            //     regionId: region.GetId(),
-            //     scopeKey: scopeKey,
-            //     parent: element.parentElement,
-            //     marker: CoreDirectiveHandlers.GetChildElementIndex(element),
-            //     attributes: attributes,
-            // };
-
-            // CoreDirectiveHandlers.BindOnContentLoad(region, element, () => {
-            //     onUninit();
-            //     CoreDirectiveHandlers.UninitIfOrEach(region, info);
-            // });
-
-            // element.parentElement.removeChild(element);
-            // Array.from(element.attributes).forEach((attr) => {
-            //     element.removeAttribute(attr.name);
-            //     if (attr.name !== elScopeKey && attr.name !== except){
-            //         let directive = Processor.GetDirectiveWith(attr.name, attr.value);
-            //         attributes.push({ name: (directive ? directive.expanded : attr.name), value: attr.value });
-            //     }
-            // });
-
-            // if (scope){
-            //     scope.preserveSubscriptions = true;
-            // }
-
-            // return info;
         }
 
         public static InsertIfOrEach(regionId: string, element: HTMLElement, info: IfOrEachInfo, callback?: () => void, offset = 0){

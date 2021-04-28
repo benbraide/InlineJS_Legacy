@@ -255,6 +255,130 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
+        public static Image(region: Region, element: HTMLElement, directive: Directive){
+            if (!(element instanceof HTMLImageElement)){
+                return DirectiveHandlerReturn.Nil;
+            }
+
+            let options = {
+                full: false,
+                lazy: false,
+                zoom: false,
+                zoomMultiplier: 0,
+                pop: false,
+            };
+            
+            let info = {
+                loaded: false,
+                zoomed: false,
+                popped: false,
+                size: {
+                    width: element.naturalWidth,
+                    height: element.naturalHeight,
+                },
+                aspectRatio: ((element.naturalHeight == 0) ? 0 : (element.naturalWidth / element.naturalHeight)),
+            };
+
+            directive.arg.options.forEach((option, index, list) => {
+                if (option in options && typeof options[option] === 'boolean'){
+                    options[option] = true;
+                    if (option === 'zoom' && index < (list.length - 1)){
+                        options.zoomMultiplier = (parseInt(list[index + 1]) || 1300);
+                    }
+                }
+            });
+
+            let regionId = region.GetId(), elementScope = region.AddElement(element, true);
+            let scope = ExtendedDirectiveHandlers.AddScope('image', elementScope, []);
+
+            let setFull = () => {
+                if (!options.full){
+                    return;
+                }
+
+                if (info.size.width < info.size.height){
+                    element.style.width = 'auto';
+                    element.style.height = '100%';
+                }
+                else{
+                    element.style.width = '100%';
+                    element.style.height = 'auto';
+                }
+            };
+
+            if (options.lazy){
+                let lazyOptions = ExtendedDirectiveHandlers.GetIntersectionOptions(region, element, directive.value);
+
+                let src = (('src' in lazyOptions) ? lazyOptions['src'] : (('original' in lazyOptions) ? lazyOptions['original'] : null));
+                if (!src || typeof src !== 'string'){//Ignore
+                    return DirectiveHandlerReturn.Nil;
+                }
+                
+                ExtendedDirectiveHandlers.ObserveIntersection(region, element, lazyOptions, (entry) => {
+                    if ((!(entry instanceof IntersectionObserverEntry) || !entry.isIntersecting) && entry !== false){
+                        return true;
+                    }
+    
+                    ExtendedDirectiveHandlers.FetchLoad(element, src, false, () => {
+                        let myRegion = Region.Get(regionId);
+                        
+                        info.loaded = true;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'loaded', scope);
+
+                        let size = {
+                            width: element.naturalWidth,
+                            height: element.naturalHeight,
+                        };
+
+                        if (size.width !== info.size.width || size.height !== info.size.height){
+                            info.size = size;
+                            ExtendedDirectiveHandlers.Alert(myRegion, 'size', scope);
+                        }
+
+                        let aspectRatio = ((info.size.height == 0) ? 0 : (info.size.width / info.size.height));
+                        if (aspectRatio !== info.aspectRatio){
+                            info.aspectRatio = aspectRatio;
+                            ExtendedDirectiveHandlers.Alert(myRegion, 'aspectRatio', scope);
+                        }
+                        
+                        element.dispatchEvent(new CustomEvent(`image.load`));
+                        setFull();
+                    }, (err) => {
+                        element.dispatchEvent(new CustomEvent(`image.error`, {
+                            detail: { error: err },
+                        }));
+                    });
+                    
+                    return false;
+                });
+            }
+            else{
+                setFull();
+            }
+
+            if (options.zoom){
+                let animator = CoreDirectiveHandlers.GetAnimator(region, true, element, ['zoom', options.zoomMultiplier.toString(), 'faster']);
+                element.addEventListener('mouseenter', () => {
+                    animator(true);
+                });
+                element.addEventListener('mouseleave', () => {
+                    animator(false);
+                });
+            }
+
+            elementScope.locals['$image'] = CoreDirectiveHandlers.CreateProxy((prop) =>{
+                if (prop in info){
+                    if (options.lazy || (prop !== 'loaded' && prop !== 'size' && prop !== 'aspectRatio')){
+                        Region.Get(regionId).GetChanges().AddGetAccess(`${scope.path}.${prop}`);
+                    }
+
+                    return info[prop];
+                }
+            }, [...Object.keys(info)]);
+            
+            return DirectiveHandlerReturn.Handled;
+        }
+
         public static Input(region: Region, element: HTMLElement, directive: Directive){
             let wrapper = document.createElement('div'), innerWrapper = document.createElement('div'), label = document.createElement('span'), hiddenLabel = document.createElement('span'), style = getComputedStyle(element);
             let cachedValues = {
@@ -427,14 +551,14 @@ namespace InlineJS{
             };
             
             let isText: boolean = false, isUnknown: boolean = false, regionId = region.GetId();
-            if (element.tagName === 'INPUT'){
-                let type = (element as HTMLInputElement).type;
+            if (element instanceof HTMLInputElement){
+                let type = element.type;
                 isText = (type === 'text' || type === 'password' || type === 'email' || type === 'search' || type === 'number' || type === 'tel' || type === 'url');
             }
-            else if (element.tagName === 'TEXTAREA'){
+            else if (element instanceof HTMLTextAreaElement){
                 isText = true;
             }
-            else if (element.tagName !== 'SELECT'){
+            else if (element instanceof HTMLSelectElement){
                 isUnknown = true;
             }
 
@@ -2286,6 +2410,47 @@ namespace InlineJS{
                     ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'hasNew', scope);
                 });
             };
+
+            let onUpdate = (sku: string, data: any, callback?: (item: CartItem) => void) => {
+                if (data.empty){
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.products.splice`, `${scope.path}.products`);
+                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'products', scope);
+
+                    info.items.splice(0, info.items.length);
+                    info.products.splice(0, info.products.length);
+                    
+                    computeValues();
+                    return;
+                }
+                
+                if (data.quantity <= 0){
+                    let index = info.items.findIndex(infoItem => (infoItem.product.sku === sku));
+                    if (index != -1){//Remove from list
+                        info.items.splice(index, 1);
+                        info.products.splice(index, 1);
+
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `${index}.1.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
+
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `${index}.1.0`, `${scope.path}.products.splice`, `${scope.path}.products`);
+                        ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'products', scope);
+
+                        computeValues();
+                    }
+
+                    return;
+                }
+
+                let myCallback = (callback || postUpdate);
+                myCallback({
+                    price: (data.price || data.product.price),
+                    quantity: ((typeof data.quantity === 'string') ? (parseInt(data.quantity) || 0) : data.quantity),
+                    product: data.product,
+                });
+            };
             
             if (!handlers.update){
                 handlers.update = (sku: string, quantity: number, incremental: boolean, callback: (item: CartItem) => void) => {
@@ -2401,41 +2566,7 @@ namespace InlineJS{
                             method: 'GET',
                             credentials: 'same-origin',
                         }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then((data) => {
-                            if (data.empty){
-                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
-                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
-
-                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `0.${info.items.length}.0`, `${scope.path}.products.splice`, `${scope.path}.products`);
-                                ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'products', scope);
-
-                                info.items.splice(0, info.items.length);
-                                info.products.splice(0, info.products.length);
-                                
-                                computeValues();
-                                return;
-                            }
-                            
-                            if (data.quantity <= 0){
-                                let index = info.items.findIndex(infoItem => (infoItem.product.sku === sku));
-                                if (index != -1){//Remove from list
-                                    info.items.splice(index, 1);
-                                    info.products.splice(index, 1);
-
-                                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `${index}.1.0`, `${scope.path}.items.splice`, `${scope.path}.items`);
-                                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'items', scope);
-
-                                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), `${index}.1.0`, `${scope.path}.products.splice`, `${scope.path}.products`);
-                                    ExtendedDirectiveHandlers.Alert(Region.Get(regionId), 'products', scope);
-                                }
-
-                                return;
-                            }
-
-                            callback({
-                                price: (data.price || data.product.price),
-                                quantity: data.quantity,
-                                product: data.product,
-                            });
+                            onUpdate(sku, data, callback);
                         }).catch((err) => {
                             ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         });
@@ -2599,7 +2730,13 @@ namespace InlineJS{
                         })));
                     };
                 }
-            }, [...Object.keys(info), 'hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json']);
+
+                if (prop === 'onUpdate'){
+                    return (sku: string, data: any) => {
+                        onUpdate(sku, data);
+                    };
+                }
+            }, [...Object.keys(info), 'hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json', 'onUpdate']);
 
             Region.AddGlobal('$cart', () => proxy);
 
@@ -4326,7 +4463,7 @@ namespace InlineJS{
                     onLoad(true);
                 }
             }
-            else if (element.tagName === 'SELECT'){
+            else if (element instanceof HTMLSelectElement){
                 fetchList(url, (item) => {
                     if (item && typeof item === 'object' && 'value' in item && 'text' in item){
                         let option = document.createElement('option');
@@ -4338,7 +4475,7 @@ namespace InlineJS{
                     }
                 });
             }
-            else if (element.tagName === 'UL' || element.tagName === 'OL'){
+            else if (element instanceof HTMLUListElement || element instanceof HTMLOListElement){
                 fetchList(url, (item) => {
                     if (item && typeof item === 'object' && 'value' in item && 'text' in item){
                         let li = document.createElement('li');
@@ -4347,7 +4484,7 @@ namespace InlineJS{
                     }
                 });
             }
-            else if (element.tagName === 'IMG' || element.tagName === 'IFRAME'){
+            else if (element instanceof HTMLImageElement || element instanceof HTMLIFrameElement){
                 element.addEventListener('load', onEvent);
                 (element as HTMLImageElement).src = url;
             }
@@ -4450,7 +4587,9 @@ namespace InlineJS{
 
             DirectiveHandlerManager.AddHandler('mouse', ExtendedDirectiveHandlers.Mouse);
 
+            DirectiveHandlerManager.AddHandler('image', ExtendedDirectiveHandlers.Image);
             DirectiveHandlerManager.AddHandler('input', ExtendedDirectiveHandlers.Input);
+
             DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
             
@@ -4484,8 +4623,10 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
 
+            ExtendedDirectiveHandlers.BuildGlobal('image');
             ExtendedDirectiveHandlers.BuildGlobal('state');
             ExtendedDirectiveHandlers.BuildGlobal('attr');
+            ExtendedDirectiveHandlers.BuildGlobal('json');
             ExtendedDirectiveHandlers.BuildGlobal('xhr');
             ExtendedDirectiveHandlers.BuildGlobal('lazyLoad');
             ExtendedDirectiveHandlers.BuildGlobal('intersection');

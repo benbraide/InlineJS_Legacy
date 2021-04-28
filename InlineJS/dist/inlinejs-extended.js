@@ -129,6 +129,109 @@ var InlineJS;
             }; });
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
+        ExtendedDirectiveHandlers.Image = function (region, element, directive) {
+            if (!(element instanceof HTMLImageElement)) {
+                return InlineJS.DirectiveHandlerReturn.Nil;
+            }
+            var options = {
+                full: false,
+                lazy: false,
+                zoom: false,
+                zoomMultiplier: 0,
+                pop: false
+            };
+            var info = {
+                loaded: false,
+                zoomed: false,
+                popped: false,
+                size: {
+                    width: element.naturalWidth,
+                    height: element.naturalHeight
+                },
+                aspectRatio: ((element.naturalHeight == 0) ? 0 : (element.naturalWidth / element.naturalHeight))
+            };
+            directive.arg.options.forEach(function (option, index, list) {
+                if (option in options && typeof options[option] === 'boolean') {
+                    options[option] = true;
+                    if (option === 'zoom' && index < (list.length - 1)) {
+                        options.zoomMultiplier = (parseInt(list[index + 1]) || 1300);
+                    }
+                }
+            });
+            var regionId = region.GetId(), elementScope = region.AddElement(element, true);
+            var scope = ExtendedDirectiveHandlers.AddScope('image', elementScope, []);
+            var setFull = function () {
+                if (!options.full) {
+                    return;
+                }
+                if (info.size.width < info.size.height) {
+                    element.style.width = 'auto';
+                    element.style.height = '100%';
+                }
+                else {
+                    element.style.width = '100%';
+                    element.style.height = 'auto';
+                }
+            };
+            if (options.lazy) {
+                var lazyOptions = ExtendedDirectiveHandlers.GetIntersectionOptions(region, element, directive.value);
+                var src_1 = (('src' in lazyOptions) ? lazyOptions['src'] : (('original' in lazyOptions) ? lazyOptions['original'] : null));
+                if (!src_1 || typeof src_1 !== 'string') { //Ignore
+                    return InlineJS.DirectiveHandlerReturn.Nil;
+                }
+                ExtendedDirectiveHandlers.ObserveIntersection(region, element, lazyOptions, function (entry) {
+                    if ((!(entry instanceof IntersectionObserverEntry) || !entry.isIntersecting) && entry !== false) {
+                        return true;
+                    }
+                    ExtendedDirectiveHandlers.FetchLoad(element, src_1, false, function () {
+                        var myRegion = InlineJS.Region.Get(regionId);
+                        info.loaded = true;
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'loaded', scope);
+                        var size = {
+                            width: element.naturalWidth,
+                            height: element.naturalHeight
+                        };
+                        if (size.width !== info.size.width || size.height !== info.size.height) {
+                            info.size = size;
+                            ExtendedDirectiveHandlers.Alert(myRegion, 'size', scope);
+                        }
+                        var aspectRatio = ((info.size.height == 0) ? 0 : (info.size.width / info.size.height));
+                        if (aspectRatio !== info.aspectRatio) {
+                            info.aspectRatio = aspectRatio;
+                            ExtendedDirectiveHandlers.Alert(myRegion, 'aspectRatio', scope);
+                        }
+                        element.dispatchEvent(new CustomEvent("image.load"));
+                        setFull();
+                    }, function (err) {
+                        element.dispatchEvent(new CustomEvent("image.error", {
+                            detail: { error: err }
+                        }));
+                    });
+                    return false;
+                });
+            }
+            else {
+                setFull();
+            }
+            if (options.zoom) {
+                var animator_1 = InlineJS.CoreDirectiveHandlers.GetAnimator(region, true, element, ['zoom', options.zoomMultiplier.toString(), 'faster']);
+                element.addEventListener('mouseenter', function () {
+                    animator_1(true);
+                });
+                element.addEventListener('mouseleave', function () {
+                    animator_1(false);
+                });
+            }
+            elementScope.locals['$image'] = InlineJS.CoreDirectiveHandlers.CreateProxy(function (prop) {
+                if (prop in info) {
+                    if (options.lazy || (prop !== 'loaded' && prop !== 'size' && prop !== 'aspectRatio')) {
+                        InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + "." + prop);
+                    }
+                    return info[prop];
+                }
+            }, __spreadArrays(Object.keys(info)));
+            return InlineJS.DirectiveHandlerReturn.Handled;
+        };
         ExtendedDirectiveHandlers.Input = function (region, element, directive) {
             var wrapper = document.createElement('div'), innerWrapper = document.createElement('div'), label = document.createElement('span'), hiddenLabel = document.createElement('span'), style = getComputedStyle(element);
             var cachedValues = {
@@ -274,14 +377,14 @@ var InlineJS;
                 isValid: 'valid.change'
             };
             var isText = false, isUnknown = false, regionId = region.GetId();
-            if (element.tagName === 'INPUT') {
+            if (element instanceof HTMLInputElement) {
                 var type = element.type;
                 isText = (type === 'text' || type === 'password' || type === 'email' || type === 'search' || type === 'number' || type === 'tel' || type === 'url');
             }
-            else if (element.tagName === 'TEXTAREA') {
+            else if (element instanceof HTMLTextAreaElement) {
                 isText = true;
             }
-            else if (element.tagName !== 'SELECT') {
+            else if (element instanceof HTMLSelectElement) {
                 isUnknown = true;
             }
             var elementScope = region.AddElement(element, true);
@@ -1846,6 +1949,37 @@ var InlineJS;
                     ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'hasNew', scope);
                 });
             };
+            var onUpdate = function (sku, data, callback) {
+                if (data.empty) {
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".items.splice", scope.path + ".items");
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".products.splice", scope.path + ".products");
+                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                    info.items.splice(0, info.items.length);
+                    info.products.splice(0, info.products.length);
+                    computeValues();
+                    return;
+                }
+                if (data.quantity <= 0) {
+                    var index = info.items.findIndex(function (infoItem) { return (infoItem.product.sku === sku); });
+                    if (index != -1) { //Remove from list
+                        info.items.splice(index, 1);
+                        info.products.splice(index, 1);
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".items.splice", scope.path + ".items");
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".products.splice", scope.path + ".products");
+                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
+                        computeValues();
+                    }
+                    return;
+                }
+                var myCallback = (callback || postUpdate);
+                myCallback({
+                    price: (data.price || data.product.price),
+                    quantity: ((typeof data.quantity === 'string') ? (parseInt(data.quantity) || 0) : data.quantity),
+                    product: data.product
+                });
+            };
             if (!handlers.update) {
                 handlers.update = function (sku, quantity, incremental, callback) {
                     if (!InlineJS.Region.GetGlobalValue(regionId, '$auth').check()) {
@@ -1939,33 +2073,7 @@ var InlineJS;
                             method: 'GET',
                             credentials: 'same-origin'
                         }).then(ExtendedDirectiveHandlers.HandleJsonResponse).then(function (data) {
-                            if (data.empty) {
-                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".items.splice", scope.path + ".items");
-                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
-                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), "0." + info.items.length + ".0", scope.path + ".products.splice", scope.path + ".products");
-                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
-                                info.items.splice(0, info.items.length);
-                                info.products.splice(0, info.products.length);
-                                computeValues();
-                                return;
-                            }
-                            if (data.quantity <= 0) {
-                                var index = info.items.findIndex(function (infoItem) { return (infoItem.product.sku === sku); });
-                                if (index != -1) { //Remove from list
-                                    info.items.splice(index, 1);
-                                    info.products.splice(index, 1);
-                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".items.splice", scope.path + ".items");
-                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'items', scope);
-                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), index + ".1.0", scope.path + ".products.splice", scope.path + ".products");
-                                    ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
-                                }
-                                return;
-                            }
-                            callback({
-                                price: (data.price || data.product.price),
-                                quantity: data.quantity,
-                                product: data.product
-                            });
+                            onUpdate(sku, data, callback);
                         })["catch"](function (err) {
                             ExtendedDirectiveHandlers.ReportServerError(regionId, err);
                         });
@@ -2100,7 +2208,12 @@ var InlineJS;
                         }); }));
                     };
                 }
-            }, __spreadArrays(Object.keys(info), ['hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json']));
+                if (prop === 'onUpdate') {
+                    return function (sku, data) {
+                        onUpdate(sku, data);
+                    };
+                }
+            }, __spreadArrays(Object.keys(info), ['hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json', 'onUpdate']));
             InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
             var cartAction = function (myRegion, myElement, myDirective, eventHandler, valueCallback, eventBinder) {
                 if (valueCallback) { //Bind value
@@ -3558,7 +3671,7 @@ var InlineJS;
                     onLoad(true);
                 }
             }
-            else if (element.tagName === 'SELECT') {
+            else if (element instanceof HTMLSelectElement) {
                 fetchList(url, function (item) {
                     if (item && typeof item === 'object' && 'value' in item && 'text' in item) {
                         var option = document.createElement('option');
@@ -3568,7 +3681,7 @@ var InlineJS;
                     }
                 });
             }
-            else if (element.tagName === 'UL' || element.tagName === 'OL') {
+            else if (element instanceof HTMLUListElement || element instanceof HTMLOListElement) {
                 fetchList(url, function (item) {
                     if (item && typeof item === 'object' && 'value' in item && 'text' in item) {
                         var li = document.createElement('li');
@@ -3577,7 +3690,7 @@ var InlineJS;
                     }
                 });
             }
-            else if (element.tagName === 'IMG' || element.tagName === 'IFRAME') {
+            else if (element instanceof HTMLImageElement || element instanceof HTMLIFrameElement) {
                 element.addEventListener('load', onEvent);
                 element.src = url;
             }
@@ -3665,6 +3778,7 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('when', ExtendedDirectiveHandlers.When);
             InlineJS.DirectiveHandlerManager.AddHandler('once', ExtendedDirectiveHandlers.Once);
             InlineJS.DirectiveHandlerManager.AddHandler('mouse', ExtendedDirectiveHandlers.Mouse);
+            InlineJS.DirectiveHandlerManager.AddHandler('image', ExtendedDirectiveHandlers.Image);
             InlineJS.DirectiveHandlerManager.AddHandler('input', ExtendedDirectiveHandlers.Input);
             InlineJS.DirectiveHandlerManager.AddHandler('state', ExtendedDirectiveHandlers.State);
             InlineJS.DirectiveHandlerManager.AddHandler('attrChange', ExtendedDirectiveHandlers.AttrChange);
@@ -3691,8 +3805,10 @@ var InlineJS;
             InlineJS.DirectiveHandlerManager.AddHandler('formError', ExtendedDirectiveHandlers.FormError);
             InlineJS.DirectiveHandlerManager.AddHandler('modal', ExtendedDirectiveHandlers.Modal);
             InlineJS.DirectiveHandlerManager.AddHandler('counter', ExtendedDirectiveHandlers.Counter);
+            ExtendedDirectiveHandlers.BuildGlobal('image');
             ExtendedDirectiveHandlers.BuildGlobal('state');
             ExtendedDirectiveHandlers.BuildGlobal('attr');
+            ExtendedDirectiveHandlers.BuildGlobal('json');
             ExtendedDirectiveHandlers.BuildGlobal('xhr');
             ExtendedDirectiveHandlers.BuildGlobal('lazyLoad');
             ExtendedDirectiveHandlers.BuildGlobal('intersection');

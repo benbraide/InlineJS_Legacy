@@ -107,6 +107,7 @@ declare namespace InlineJS {
         static When(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Once(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Mouse(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static Image(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static Input(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static State(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
         static ContextState(region: Region, element: HTMLElement, lazy: boolean, delay: number, submit: boolean, info: StateDirectiveInfo): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
