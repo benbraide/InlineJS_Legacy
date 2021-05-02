@@ -275,7 +275,8 @@ namespace InlineJS{
             args: [],
         };
         
-        public constructor(private type_: 'both' | 'width' | 'height', private direction_: 'in' | 'out', private scale_ = 1, private setOrigin_ = false, private reversed_ = false){}
+        public constructor(private type_: 'both' | 'width' | 'height', private direction_: 'in' | 'out', private scale_ = 1, private setOrigin_ = false,
+            private reversed_ = false, private origin_ = null){}
 
         public init(options: Array<string>, nextOptionIndex: number){
             const regex = /^[0-9]+$/;
@@ -313,7 +314,33 @@ namespace InlineJS{
             if (this.type_ === 'both'){
                 element.style.transform = ((isFirst ? '' : element.style.transform) + ` scale(${value}, ${value})`);
                 if (isFirst && this.setOrigin_){
-                    element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                    if (this.origin_ === 'top_left'){
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                    }
+                    else if (this.origin_ === 'top_right'){
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '100% 0%');
+                    }
+                    else if (this.origin_ === 'bottom_right'){
+                        element.style.transformOrigin = (this.reversed_ ? '0% 0%' : '100% 100%');
+                    }
+                    else if (this.origin_ === 'bottom_left'){
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 100%');
+                    }
+                    else if (this.origin_ === 'left'){
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 50%');
+                    }
+                    else if (this.origin_ === 'top'){
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '50% 0%');
+                    }
+                    else if (this.origin_ === 'right'){
+                        element.style.transformOrigin = (this.reversed_ ? '0% 0%' : '100% 50%');
+                    }
+                    else if (this.origin_ === 'bottom'){
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '50% 100%');
+                    }
+                    else{
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                    }
                 }
             }
             else if (this.type_ === 'width'){
@@ -935,6 +962,14 @@ namespace InlineJS{
         zoomOut: () => new ZoomAnimator('both', 'out'),
         zoomOutHeight: () => new ZoomAnimator('height', 'out'),
         zoomOutWidth: () => new ZoomAnimator('width', 'out'),
+        zoomTopLeft: () => new ZoomAnimator('both', 'in', 1, true, false, 'top_left'),
+        zoomTopRight: () => new ZoomAnimator('both', 'in', 1, true, false, 'top_right'),
+        zoomBottomRight: () => new ZoomAnimator('both', 'in', 1, true, false, 'bottom_right'),
+        zoomBottomLeft: () => new ZoomAnimator('both', 'in', 1, true, false, 'bottom_left'),
+        zoomLeft: () => new ZoomAnimator('both', 'in', 1, true, false, 'left'),
+        zoomTop: () => new ZoomAnimator('both', 'in', 1, true, false, 'top'),
+        zoomRight: () => new ZoomAnimator('both', 'in', 1, true, false, 'right'),
+        zoomBottom: () => new ZoomAnimator('both', 'in', 1, true, false, 'bottom'),
         rotate: () => new RotationAnimator('z', 'clockwise'),
         rotateX: () => new RotationAnimator('x', 'clockwise'),
         rotateY: () => new RotationAnimator('y', 'clockwise'),

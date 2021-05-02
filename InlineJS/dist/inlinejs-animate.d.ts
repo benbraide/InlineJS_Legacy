@@ -70,8 +70,9 @@ declare namespace InlineJS {
         private scale_;
         private setOrigin_;
         private reversed_;
+        private origin_;
         private static preferredEase_;
-        constructor(type_: 'both' | 'width' | 'height', direction_: 'in' | 'out', scale_?: number, setOrigin_?: boolean, reversed_?: boolean);
+        constructor(type_: 'both' | 'width' | 'height', direction_: 'in' | 'out', scale_?: number, setOrigin_?: boolean, reversed_?: boolean, origin_?: any);
         init(options: Array<string>, nextOptionIndex: number): 1 | 0;
         step(isFirst: boolean, element: HTMLElement, show: boolean, ellapsed: number, duration: number, ease: AnimatorEaseType): void;
         getPreferredEase(show?: boolean): StepEaseInfo;
@@ -193,6 +194,14 @@ declare namespace InlineJS {
         zoomOut: () => ZoomAnimator;
         zoomOutHeight: () => ZoomAnimator;
         zoomOutWidth: () => ZoomAnimator;
+        zoomTopLeft: () => ZoomAnimator;
+        zoomTopRight: () => ZoomAnimator;
+        zoomBottomRight: () => ZoomAnimator;
+        zoomBottomLeft: () => ZoomAnimator;
+        zoomLeft: () => ZoomAnimator;
+        zoomTop: () => ZoomAnimator;
+        zoomRight: () => ZoomAnimator;
+        zoomBottom: () => ZoomAnimator;
         rotate: () => RotationAnimator;
         rotateX: () => RotationAnimator;
         rotateY: () => RotationAnimator;

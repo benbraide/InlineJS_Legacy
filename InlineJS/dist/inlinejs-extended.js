@@ -1679,6 +1679,14 @@ var InlineJS;
                 x: ((document.body.scrollWidth <= 0) ? 0 : ((position.x / document.body.scrollWidth) * 100)),
                 y: ((document.body.scrollHeight <= 0) ? 0 : ((position.y / document.body.scrollHeight) * 100))
             };
+            var relativeScrollOffsetLockCount = 0, relativeScrollOffset = {
+                x: 0,
+                y: 0
+            };
+            var directionalScrollOffset = {
+                x: 0,
+                y: 0
+            };
             if (directive.arg.key === 'realtime') {
                 var handleScroll_1 = function () {
                     var myPosition = getScrollPosition();
@@ -1687,11 +1695,39 @@ var InlineJS;
                             x: ((document.documentElement.scrollWidth || document.body.scrollWidth) - (document.documentElement.clientWidth || document.body.clientWidth)),
                             y: ((document.documentElement.scrollHeight || document.body.scrollHeight) - (document.documentElement.clientHeight || document.body.clientHeight))
                         };
-                        position = myPosition;
                         var myPercentage = {
-                            x: ((offset.x <= 0) ? 0 : ((position.x / offset.x) * 100)),
-                            y: ((offset.y <= 0) ? 0 : ((position.y / offset.y) * 100))
+                            x: ((offset.x <= 0) ? 0 : ((myPosition.x / offset.x) * 100)),
+                            y: ((offset.y <= 0) ? 0 : ((myPosition.y / offset.y) * 100))
                         };
+                        var myRegion = InlineJS.Region.Get(regionId);
+                        if (relativeScrollOffsetLockCount <= 0) {
+                            var previousRelativeScrollOffset = {
+                                x: relativeScrollOffset.x,
+                                y: relativeScrollOffset.y
+                            };
+                            var diff = {
+                                x: (myPosition.x - position.x),
+                                y: (myPosition.y - position.y)
+                            };
+                            if ((directionalScrollOffset.x <= 0 && diff.x <= 0) || (directionalScrollOffset.x >= 0 && diff.x >= 0)) {
+                                directionalScrollOffset.x += diff.x;
+                            }
+                            else {
+                                directionalScrollOffset.x = 0;
+                            }
+                            if ((directionalScrollOffset.y <= 0 && diff.y <= 0) || (directionalScrollOffset.y >= 0 && diff.y >= 0)) {
+                                directionalScrollOffset.y += diff.y;
+                            }
+                            else {
+                                directionalScrollOffset.y = 0;
+                            }
+                            relativeScrollOffset.x += diff.x;
+                            relativeScrollOffset.y += diff.y;
+                            ExtendedDirectiveHandlers.Alert(myRegion, 'directionalScrollOffset', scope);
+                            if (relativeScrollOffset.x != previousRelativeScrollOffset.x || relativeScrollOffset.y != previousRelativeScrollOffset.y) {
+                                ExtendedDirectiveHandlers.Alert(myRegion, 'relativeScrollOffset', scope);
+                            }
+                        }
                         if (myPercentage.x < percentage.x) {
                             window.dispatchEvent(new CustomEvent('screen.left', {
                                 detail: myPosition
@@ -1712,6 +1748,7 @@ var InlineJS;
                                 detail: myPosition
                             }));
                         }
+                        position = myPosition;
                         percentage = myPercentage;
                         window.dispatchEvent(new CustomEvent('screen.position', {
                             detail: position
@@ -1719,8 +1756,8 @@ var InlineJS;
                         window.dispatchEvent(new CustomEvent('screen.percentage', {
                             detail: percentage
                         }));
-                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'position', scope);
-                        ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'percentage', scope);
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'position', scope);
+                        ExtendedDirectiveHandlers.Alert(myRegion, 'percentage', scope);
                     }
                 };
                 var debounceIndex_1 = directive.arg.options.indexOf('debounce');
@@ -1785,6 +1822,14 @@ var InlineJS;
                     InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".percentage");
                     return percentage;
                 }
+                if (prop === 'relativeScrollOffset') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".relativeScrollOffset");
+                    return relativeScrollOffset;
+                }
+                if (prop === 'directionalScrollOffset') {
+                    InlineJS.Region.Get(regionId).GetChanges().AddGetAccess(scope.path + ".directionalScrollOffset");
+                    return directionalScrollOffset;
+                }
                 if (prop === 'getScrollOffset' || prop === 'getPosition') {
                     return getScrollPosition;
                 }
@@ -1795,6 +1840,28 @@ var InlineJS;
                             x: ((document.body.scrollWidth <= 0) ? 0 : ((myPosition.x / document.body.scrollWidth) * 100)),
                             y: ((document.body.scrollHeight <= 0) ? 0 : ((myPosition.y / document.body.scrollHeight) * 100))
                         };
+                    };
+                }
+                if (prop === 'pauseRelativeScrollOffset') {
+                    return function () {
+                        ++relativeScrollOffsetLockCount;
+                    };
+                }
+                if (prop === 'resumeRelativeScrollOffset') {
+                    return function (reset, value, directionalValue) {
+                        if (reset === void 0) { reset = true; }
+                        if (value === void 0) { value = 0; }
+                        if (directionalValue === void 0) { directionalValue = 0; }
+                        if (relativeScrollOffsetLockCount > 0 && --relativeScrollOffsetLockCount == 0 && reset) {
+                            if ((directionalScrollOffset.x != directionalValue || directionalScrollOffset.y != directionalValue)) {
+                                directionalScrollOffset.x = directionalScrollOffset.y = directionalValue;
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'directionalScrollOffset', scope);
+                            }
+                            if ((relativeScrollOffset.x != value || relativeScrollOffset.y != value)) {
+                                relativeScrollOffset.x = relativeScrollOffset.y = value;
+                                ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'relativeScrollOffset', scope);
+                            }
+                        }
                     };
                 }
                 if (prop === 'scroll') {

@@ -639,7 +639,7 @@ var InlineJS;
             return '__inlinejs_key__';
         };
         Region.IsObject = function (target) {
-            return (target !== null && typeof target === 'object' && (('__InlineJS_Target__' in target) || target.__proto__.constructor.name === 'Object'));
+            return (target && typeof target === 'object' && (('__InlineJS_Target__' in target) || (target.__proto__ && target.__proto__.constructor.name === 'Object')));
         };
         Region.UnsubscribeAll = function (list) {
             (list || []).forEach(function (info) {
@@ -1044,7 +1044,7 @@ var InlineJS;
             state.PushElementContext(region.GetElement(elementContext));
             try {
                 if (useBlock) {
-                    result = (new Function(Evaluator.GetContextKey(), "\n                        with (" + Evaluator.GetContextKey() + "){\n                            { " + expression + "; };\n                        };\n                    ")).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
+                    result = (new Function(Evaluator.GetContextKey(), "\n                        with (" + Evaluator.GetContextKey() + "){\n                            " + expression + ";\n                        };\n                    ")).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
                 }
                 else {
                     result = (new Function(Evaluator.GetContextKey(), "\n                        with (" + Evaluator.GetContextKey() + "){\n                            return (" + expression + ");\n                        };\n                    ")).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
@@ -1796,7 +1796,14 @@ var InlineJS;
         };
         CoreDirectiveHandlers.Class = function (region, element, directive) {
             return CoreDirectiveHandlers.InternalAttr(region, element, directive, function (key, value) {
-                key.trim().replace(/\s\s+/g, ' ').split(' ').forEach(function (item) { return value ? element.classList.add(item) : element.classList.remove(item); });
+                key.trim().replace(/\s\s+/g, ' ').split(' ').forEach(function (item) {
+                    if (value) {
+                        element.classList.add(item);
+                    }
+                    else if (element.classList.contains(item)) {
+                        element.classList.remove(item);
+                    }
+                });
             }, null, true);
         };
         CoreDirectiveHandlers.InternalAttr = function (region, element, directive, callback, validator, acceptList) {
@@ -1806,7 +1813,11 @@ var InlineJS;
                 var isList_1 = (acceptList && directive.arg && directive.arg.options.indexOf('list') != -1), list_1;
                 region.GetState().TrapGetAccess(function () {
                     if (isList_1 && list_1) {
-                        list_1.forEach(function (item) { return element.classList.remove(item); });
+                        list_1.forEach(function (item) {
+                            if (element.classList.contains(item)) {
+                                element.classList.remove(item);
+                            }
+                        });
                         list_1 = new Array();
                     }
                     var entries = CoreDirectiveHandlers.Evaluate(Region.Get(regionId), element, directive.value);
@@ -1913,7 +1924,8 @@ var InlineJS;
                 once: false,
                 document: false,
                 window: false,
-                self: false
+                self: false,
+                nexttick: false
             };
             var keyOptions = {
                 meta: false,
@@ -1951,6 +1963,19 @@ var InlineJS;
                 }
             });
             var regionId = region.GetId(), stoppable;
+            var doEvaluation = function (myRegion, e) {
+                try {
+                    if (myRegion) {
+                        myRegion.GetState().PushEventContext(e);
+                    }
+                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
+                }
+                finally {
+                    if (myRegion) {
+                        myRegion.GetState().PopEventContext();
+                    }
+                }
+            };
             var onEvent = function (e) {
                 if (isDebounced) {
                     return;
@@ -1986,16 +2011,13 @@ var InlineJS;
                 if (stoppable && options.immediate) {
                     e.stopImmediatePropagation();
                 }
-                try {
-                    if (myRegion) {
-                        myRegion.GetState().PushEventContext(e);
-                    }
-                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
+                if (options.nexttick) {
+                    myRegion.AddNextTickCallback(function () {
+                        doEvaluation(Region.Get(regionId), e);
+                    });
                 }
-                finally {
-                    if (myRegion) {
-                        myRegion.GetState().PopEventContext();
-                    }
+                else {
+                    doEvaluation(myRegion, e);
                 }
             };
             var event = region.ExpandEvent(directive.arg.key, element), mappedEvent = null;

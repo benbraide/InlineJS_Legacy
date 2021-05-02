@@ -817,7 +817,7 @@ namespace InlineJS{
         }
 
         public static IsObject(target: any){
-            return (target !== null && typeof target === 'object' && (('__InlineJS_Target__' in target) || target.__proto__.constructor.name === 'Object'));
+            return (target && typeof target === 'object' && (('__InlineJS_Target__' in target) || (target.__proto__ && target.__proto__.constructor.name === 'Object')));
         }
 
         public static UnsubscribeAll(list: Array<ChangeRefInfo>){
@@ -1307,7 +1307,7 @@ namespace InlineJS{
                 if (useBlock){
                     result = (new Function(Evaluator.GetContextKey(), `
                         with (${Evaluator.GetContextKey()}){
-                            { ${expression}; };
+                            ${expression};
                         };
                     `)).bind(state.GetElementContext())(Evaluator.GetProxy(regionId, region.GetRootProxy().GetNativeProxy()));
                 }
@@ -2266,7 +2266,14 @@ namespace InlineJS{
 
         public static Class(region: Region, element: HTMLElement, directive: Directive){
             return CoreDirectiveHandlers.InternalAttr(region, element, directive, (key, value) => {
-                key.trim().replace(/\s\s+/g, ' ').split(' ').forEach(item => value ? element.classList.add(item) : element.classList.remove(item));
+                key.trim().replace(/\s\s+/g, ' ').split(' ').forEach((item) => {
+                    if (value){
+                        element.classList.add(item);
+                    }
+                    else if (element.classList.contains(item)){
+                        element.classList.remove(item);
+                    }
+                });
             }, null, true);
         }
 
@@ -2276,7 +2283,11 @@ namespace InlineJS{
                 let isList = (acceptList && directive.arg && directive.arg.options.indexOf('list') != -1), list: Array<string>;
                 region.GetState().TrapGetAccess(() => {
                     if (isList && list){
-                        list.forEach(item => element.classList.remove(item));
+                        list.forEach((item) => {
+                            if (element.classList.contains(item)){
+                                element.classList.remove(item);
+                            }
+                        });
                         list = new Array<string>();
                     }
                     
@@ -2399,7 +2410,8 @@ namespace InlineJS{
                 once: false,
                 document: false,
                 window: false,
-                self: false
+                self: false,
+                nexttick: false,
             };
 
             let keyOptions = {
@@ -2443,6 +2455,21 @@ namespace InlineJS{
             });
 
             let regionId = region.GetId(), stoppable: boolean;
+            let doEvaluation = (myRegion: Region, e: Event) => {
+                try{
+                    if (myRegion){
+                        myRegion.GetState().PushEventContext(e);
+                    }
+
+                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
+                }
+                finally{
+                    if (myRegion){
+                        myRegion.GetState().PopEventContext();
+                    }
+                }
+            };
+            
             let onEvent = (e: Event) => {
                 if (isDebounced){
                     return;
@@ -2487,17 +2514,13 @@ namespace InlineJS{
                     e.stopImmediatePropagation();
                 }
                 
-                try{
-                    if (myRegion){
-                        myRegion.GetState().PushEventContext(e);
-                    }
-
-                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
+                if (options.nexttick){
+                    myRegion.AddNextTickCallback(() => {
+                        doEvaluation(Region.Get(regionId), e);
+                    });
                 }
-                finally{
-                    if (myRegion){
-                        myRegion.GetState().PopEventContext();
-                    }
+                else{
+                    doEvaluation(myRegion, e);
                 }
             };
             

@@ -50,17 +50,8 @@ var InlineJS;
             if (!echo) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
-            var regionId = region.GetId();
-            echo.status(function (status) {
-                if (directive.arg.key !== 'status' && status != (directive.arg.key === 'success')) {
-                    return;
-                }
-                var myRegion = InlineJS.Region.Get(regionId), e = new CustomEvent((status ? 'echo.success' : 'echo.error'), {
-                    detail: {
-                        status: status,
-                        error: (status ? null : echo.error)
-                    }
-                });
+            var regionId = region.GetId(), nexttick = directive.arg.options.includes('nexttick');
+            var doEvaluation = function (myRegion, e) {
                 try {
                     if (myRegion) {
                         myRegion.GetState().PushEventContext(e);
@@ -71,6 +62,25 @@ var InlineJS;
                     if (myRegion) {
                         myRegion.GetState().PopEventContext();
                     }
+                }
+            };
+            echo.status(function (status) {
+                if (directive.arg.key !== 'status' && status != (directive.arg.key === 'success')) {
+                    return;
+                }
+                var myRegion = InlineJS.Region.Get(regionId), e = new CustomEvent((status ? 'echo.success' : 'echo.error'), {
+                    detail: {
+                        status: status,
+                        error: (status ? null : echo.error)
+                    }
+                });
+                if (nexttick) {
+                    myRegion.AddNextTickCallback(function () {
+                        doEvaluation(InlineJS.Region.Get(regionId), e);
+                    });
+                }
+                else {
+                    doEvaluation(myRegion, e);
                 }
             });
             return InlineJS.DirectiveHandlerReturn.Handled;
@@ -586,7 +596,7 @@ var InlineJS;
                 if (prop === 'name') {
                     return qname;
                 }
-                if (prop === 'channel') {
+                if (prop === 'channel' || prop === '__InlineJS_Target__') {
                     return channel;
                 }
                 if (prop === 'status') {
@@ -611,7 +621,7 @@ var InlineJS;
                 if (callback) {
                     return callback(prop, channel);
                 }
-            }, __spreadArrays(['name', 'channel', 'listen', 'leave'], (props || [])));
+            }, __spreadArrays(['name', 'channel', 'listen', 'leave', '__InlineJS_Target__'], (props || [])));
             return LaravelEchoDirectiveHandlers.channels_[qname];
         };
         LaravelEchoDirectiveHandlers.GetPrivateProps = function (prop, channel) {

@@ -229,15 +229,17 @@ var InlineJS;
     }());
     InlineJS.OpacityAnimator = OpacityAnimator;
     var ZoomAnimator = /** @class */ (function () {
-        function ZoomAnimator(type_, direction_, scale_, setOrigin_, reversed_) {
+        function ZoomAnimator(type_, direction_, scale_, setOrigin_, reversed_, origin_) {
             if (scale_ === void 0) { scale_ = 1; }
             if (setOrigin_ === void 0) { setOrigin_ = false; }
             if (reversed_ === void 0) { reversed_ = false; }
+            if (origin_ === void 0) { origin_ = null; }
             this.type_ = type_;
             this.direction_ = direction_;
             this.scale_ = scale_;
             this.setOrigin_ = setOrigin_;
             this.reversed_ = reversed_;
+            this.origin_ = origin_;
         }
         ZoomAnimator.prototype.init = function (options, nextOptionIndex) {
             var regex = /^[0-9]+$/;
@@ -269,7 +271,33 @@ var InlineJS;
             if (this.type_ === 'both') {
                 element.style.transform = ((isFirst ? '' : element.style.transform) + (" scale(" + value + ", " + value + ")"));
                 if (isFirst && this.setOrigin_) {
-                    element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                    if (this.origin_ === 'top_left') {
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                    }
+                    else if (this.origin_ === 'top_right') {
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '100% 0%');
+                    }
+                    else if (this.origin_ === 'bottom_right') {
+                        element.style.transformOrigin = (this.reversed_ ? '0% 0%' : '100% 100%');
+                    }
+                    else if (this.origin_ === 'bottom_left') {
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 100%');
+                    }
+                    else if (this.origin_ === 'left') {
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 50%');
+                    }
+                    else if (this.origin_ === 'top') {
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '50% 0%');
+                    }
+                    else if (this.origin_ === 'right') {
+                        element.style.transformOrigin = (this.reversed_ ? '0% 0%' : '100% 50%');
+                    }
+                    else if (this.origin_ === 'bottom') {
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '50% 100%');
+                    }
+                    else {
+                        element.style.transformOrigin = (this.reversed_ ? '100% 100%' : '0% 0%');
+                    }
                 }
             }
             else if (this.type_ === 'width') {
@@ -868,6 +896,14 @@ var InlineJS;
         zoomOut: function () { return new ZoomAnimator('both', 'out'); },
         zoomOutHeight: function () { return new ZoomAnimator('height', 'out'); },
         zoomOutWidth: function () { return new ZoomAnimator('width', 'out'); },
+        zoomTopLeft: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'top_left'); },
+        zoomTopRight: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'top_right'); },
+        zoomBottomRight: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'bottom_right'); },
+        zoomBottomLeft: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'bottom_left'); },
+        zoomLeft: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'left'); },
+        zoomTop: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'top'); },
+        zoomRight: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'right'); },
+        zoomBottom: function () { return new ZoomAnimator('both', 'in', 1, true, false, 'bottom'); },
         rotate: function () { return new RotationAnimator('z', 'clockwise'); },
         rotateX: function () { return new RotationAnimator('x', 'clockwise'); },
         rotateY: function () { return new RotationAnimator('y', 'clockwise'); },

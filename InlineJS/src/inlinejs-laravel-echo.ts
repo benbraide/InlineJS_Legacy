@@ -54,7 +54,22 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Nil;
             }
 
-            let regionId = region.GetId();
+            let regionId = region.GetId(), nexttick = directive.arg.options.includes('nexttick');
+            let doEvaluation = (myRegion: Region, e: Event) => {
+                try{
+                    if (myRegion){
+                        myRegion.GetState().PushEventContext(e);
+                    }
+
+                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
+                }
+                finally{
+                    if (myRegion){
+                        myRegion.GetState().PopEventContext();
+                    }
+                }
+            };
+            
             (echo.status as (handler: (status: boolean) => void) => void)((status) => {
                 if (directive.arg.key !== 'status' && status != (directive.arg.key === 'success')){
                     return;
@@ -67,17 +82,13 @@ namespace InlineJS{
                     },
                 });
 
-                try{
-                    if (myRegion){
-                        myRegion.GetState().PushEventContext(e);
-                    }
-
-                    CoreDirectiveHandlers.BlockEvaluate(myRegion, element, directive.value, false, e);
+                if (nexttick){
+                    myRegion.AddNextTickCallback(() => {
+                        doEvaluation(Region.Get(regionId), e);
+                    });
                 }
-                finally{
-                    if (myRegion){
-                        myRegion.GetState().PopEventContext();
-                    }
+                else{
+                    doEvaluation(myRegion, e);
                 }
             });
             
@@ -725,7 +736,7 @@ namespace InlineJS{
                     return qname;
                 }
                 
-                if (prop === 'channel'){
+                if (prop === 'channel' || prop === '__InlineJS_Target__'){
                     return channel;
                 }
                 
@@ -755,7 +766,7 @@ namespace InlineJS{
                 if (callback){
                     return callback(prop, channel);
                 }
-            }, ['name', 'channel', 'listen', 'leave', ...(props || [])]);
+            }, ['name', 'channel', 'listen', 'leave', '__InlineJS_Target__', ...(props || [])]);
 
             return LaravelEchoDirectiveHandlers.channels_[qname];
         }
