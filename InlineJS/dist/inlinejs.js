@@ -307,7 +307,10 @@ var InlineJS;
                 if (!(event in scope.outsideEventCallbacks)) {
                     scope.outsideEventCallbacks[event] = new Array();
                 }
-                scope.outsideEventCallbacks[event].push(callback);
+                scope.outsideEventCallbacks[event].push({
+                    callback: callback,
+                    excepts: null
+                });
                 if (!_this.outsideEvents_.includes(event)) {
                     _this.outsideEvents_.push(event);
                     document.body.addEventListener(event, function (e) {
@@ -316,16 +319,20 @@ var InlineJS;
                             Object.keys(myRegion.elementScopes_).forEach(function (key) {
                                 var scope = myRegion.elementScopes_[key];
                                 if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target)) {
-                                    scope.outsideEventCallbacks[e.type].forEach(function (callback) { return callback(e); });
+                                    scope.outsideEventCallbacks[e.type].forEach(function (info) {
+                                        if (!info.excepts || info.excepts.findIndex(function (except) { return (except === e.target || except.contains(e.target)); }) == -1) {
+                                            info.callback(e);
+                                        }
+                                    });
                                 }
                             });
                         }
-                    }, true);
+                    });
                 }
             });
         };
         Region.prototype.RemoveOutsideEventCallback = function (element, events, callback) {
-            var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
+            var scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true));
             if (!scope) {
                 return;
             }
@@ -333,10 +340,46 @@ var InlineJS;
                 if (!(event in scope.outsideEventCallbacks)) {
                     return;
                 }
-                var index = scope.outsideEventCallbacks[event].findIndex(function (handler) { return (handler === callback); });
+                var index = scope.outsideEventCallbacks[event].findIndex(function (info) { return (info.callback === callback); });
                 if (index != -1) {
                     scope.outsideEventCallbacks[event].splice(index, 1);
                 }
+            });
+        };
+        Region.prototype.AddOutsideEventExcept = function (element, list, callback) {
+            if (!list) {
+                return;
+            }
+            var scope = this.GetElementScope(element);
+            if (!scope) {
+                return;
+            }
+            Object.keys(list).forEach(function (key) {
+                if (!(key in scope.outsideEventCallbacks)) {
+                    return;
+                }
+                var infoList;
+                if (callback) { //Find matching entry
+                    var index = scope.outsideEventCallbacks[key].findIndex(function (info) { return (info.callback === callback); });
+                    if (index != -1) {
+                        infoList = scope.outsideEventCallbacks[key].slice(index, 1);
+                    }
+                    else {
+                        infoList = null;
+                    }
+                }
+                else {
+                    infoList = scope.outsideEventCallbacks[key];
+                }
+                infoList.forEach(function (info) {
+                    info.excepts = (info.excepts || []);
+                    if (Array.isArray(list[key])) {
+                        list[key].forEach(function (item) { return info.excepts.push(item); });
+                    }
+                    else { //Add single
+                        info.excepts.push(list[key]);
+                    }
+                });
             });
         };
         Region.prototype.AddNextTickCallback = function (callback) {
@@ -2055,6 +2098,10 @@ var InlineJS;
             }
             return DirectiveHandlerReturn.Handled;
         };
+        CoreDirectiveHandlers.OutsideEventExcept = function (region, element, directive) {
+            region.AddOutsideEventExcept(element, CoreDirectiveHandlers.Evaluate(region, element, directive.value));
+            return DirectiveHandlerReturn.Handled;
+        };
         CoreDirectiveHandlers.Model = function (region, element, directive) {
             var regionId = region.GetId(), doneInput = false, options = {
                 out: false,
@@ -2804,6 +2851,7 @@ var InlineJS;
             DirectiveHandlerManager.AddHandler('text', CoreDirectiveHandlers.Text);
             DirectiveHandlerManager.AddHandler('html', CoreDirectiveHandlers.Html);
             DirectiveHandlerManager.AddHandler('on', CoreDirectiveHandlers.On);
+            DirectiveHandlerManager.AddHandler('outsideEventExcept', CoreDirectiveHandlers.OutsideEventExcept);
             DirectiveHandlerManager.AddHandler('model', CoreDirectiveHandlers.Model);
             DirectiveHandlerManager.AddHandler('show', CoreDirectiveHandlers.Show);
             DirectiveHandlerManager.AddHandler('if', CoreDirectiveHandlers.If);

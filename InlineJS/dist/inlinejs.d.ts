@@ -21,6 +21,10 @@ declare namespace InlineJS {
         stopped: boolean;
         callback: ChangeCallbackType;
     }
+    interface OutsideEventInfo {
+        callback: (event: Event) => void;
+        excepts: Array<HTMLElement>;
+    }
     interface ElementScope {
         key: string;
         element: HTMLElement;
@@ -31,7 +35,7 @@ declare namespace InlineJS {
         preProcessCallbacks: Array<() => void>;
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
-        outsideEventCallbacks: Record<string, Array<(event: Event) => void>>;
+        outsideEventCallbacks: Record<string, Array<OutsideEventInfo>>;
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
@@ -135,6 +139,7 @@ declare namespace InlineJS {
         ElementExists(element: HTMLElement | string): boolean;
         AddOutsideEventCallback(element: HTMLElement | string, events: string | Array<string>, callback: (event: Event) => void): void;
         RemoveOutsideEventCallback(element: HTMLElement | string, events: string | Array<string>, callback: (event: Event) => void): void;
+        AddOutsideEventExcept(element: HTMLElement, list: Record<string, Array<HTMLElement> | HTMLElement>, callback?: (event: Event) => void): void;
         AddNextTickCallback(callback: () => void): void;
         ExecuteNextTick(): void;
         AddLocal(element: HTMLElement | string, key: string, value: any): void;
@@ -408,6 +413,7 @@ declare namespace InlineJS {
         static Html(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static TextOrHtml(region: Region, element: HTMLElement, directive: Directive, isHtml: boolean, callback?: () => boolean): DirectiveHandlerReturn;
         static On(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;
+        static OutsideEventExcept(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Model(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static Show(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn;
         static If(region: Region, element: HTMLElement, directive: Directive): DirectiveHandlerReturn.Nil | DirectiveHandlerReturn.Handled;

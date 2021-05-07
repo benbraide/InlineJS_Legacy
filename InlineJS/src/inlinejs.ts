@@ -39,6 +39,11 @@ namespace InlineJS{
         callback: ChangeCallbackType;
     }
 
+    export interface OutsideEventInfo{
+        callback: (event: Event) => void;
+        excepts: Array<HTMLElement>;
+    }
+
     export interface ElementScope{
         key: string;
         element: HTMLElement;
@@ -49,7 +54,7 @@ namespace InlineJS{
         preProcessCallbacks: Array<() => void>;
         postProcessCallbacks: Array<() => void>;
         eventExpansionCallbacks: Array<(event: string) => string | null>;
-        outsideEventCallbacks: Record<string, Array<(event: Event) => void>>;
+        outsideEventCallbacks: Record<string, Array<OutsideEventInfo>>;
         attributeChangeCallbacks: Array<(name: string) => void>;
         intersectionObservers: Record<string, IntersectionObserver>;
         falseIfCondition: Array<() => void>;
@@ -413,10 +418,14 @@ namespace InlineJS{
 
             ((typeof events === 'string') ? [events] : events).forEach((event) => {
                 if (!(event in scope.outsideEventCallbacks)){
-                    scope.outsideEventCallbacks[event] = new Array<(event: Event) => void>();
+                    scope.outsideEventCallbacks[event] = new Array<OutsideEventInfo>();
                 }
     
-                (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).push(callback);
+                (scope.outsideEventCallbacks[event] as Array<OutsideEventInfo>).push({
+                    callback: callback,
+                    excepts: null,
+                });
+                
                 if (!this.outsideEvents_.includes(event)){
                     this.outsideEvents_.push(event);
                     document.body.addEventListener(event, (e: Event) => {
@@ -425,17 +434,21 @@ namespace InlineJS{
                             Object.keys(myRegion.elementScopes_).forEach((key) => {
                                 let scope = (myRegion.elementScopes_[key] as ElementScope);
                                 if (e.target !== scope.element && e.type in scope.outsideEventCallbacks && !scope.element.contains(e.target as Node)){
-                                    (scope.outsideEventCallbacks[e.type] as Array<(event: Event) => void>).forEach(callback => callback(e));
+                                    (scope.outsideEventCallbacks[e.type] as Array<OutsideEventInfo>).forEach((info) => {
+                                        if (!info.excepts || info.excepts.findIndex(except => (except === e.target || except.contains(e.target as Node))) == -1){
+                                            info.callback(e);
+                                        }
+                                    });
                                 }
                             });
                         }
-                    }, true);
+                    });
                 }
             });
         }
 
         public RemoveOutsideEventCallback(element: HTMLElement | string, events: string | Array<string>, callback: (event: Event) => void){
-            let scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true)), id = this.id_;
+            let scope = ((typeof element === 'string') ? this.GetElementScope(element) : this.AddElement(element, true));
             if (!scope){
                 return;
             }
@@ -445,10 +458,51 @@ namespace InlineJS{
                     return;
                 }
                 
-                let index = (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).findIndex(handler => (handler === callback));
+                let index = (scope.outsideEventCallbacks[event] as Array<OutsideEventInfo>).findIndex(info => (info.callback === callback));
                 if (index != -1){
-                    (scope.outsideEventCallbacks[event] as Array<(event: Event) => void>).splice(index, 1);
+                    (scope.outsideEventCallbacks[event] as Array<OutsideEventInfo>).splice(index, 1);
                 }
+            });
+        }
+
+        public AddOutsideEventExcept(element: HTMLElement, list: Record<string, Array<HTMLElement> | HTMLElement>, callback?: (event: Event) => void){
+            if (!list){
+                return;
+            }
+            
+            let scope = this.GetElementScope(element);
+            if (!scope){
+                return;
+            }
+
+            Object.keys(list).forEach((key) => {
+                if (!(key in scope.outsideEventCallbacks)){
+                    return;
+                }
+
+                let infoList: Array<OutsideEventInfo>;
+                if (callback){//Find matching entry
+                    let index = (scope.outsideEventCallbacks[key] as Array<OutsideEventInfo>).findIndex(info => (info.callback === callback));
+                    if (index != -1){
+                        infoList = (scope.outsideEventCallbacks[key] as Array<OutsideEventInfo>).slice(index, 1);
+                    }
+                    else{
+                        infoList = null;
+                    }
+                }
+                else{
+                    infoList = (scope.outsideEventCallbacks[key] as Array<OutsideEventInfo>);
+                }
+
+                infoList.forEach((info) => {
+                    info.excepts = (info.excepts || []);
+                    if (Array.isArray(list[key])){
+                        (list[key] as Array<HTMLElement>).forEach(item => info.excepts.push(item));
+                    }
+                    else{//Add single
+                        info.excepts.push(list[key] as HTMLElement);
+                    }
+                });
             });
         }
 
@@ -2563,6 +2617,11 @@ namespace InlineJS{
             
             return DirectiveHandlerReturn.Handled;
         }
+
+        public static OutsideEventExcept(region: Region, element: HTMLElement, directive: Directive){
+            region.AddOutsideEventExcept(element, CoreDirectiveHandlers.Evaluate(region, element, directive.value));
+            return DirectiveHandlerReturn.Handled;
+        }
         
         public static Model(region: Region, element: HTMLElement, directive: Directive){
             let regionId = region.GetId(), doneInput = false, options = {
@@ -3427,6 +3486,7 @@ namespace InlineJS{
             DirectiveHandlerManager.AddHandler('html', CoreDirectiveHandlers.Html);
 
             DirectiveHandlerManager.AddHandler('on', CoreDirectiveHandlers.On);
+            DirectiveHandlerManager.AddHandler('outsideEventExcept', CoreDirectiveHandlers.OutsideEventExcept);
             DirectiveHandlerManager.AddHandler('model', CoreDirectiveHandlers.Model);
 
             DirectiveHandlerManager.AddHandler('show', CoreDirectiveHandlers.Show);

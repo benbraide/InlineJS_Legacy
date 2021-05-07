@@ -2430,8 +2430,8 @@ namespace InlineJS{
             return DirectiveHandlerReturn.Handled;
         }
 
-        public static Cart(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal(region.GetId(), '$cart')){
+        public static Cart(region: Region, element: HTMLElement, directive: Directive, globalKey = 'cart'){
+            if (Region.GetGlobal(region.GetId(), `\$${globalKey}`)){
                 return DirectiveHandlerReturn.Nil;
             }
             
@@ -2474,7 +2474,7 @@ namespace InlineJS{
                         });
                     }
                     else if (!checked && handlers.db){
-                        handlers.db.read('cart', setItems);
+                        handlers.db.read(globalKey, setItems);
                     }
                 };
             }
@@ -2549,7 +2549,7 @@ namespace InlineJS{
                             
                             computeValues();
                             if (handlers.db){//Save to DB
-                                handlers.db.write(info.items, 'cart', (state: boolean) => {});
+                                handlers.db.write(info.items, globalKey, (state: boolean) => {});
                             }
                             
                             return;
@@ -2589,7 +2589,7 @@ namespace InlineJS{
                             }
                             
                             if (handlers.db){//Save to DB
-                                handlers.db.write(info.items, 'cart', (state: boolean) => {
+                                handlers.db.write(info.items, globalKey, (state: boolean) => {
                                     if (state && callback){
                                         callback(item);
                                     }
@@ -2652,7 +2652,7 @@ namespace InlineJS{
                 };
             }
             
-            let scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue: Array<() => void> = null;
+            let scope = ExtendedDirectiveHandlers.AddScope(globalKey, region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue: Array<() => void> = null;
             let info: CartInfo = {
                 items: new Array<CartItem>(),
                 products: new Array<any>(),
@@ -2814,9 +2814,20 @@ namespace InlineJS{
                         onUpdate(sku, data);
                     };
                 }
+
+                if (globalKey !== 'cart' && prop === 'toCart'){
+                    return (cart?: any) => {
+                        cart = (cart || Region.GetGlobalValue(regionId, '$cart'));
+                        if (cart){
+                            info.items.forEach((item) => {
+                                cart.update(item.product.sku, item.quantity, true);
+                            });
+                        }
+                    };
+                }
             }, [...Object.keys(info), 'hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json', 'onUpdate']);
 
-            Region.AddGlobal('$cart', () => proxy);
+            Region.AddGlobal(`\$${globalKey}`, () => proxy);
 
             let cartAction = (myRegion: Region, myElement: HTMLElement, myDirective: Directive, eventHandler: () => void, valueCallback?: (value: any) => void,
                 eventBinder?: (handler: (e: Event) => void) => void) => {
@@ -2839,11 +2850,11 @@ namespace InlineJS{
                 return DirectiveHandlerReturn.Handled;
             };
             
-            DirectiveHandlerManager.AddHandler('cartClear', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+            DirectiveHandlerManager.AddHandler(`${globalKey}Clear`, (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 return cartAction(innerRegion, innerElement, innerDirective, clear);
             });
             
-            DirectiveHandlerManager.AddHandler('cartUpdate', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+            DirectiveHandlerManager.AddHandler(`${globalKey}Update`, (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let form = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, '$form');
                 if (!form || !(form instanceof HTMLFormElement)){
                     return DirectiveHandlerReturn.Nil;
@@ -2851,27 +2862,27 @@ namespace InlineJS{
                 
                 let sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, () => {
-                    update(sku, parseInt(((form as HTMLFormElement).elements.namedItem('cart-value') as HTMLInputElement).value), false);
+                    update(sku, parseInt(((form as HTMLFormElement).elements.namedItem(`${globalKey}-value`) as HTMLInputElement).value), false);
                 }, value => (sku = value), (handler) => {
                     form.addEventListener('submit', handler);
                 });
             });
 
-            DirectiveHandlerManager.AddHandler('cartIncrement', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+            DirectiveHandlerManager.AddHandler(`${globalKey}Increment`, (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, () => {
                     update(sku, 1, true);
                 }, value => (sku = value));
             });
 
-            DirectiveHandlerManager.AddHandler('cartDecrement', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+            DirectiveHandlerManager.AddHandler(`${globalKey}Decrement`, (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, () => {
                     update(sku, -1, true);
                 }, value => (sku = value));
             });
 
-            DirectiveHandlerManager.AddHandler('cartRemove', (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
+            DirectiveHandlerManager.AddHandler(`${globalKey}Remove`, (innerRegion: Region, innerElement: HTMLElement, innerDirective: Directive) => {
                 let sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, () => {
                     update(sku, 0, false);
@@ -2889,9 +2900,7 @@ namespace InlineJS{
         }
 
         public static Favorites(region: Region, element: HTMLElement, directive: Directive){
-            if (Region.GetGlobal(region.GetId(), '$favorites')){
-                return DirectiveHandlerReturn.Nil;
-            }
+            return ExtendedDirectiveHandlers.Cart(region, element, directive, 'favorites');
         }
 
         public static DB(region: Region, element: HTMLElement, directive: Directive){

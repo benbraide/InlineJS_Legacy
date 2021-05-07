@@ -1967,8 +1967,9 @@ var InlineJS;
             }
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
-        ExtendedDirectiveHandlers.Cart = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal(region.GetId(), '$cart')) {
+        ExtendedDirectiveHandlers.Cart = function (region, element, directive, globalKey) {
+            if (globalKey === void 0) { globalKey = 'cart'; }
+            if (InlineJS.Region.GetGlobal(region.GetId(), "$" + globalKey)) {
                 return InlineJS.DirectiveHandlerReturn.Nil;
             }
             var handlers = InlineJS.CoreDirectiveHandlers.Evaluate(region, element, directive.value);
@@ -2004,7 +2005,7 @@ var InlineJS;
                         });
                     }
                     else if (!checked && handlers.db) {
-                        handlers.db.read('cart', setItems);
+                        handlers.db.read(globalKey, setItems);
                     }
                 };
             }
@@ -2062,7 +2063,7 @@ var InlineJS;
                             info.products.splice(0, info.products.length);
                             computeValues();
                             if (handlers.db) { //Save to DB
-                                handlers.db.write(info.items, 'cart', function (state) { });
+                                handlers.db.write(info.items, globalKey, function (state) { });
                             }
                             return;
                         }
@@ -2092,7 +2093,7 @@ var InlineJS;
                                 ExtendedDirectiveHandlers.Alert(InlineJS.Region.Get(regionId), 'products', scope);
                             }
                             if (handlers.db) { //Save to DB
-                                handlers.db.write(info.items, 'cart', function (state) {
+                                handlers.db.write(info.items, globalKey, function (state) {
                                     if (state && callback) {
                                         callback(item);
                                     }
@@ -2147,7 +2148,7 @@ var InlineJS;
                     }
                 };
             }
-            var scope = ExtendedDirectiveHandlers.AddScope('cart', region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue = null;
+            var scope = ExtendedDirectiveHandlers.AddScope(globalKey, region.AddElement(element, true), []), regionId = region.GetId(), updatesQueue = null;
             var info = {
                 items: new Array(),
                 products: new Array(),
@@ -2280,8 +2281,18 @@ var InlineJS;
                         onUpdate(sku, data);
                     };
                 }
+                if (globalKey !== 'cart' && prop === 'toCart') {
+                    return function (cart) {
+                        cart = (cart || InlineJS.Region.GetGlobalValue(regionId, '$cart'));
+                        if (cart) {
+                            info.items.forEach(function (item) {
+                                cart.update(item.product.sku, item.quantity, true);
+                            });
+                        }
+                    };
+                }
             }, __spreadArrays(Object.keys(info), ['hasNew', 'update', 'clear', 'contains', 'get', 'getQuantity', 'getPrice', 'json', 'onUpdate']));
-            InlineJS.Region.AddGlobal('$cart', function () { return proxy; });
+            InlineJS.Region.AddGlobal("$" + globalKey, function () { return proxy; });
             var cartAction = function (myRegion, myElement, myDirective, eventHandler, valueCallback, eventBinder) {
                 if (valueCallback) { //Bind value
                     var myRegionId_1 = myRegion.GetId();
@@ -2298,34 +2309,34 @@ var InlineJS;
                 });
                 return InlineJS.DirectiveHandlerReturn.Handled;
             };
-            InlineJS.DirectiveHandlerManager.AddHandler('cartClear', function (innerRegion, innerElement, innerDirective) {
+            InlineJS.DirectiveHandlerManager.AddHandler(globalKey + "Clear", function (innerRegion, innerElement, innerDirective) {
                 return cartAction(innerRegion, innerElement, innerDirective, clear);
             });
-            InlineJS.DirectiveHandlerManager.AddHandler('cartUpdate', function (innerRegion, innerElement, innerDirective) {
+            InlineJS.DirectiveHandlerManager.AddHandler(globalKey + "Update", function (innerRegion, innerElement, innerDirective) {
                 var form = InlineJS.CoreDirectiveHandlers.Evaluate(innerRegion, innerElement, '$form');
                 if (!form || !(form instanceof HTMLFormElement)) {
                     return InlineJS.DirectiveHandlerReturn.Nil;
                 }
                 var sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, function () {
-                    update(sku, parseInt(form.elements.namedItem('cart-value').value), false);
+                    update(sku, parseInt(form.elements.namedItem(globalKey + "-value").value), false);
                 }, function (value) { return (sku = value); }, function (handler) {
                     form.addEventListener('submit', handler);
                 });
             });
-            InlineJS.DirectiveHandlerManager.AddHandler('cartIncrement', function (innerRegion, innerElement, innerDirective) {
+            InlineJS.DirectiveHandlerManager.AddHandler(globalKey + "Increment", function (innerRegion, innerElement, innerDirective) {
                 var sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, function () {
                     update(sku, 1, true);
                 }, function (value) { return (sku = value); });
             });
-            InlineJS.DirectiveHandlerManager.AddHandler('cartDecrement', function (innerRegion, innerElement, innerDirective) {
+            InlineJS.DirectiveHandlerManager.AddHandler(globalKey + "Decrement", function (innerRegion, innerElement, innerDirective) {
                 var sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, function () {
                     update(sku, -1, true);
                 }, function (value) { return (sku = value); });
             });
-            InlineJS.DirectiveHandlerManager.AddHandler('cartRemove', function (innerRegion, innerElement, innerDirective) {
+            InlineJS.DirectiveHandlerManager.AddHandler(globalKey + "Remove", function (innerRegion, innerElement, innerDirective) {
                 var sku = '';
                 return cartAction(innerRegion, innerElement, innerDirective, function () {
                     update(sku, 0, false);
@@ -2339,9 +2350,7 @@ var InlineJS;
             return InlineJS.DirectiveHandlerReturn.Handled;
         };
         ExtendedDirectiveHandlers.Favorites = function (region, element, directive) {
-            if (InlineJS.Region.GetGlobal(region.GetId(), '$favorites')) {
-                return InlineJS.DirectiveHandlerReturn.Nil;
-            }
+            return ExtendedDirectiveHandlers.Cart(region, element, directive, 'favorites');
         };
         ExtendedDirectiveHandlers.DB = function (region, element, directive) {
             if (directive.arg.key === 'global' && InlineJS.Region.GetGlobal(region.GetId(), '$db')) {
